@@ -24,12 +24,12 @@ ZOnePermanentCalculator::ZOnePermanentCalculator() {}
 @return Returns with the calculated permanent
 */
 std::vector<uint64_t>
-ZOnePermanentCalculator::calculate(std::vector<uint64_t> &mtx) {
+ZOnePermanentCalculator::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows) {
     if (mtx.size() == 0)
         return std::vector<uint64_t> { 1, 0, 0, 0, 0 };
 
     ZOnePermanentCalculatorTask calculator;
-    return calculator.calculate( mtx );
+    return calculator.calculate( mtx, isGray, isRows );
 }
 
 
@@ -184,7 +184,7 @@ static long numberOfSetBits(uint64_t i)
 @return Returns with the calculated permanent
 */
 std::vector<uint64_t>
-ZOnePermanentCalculatorTask::calculate(std::vector<uint64_t> &mtx) {
+ZOnePermanentCalculatorTask::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows) {
     //test_signed_add();
     uint64_t* mtx_data = mtx.data();
     size_t rows = mtx.size();
