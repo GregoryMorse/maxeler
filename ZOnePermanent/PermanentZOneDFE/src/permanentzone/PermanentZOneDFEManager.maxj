@@ -1,0 +1,102 @@
+package permanentzone;
+
+//import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.Demux;
+//import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
+
+//import com.maxeler.maxcompiler.v2.build.EngineParameters;
+
+import java.math.BigInteger;
+
+
+
+public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
+
+	int dim = 5*4; //must be multiple of kernel count
+	int rows = dim;
+  int cols = rows;
+	int rows0 = dim/4;
+	int rows1 = dim/4;
+	int rows2 = dim/4;
+	int rows3 = dim - rows0 - rows1 - rows2; //must be dim/#kernels
+ 
+  static BigInteger factorial(int n) {
+    BigInteger f = BigInteger.ONE;
+    for (int i = n; i > 1; i--) f = f.multiply(BigInteger.valueOf(i));
+    return f;
+  }
+
+	static EngineInterface interfaceDefault (boolean use_gray, boolean divide_rows) { //EngineParameters params
+    //if (params.getTarget() != EngineParameters.Target.DFE)
+    
+		EngineInterface ei = new EngineInterface();
+
+    factorial(dim).bitLength();
+
+		InterfaceParam ticksmax = ei.addParam("ticksMax", CPUTypes.UINT64);
+		ei.setScalar("PermanentZOneDFEKernel_0", "ticksMax", ticksmax);
+		ei.setScalar("PermanentZOneDFEKernel_1", "ticksMax", ticksmax);
+		ei.setScalar("PermanentZOneDFEKernel_2", "ticksMax", ticksmax);
+		ei.setScalar("PermanentZOneDFEKernel_3", "ticksMax", ticksmax);
+		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
+
+		//InterfaceParam initialCount = ei.addParam("InitialCount", CPUTypes.UINT64);
+		ei.setScalar("PermanentZOneDFEKernel_0", "InitialCount", 0);
+		ei.setScalar("PermanentZOneDFEKernel_1", "InitialCount", divide_rows ? ticksmax & 0 : ticksmax);
+		ei.setScalar("PermanentZOneDFEKernel_2", "InitialCount", divide_rows ? ticksmax & 0 : (ticksmax << 1));
+		ei.setScalar("PermanentZOneDFEKernel_3", "InitialCount", divide_rows ? ticksmax & 0 : ((ticksmax << 1) | ticksmax));
+
+		// setting mapped memories
+		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.UINT64, "unsigned integer array containing the input matrix");
+    if (!divide_rows) {
+		  for (int rowIdx=0; rowIdx<rows; rowIdx++) { 
+			  ei.setMem( "PermanentZOneDFEKernel_0", "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+        ei.setMem( "PermanentZOneDFEKernel_1", "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+        ei.setMem( "PermanentZOneDFEKernel_2", "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+        ei.setMem( "PermanentZOneDFEKernel_3", "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+		  }
+    } else {
+      for (int rowIdx = 0; rowIdx<rows0; rowIdx++) {
+        ei.setMem( "PermanentZOneDFEKernel_0", "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);       
+      }
+      for (int rowIdx = 0; rowIdx<rows1; rowIdx++) {
+        ei.setMem( "PermanentZOneDFEKernel_1", "mappedInputMtx_Row", rowIdx, inputMtx[rows0+rowIdx]);       
+      }
+      for (int rowIdx = 0; rowIdx<rows2; rowIdx++) {
+        ei.setMem( "PermanentZOneDFEKernel_2", "mappedInputMtx_Row", rowIdx, inputMtx[rows0+rows1+rowIdx]);       
+      }
+      for (int rowIdx = 0; rowIdx<rows3; rowIdx++) {
+        ei.setMem( "PermanentZOneDFEKernel_3", "mappedInputMtx_Row", rowIdx, inputMtx[rows0+rows1+rows2+rowIdx]);       
+      }
+    }
+
+		// stream to CPU containing the result
+		ei.setStream("res", CPUTypes.UINT64, CPUTypes.UINT64.sizeInBytes()*6); // unsigned integer representation of the resulted permanent, bytes must be multiple of 16
+
+		// set the ticks of the computing kernel
+		ei.setTicks("PermanentZOneDFEKernel_0", ticksmax);
+		ei.setTicks("PermanentZOneDFEKernel_1", ticksmax);
+		ei.setTicks("PermanentZOneDFEKernel_2", ticksmax);
+		ei.setTicks("PermanentZOneDFEKernel_3", ticksmax);
+
+		ei.setTicks("SumUpPermDFEKernel", ticksmax);
+		ei.setTicks("FinalSumUpPermDFEKernel", 4);
+
+		ei.ignoreAll(EngineInterface.Direction.IN_OUT);
+		return ei ;
+	}
+
+}
+
+
+
+
+
