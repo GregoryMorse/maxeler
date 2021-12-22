@@ -1,0 +1,126 @@
+package permanentzone;
+
+import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+
+import com.maxeler.platform.max5.manager.ImplementationStrategy;
+import com.maxeler.platform.max5.manager.BuildConfig;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
+
+//import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
+//import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnection;
+
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+//import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+//import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+//import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
+//import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+//import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
+//import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+
+class ZOneEngineParameters extends EngineParameters
+{
+  public ZOneEngineParameters(String[] args)
+  {
+    super(args);
+  }
+  protected void declarations()
+  {
+    declareParam("use_gray", EngineParameters.DataType.BOOL, Boolean.FALSE);
+    declareParam("divide_rows", EngineParameters.DataType.BOOL, Boolean.FALSE);
+  }
+}
+
+public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentZOneDFEManager {
+
+
+	public PermanentZOneDFEManagerAlveoU250(EngineParameters params) {
+		super(params);
+
+    //if (params.getTarget() != EngineParameters.Target.DFE)
+
+		//KernelConfiguration confKernel = getCurrentKernelConfig();
+		//confKernel.optimization.setUseGlobalClockBuffer( true );
+
+    Boolean use_gray = params.getParam("use_gray");
+    Boolean divide_rows = params.getParam("divide_rows");
+
+		KernelBlock colSumKernel0  = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_0"), divide_rows ? rows0 : rows, cols, use_gray, divide_rows, true, 0));
+		KernelBlock colSumKernel1  = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_1"), divide_rows ? rows1 : rows, cols, use_gray, divide_rows, !divide_rows, rows0));
+		KernelBlock colSumKernel2  = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_2"), divide_rows ? rows2 : rows, cols, use_gray, divide_rows, !divide_rows, rows0+rows1));
+		KernelBlock colSumKernel3  = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_3"), divide_rows ? rows3 : rows, cols, use_gray, divide_rows, !divide_rows, rows0+rows1+rows2));
+
+
+		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), divide_rows ? rows0 : rows, cols, divide_rows));
+		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel"), rows));
+
+		assignToNamedRegion(colSumKernel0, XilinxAlveoU250Manager.NamedRegion.SLR0);
+		//assignToNamedRegion(colSumKernel1, XilinxAlveoU250Manager.NamedRegion.SLR1);
+		//assignToNamedRegion(colSumKernel2, XilinxAlveoU250Manager.NamedRegion.SLR2);
+		//assignToNamedRegion(colSumKernel3, XilinxAlveoU250Manager.NamedRegion.SLR3);
+
+		//assignToNamedRegion(colSumKernel0, XilinxAlveoU250Manager.NamedRegion.SLR0);
+
+		DFELink colProd0 = colSumKernel0.getOutput("colProd"); 
+		DFELink colProd1 = colSumKernel1.getOutput("colProd"); 
+		DFELink colProd2 = colSumKernel2.getOutput("colProd"); 
+		DFELink colProd3 = colSumKernel3.getOutput("colProd"); 
+
+
+		colProd0.setAdditionalRegisters(2);
+		colProd1.setAdditionalRegisters(2);
+		colProd2.setAdditionalRegisters(2);
+		colProd3.setAdditionalRegisters(2);
+
+
+		SumUpPermKernel.getInput("colProd0") <== colProd0; 
+		SumUpPermKernel.getInput("colProd1") <== colProd1; 
+		SumUpPermKernel.getInput("colProd2") <== colProd2; 
+		SumUpPermKernel.getInput("colProd3") <== colProd3; 
+		
+
+		FinalSumUpPermKernel.getInput("partialSum") <== SumUpPermKernel.getOutput("partialSum");
+		DFELink toCPU = FinalSumUpPermKernel.getOutput("res");
+		addStreamToCPU("res") <== toCPU;
+	}
+
+	
+
+	public static void main(final String[] argv) {
+    //for (int i = 0; i < argv.length; i++) System.out.println(argv[i]);
+		final EngineParameters params = new ZOneEngineParameters(argv);
+
+		final PermanentZOneDFEManagerAlveoU250 manager = new PermanentZOneDFEManagerAlveoU250(params);
+
+
+
+
+		BuildConfig conf = manager.getBuildConfig();
+/*
+		conf.setImplementationStrategies(  	ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH,
+ 							ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
+							ImplementationStrategy.VIVADO_DEFAULT, 
+							ImplementationStrategy.MAXELER3,  
+							ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT, 
+							ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH );
+*/
+		conf.setImplementationStrategies(  	ImplementationStrategy.MAXELER3 );
+		conf.setParallelism( 64 );
+
+		manager.setDefaultStreamClockFrequency(180);
+
+
+		manager.createSlicInterface(PermanentZOneDFEManager.interfaceDefault(params.getParam("use_gray"), params.getParam("divide_rows")));
+		//manager.createSlicInterface(PermanentZOneDFEManager.interfaceConvertInput("convertInput"));
+
+		manager.addMaxFileConstant("MTXSIZE", PermanentZOneDFEManager.dim);
+		
+
+		manager.build();
+	}
+
+
+
+
+}
