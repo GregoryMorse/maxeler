@@ -1,0 +1,46 @@
+package permanentzone;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+
+
+
+public class FinalSumUpPermDFEKernel extends Kernel {
+
+  static int bitlength(long i)
+  {
+    int r = 0;
+    while ((i >>= 1) != 0) r++;
+    return r+1;
+  }
+	public FinalSumUpPermDFEKernel(final KernelParameters parameters, int rows) {
+		super(parameters);
+    int rowbits = bitlength(rows);
+    DFEType MaxPartialSum = dfeInt(rowbits*rows+rows-2+1);
+    //DFEType MaxTotalSum = dfeUInt(296); //log2 n!/kernels math.factorial(64).bit_length()==296
+    DFEType MaxTotalSum = dfeUInt(6*64);
+    
+		// tick count
+		DFEVar tickCount = control.count.simpleCounter(3, 4);
+		DFEVar InputCount = control.count.simpleCounter(2, 2);
+
+		DFEVar sum = io.input( "partialSum", MaxPartialSum, InputCount===0);
+
+		DFEVar sumCarried = MaxPartialSum.newInstance(this);
+
+		sum = tickCount < 2 ? sum : sumCarried + sum;
+
+		sumCarried <== stream.offset( sum, -2 );
+		io.output("res", sum.cast(MaxTotalSum), MaxTotalSum, tickCount === 3 );
+
+	}
+
+}
