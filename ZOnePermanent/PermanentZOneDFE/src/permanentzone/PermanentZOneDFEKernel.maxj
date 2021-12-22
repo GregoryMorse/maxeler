@@ -51,7 +51,8 @@ public class PermanentZOneDFEKernel extends Kernel {
     DFEVar[] rowsums = new DFEVar[rows];
     int bitsize = 1;
     if (use_gray) {
-      gcodeidx = (gcodeidx.get(0)!==0 ? (divide_rows ? ticksMax : ticksMax) : constant.zero(UIntType)) | (gcodeidx >> 1);
+      //https://en.wikipedia.org/wiki/Gray_code
+      gcodeidx = (gcodeidx.get(0)!==0 ? (divide_rows ? ticksMax : ticksMax<<2) : constant.zero(UIntType)) | (gcodeidx >> 1);
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
       gcode = ~((divide_rows ? ticksMax : ticksMax<<2)-1) | gcode;
       //https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightParallel
@@ -64,14 +65,16 @@ public class PermanentZOneDFEKernel extends Kernel {
       for (int row_idx=0; row_idx<rows; ++row_idx) {
         DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowSum, new Bits(rowbits, row_idx))).cast(UIntType);
         //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
-        DFEVar inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) +(tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodeidx>>1)) !== 0).cast(MaxColSum)); 
+        DFEVar inits;
+        if (divide_rows) inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodeidx>>1)) !== 0).cast(MaxColSum));
+        else inits = ((constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
         DFEVar colval = ((fullrow & gcodeidx) !== 0).cast(MaxColSum);
         //DFEVar adjust = control.mux(isOn, colval,  ~colval+1, constant.zero(MaxColSum), constant.zero(MaxColSum));
         oldrowsums[row_idx] = MaxColSum.newInstance(this);
         rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
         oldrowsums[row_idx] <== stream.offset(rowsums[row_idx], -2);
       }
-      //debug.simPrintf("%X %X %X %X %X\n", tickCount, gcodeidx, gcode, isOn.cast(UIntType), rowsums[0]);
+      debug.simPrintf("%X %X %X %X %X\n", tickCount, gcodeidx, gcode, isOn.cast(UIntType), rowsums[0]);
     } else {
       DFEVar[] bits = new DFEVar[cols];
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
