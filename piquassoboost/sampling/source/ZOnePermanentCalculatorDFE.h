@@ -14,10 +14,7 @@
 
 extern "C"
 {
-    void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
-    void calcPermanentZOneGrayDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
-    void calcPermanentZOneRowsDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
-    void calcPermanentZOneRowsGrayDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
+    void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm, int isSim, int isGray, int isRows, int useGlynn, int useDual);
     void initialize_ZOne_DFE();
     void releive_ZOne_DFE();
 }
@@ -29,7 +26,7 @@ namespace pic {
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
-void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<uint64_t>& perm, int isSim, int isGray, int isRows);
+void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<uint64_t>& perm, int isSim, int isGray, int isRows, int useGlynn, int useDual);
 
 
 }
