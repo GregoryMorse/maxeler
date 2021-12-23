@@ -24,12 +24,12 @@ ZOnePermanentCalculator::ZOnePermanentCalculator() {}
 @return Returns with the calculated permanent
 */
 std::vector<uint64_t>
-ZOnePermanentCalculator::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows) {
+ZOnePermanentCalculator::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows, int useGlynn, int useDual) {
     if (mtx.size() == 0)
         return std::vector<uint64_t> { 1, 0, 0, 0, 0 };
 
     ZOnePermanentCalculatorTask calculator;
-    return calculator.calculate( mtx, isGray, isRows );
+    return calculator.calculate( mtx, isGray, isRows, useGlynn, useDual );
 }
 
 
@@ -50,8 +50,8 @@ void add_uint64_vectors(std::vector<uint64_t>& left, const std::vector<uint64_t>
   int rightsigned = right.size() && (right[right.size()-1] & (1UL << 63));
   int leftsigned = left.size() && (left[left.size()-1] & (1UL << 63));
   size_t i, iterat = std::max(right.size(), left.size());
-  if (iterat == 0) return;
-  for (i = 0; i < iterat-1; i++) {
+  if (iterat == 0) return; else iterat--;
+  for (i = 0; i < iterat; i++) {
     uint64_t li = i < left.size() ? left[i] : -leftsigned, ri = i < right.size() ? right[i] : -rightsigned; 
     int nextcarry = carry && ri == -1UL;
     uint64_t tmp = ri + carry;
@@ -169,6 +169,19 @@ void unsigned_to_signed_vector(std::vector<uint64_t>& left)
   if (left.size() != 0 && (left[left.size()-1] & (1UL << 63))) left.push_back(0);
 }
 
+void shr_vector(std::vector<uint64_t>& left, unsigned int bits)
+{
+  if (bits == 0 or left.size() == 0) return;
+  uint64_t carry = 0;
+  for (size_t i = left.size()-1; i != 0; i--) {
+    uint64_t nextcarry = left[i] << (64 - bits);
+    left[i] = (left[i] >> bits) | carry;
+    carry = nextcarry;
+  }
+  left[0] = (left[0] >> bits) | carry;
+  while (left.size()!=0 && left[left.size()-1] == 0) left.pop_back();
+}
+
 
 //popcount64c https://en.wikipedia.org/wiki/Hamming_weight
 static long numberOfSetBits(uint64_t i)
@@ -178,27 +191,115 @@ static long numberOfSetBits(uint64_t i)
     return (((i + (i >> 4)) & 0xF0F0F0F0F0F0F0F) * 0x101010101010101) >> 56;
 }
 
+//https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightParallel
+static unsigned int trailingZeros(uint64_t i)
+{
+  unsigned int v;      // 32-bit word input to count zero bits on right
+  unsigned int c = 64; // c will be the number of zero bits on the right
+  v &= ~v+1;
+  if (v) c--;
+  if (v & 0x0000FFFF) c -= 16;
+  if (v & 0x00FF00FF) c -= 8;
+  if (v & 0x0F0F0F0F) c -= 4;
+  if (v & 0x33333333) c -= 2;
+  if (v & 0x55555555) c -= 1;
+  return c;
+}
+
 /**
 @brief Call to calculate the permanent via 0-1 formula. scales with n*2^n
 @param mtx Unitary describing a quantum circuit
 @return Returns with the calculated permanent
 */
 std::vector<uint64_t>
-ZOnePermanentCalculatorTask::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows) {
+ZOnePermanentCalculatorTask::calculate(std::vector<uint64_t> &mtx, int isGray, int isRows, int useGlynn, int useDual) {
     //test_signed_add();
     uint64_t* mtx_data = mtx.data();
     size_t rows = mtx.size();
     if (rows == 0) return std::vector<uint64_t> { 1 };
-    
     priv_addend = tbb::combinable<std::vector<uint64_t>> {[](){return std::vector<uint64_t>();}};
-    
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, 1 << rows), [&](tbb::blocked_range<size_t> r) {
-      std::vector<uint64_t> &permanent_priv = priv_addend.local();
-      for (size_t set_idx=r.begin(); set_idx<r.end(); ++set_idx){
+    if (useGlynn) {
+      if (isGray) {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, 1 << (rows-1)), [&](tbb::blocked_range<size_t> r) {
+          std::vector<uint64_t> &permanent_priv = priv_addend.local();
+          size_t set_idx=r.begin();
+          int sign = 0;
+          uint64_t gcode = set_idx ^ (set_idx >> 1); //nth Gray code
+          std::vector<uint64_t> prod { 1 };
+          std::vector<int8_t> rowsums; rowsums.reserve(rows);
+          for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++) {
+            uint64_t row = *row_idx; int8_t val = ((1<<(rows-1)) & row) != 0;
+            for (uint64_t col_idx=(1<<(rows-1))>>1; col_idx!=0; col_idx>>=1) {
+              if (col_idx & row) {
+                if (gcode & col_idx) val--;
+                else val++; 
+              }
+            }
+            rowsums.push_back(val);
+            if (val < 0) { val = -val; sign = !sign; }
+            mul_uint64_vector(prod, val);
+          }
+          unsigned_to_signed_vector(prod);
+          if ((set_idx & 1) ^ sign) neg_uint64_vector(prod); //numberOfSetBits()
+          add_uint64_vectors(permanent_priv, prod);
+          for (set_idx++; set_idx<r.end(); ++set_idx) {
+            int sign = 0;
+            uint64_t gcode = set_idx ^ (set_idx >> 1); //nth Gray code
+            std::vector<uint64_t> prod { 1 };
+            uint64_t mask = set_idx & (~set_idx + 1);
+            std::vector<int8_t>::iterator rowsumidx = rowsums.begin();
+            if (mask & gcode) {
+              for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++,rowsumidx++) {
+                int8_t val = *rowsumidx-=(((mask & *row_idx) != 0)<<1);
+                if (val < 0) { val = -val; sign = !sign; }
+                mul_uint64_vector(prod, val);
+              }
+            } else {
+              for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++,rowsumidx++) {
+                int8_t val = *rowsumidx+=(((mask & *row_idx) != 0)<<1);
+                if (val < 0) { val = -val; sign = !sign; }
+                mul_uint64_vector(prod, val);
+              }
+            }
+            unsigned_to_signed_vector(prod);
+            if ((set_idx & 1) ^ sign) neg_uint64_vector(prod); //numberOfSetBits(gcode)&1
+            add_uint64_vectors(permanent_priv, prod);
+          }          
+        });
+      } else {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, 1 << (rows-1)), [&](tbb::blocked_range<size_t> r) {
+          std::vector<uint64_t> &permanent_priv = priv_addend.local();
+          for (size_t set_idx=r.begin(); set_idx<r.end(); ++set_idx) {
+            int sign = 0;
+            uint64_t gcode = set_idx ^ (set_idx >> 1);
+            std::vector<uint64_t> prod { 1 };
+            for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++) {
+              uint64_t row = *row_idx; int8_t val = ((1<<(rows-1)) & row) != 0; 
+              for (uint64_t col_idx=(1<<(rows-1))>>1; col_idx!=0; col_idx>>=1) {
+                if (col_idx & row) {
+                  if (gcode & col_idx) val--;
+                  else val++;
+                }
+              }
+              if (val < 0) { val = -val; sign = !sign; }
+              mul_uint64_vector(prod, val);
+            }            
+            unsigned_to_signed_vector(prod);
+            if ((set_idx & 1) ^ sign) neg_uint64_vector(prod); //numberOfSetBits(gcode)&1
+            add_uint64_vectors(permanent_priv, prod);            
+          }
+        });
+      }
+    } else if (isGray) {
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, 1 << rows), [&](tbb::blocked_range<size_t> r) {
+        std::vector<uint64_t> &permanent_priv = priv_addend.local();
+        size_t set_idx=r.begin();
+        uint64_t gcode = set_idx ^ (set_idx >> 1); //nth Gray code
         std::vector<uint64_t> prod { 1 };
+        std::vector<uint8_t> rowsums; rowsums.reserve(rows);
         std::vector<uint64_t> masks; masks.reserve(rows);
         for (size_t col_idx=0; col_idx<rows; ++col_idx) {
-          uint64_t mask = set_idx & (1 << col_idx);
+          uint64_t mask = gcode & (1 << col_idx);
           if (mask) masks.push_back(mask);
         }
         for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++) {
@@ -206,25 +307,67 @@ ZOnePermanentCalculatorTask::calculate(std::vector<uint64_t> &mtx, int isGray, i
           for (std::vector<uint64_t>::iterator col_idx=masks.begin(); col_idx!=masks.end(); col_idx++) {
             if (*col_idx & row) val++;
           }
+          rowsums.push_back(val);
           mul_uint64_vector(prod, val);
         }
         unsigned_to_signed_vector(prod);
-        if (masks.size() & 1) neg_uint64_vector(prod); //numberOfSetBits(set_idx)
-        //printf("%llu %llu\n", set_idx, prod.size() ? prod[0] : 0);
-        //printf("%llu %llu\n", permanent_priv.size() ? permanent_priv[0] : 0, prod.size() ? prod[0] : 0);
+        if (set_idx & 1) neg_uint64_vector(prod); //numberOfSetBits(gcode)&1
         add_uint64_vectors(permanent_priv, prod);
-        //printf("%llu\n", permanent_priv.size() ? permanent_priv[0] : 0);
-        
-      }
-    });
+        for (set_idx++; set_idx<r.end(); ++set_idx) {
+          uint64_t gcode = set_idx ^ (set_idx >> 1); //nth Gray code
+          std::vector<uint64_t> prod { 1 };
+          uint64_t mask = set_idx & (~set_idx + 1);
+          std::vector<uint8_t>::iterator rowsumidx = rowsums.begin();
+          if (mask & gcode) {
+            for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++,rowsumidx++) {
+              mul_uint64_vector(prod, *rowsumidx+=((mask & *row_idx) != 0));
+            }
+          } else {
+            for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++,rowsumidx++) {
+              mul_uint64_vector(prod, *rowsumidx-=((mask & *row_idx) != 0));
+            }
+          }
+          unsigned_to_signed_vector(prod);
+          if (set_idx & 1) neg_uint64_vector(prod); //numberOfSetBits(gcode)&1
+          add_uint64_vectors(permanent_priv, prod);
+        }
+      });
+    } else {
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, 1 << rows), [&](tbb::blocked_range<size_t> r) {
+        std::vector<uint64_t> &permanent_priv = priv_addend.local();
+        for (size_t set_idx=r.begin(); set_idx<r.end(); ++set_idx) {
+          std::vector<uint64_t> prod { 1 };
+          std::vector<uint64_t> masks; masks.reserve(rows);
+          for (size_t col_idx=0; col_idx<rows; ++col_idx) {
+            uint64_t mask = set_idx & (1 << col_idx);
+            if (mask) masks.push_back(mask);
+          }
+          for (std::vector<uint64_t>::iterator row_idx=mtx.begin(); row_idx!=mtx.end(); row_idx++) {
+            uint8_t val = 0; uint64_t row = *row_idx;
+            for (std::vector<uint64_t>::iterator col_idx=masks.begin(); col_idx!=masks.end(); col_idx++) {
+              if (*col_idx & row) val++;
+            }
+            mul_uint64_vector(prod, val);
+          }
+          unsigned_to_signed_vector(prod);
+          if (masks.size() & 1) neg_uint64_vector(prod); //numberOfSetBits(set_idx)
+          //printf("%llu %llu\n", set_idx, prod.size() ? prod[0] : 0);
+          //printf("%llu %llu\n", permanent_priv.size() ? permanent_priv[0] : 0, prod.size() ? prod[0] : 0);
+          add_uint64_vectors(permanent_priv, prod);
+          //printf("%llu\n", permanent_priv.size() ? permanent_priv[0] : 0);
+          
+        }
+      });
+    }
     
     // sum up partial permanents
     std::vector<uint64_t> permanent;
 
     priv_addend.combine_each([&](std::vector<uint64_t> &a) {
         add_uint64_vectors(permanent, a);
-    });
-    if (rows & 1) neg_uint64_vector(permanent);
+    });    
+    if (useGlynn) shr_vector(permanent, rows-1);
+    else if (rows & 1) neg_uint64_vector(permanent);
 
     return permanent;
 
