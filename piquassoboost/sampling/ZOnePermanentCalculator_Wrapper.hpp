@@ -171,16 +171,16 @@ ZOnePermanentCalculator_Wrapper_calculate(ZOnePermanentCalculator_wrapper *self,
 {
 
     // The tuple of expected keywords
-    static char *kwlist[] = {(char*)"matrix", (char*)"gray", (char*)"rows", NULL};
+    static char *kwlist[] = {(char*)"matrix", (char*)"gray", (char*)"rows", (char*)"glynn", (char*)"dual", NULL};
 
 
     // initiate variables for input arguments
     PyObject *matrix_arg = NULL;
-    int isGray = 0, isRows = 0;
+    int isGray = 0, isRows = 0, useGlynn = 0, useDual = 0;
     
     // parsing input arguments
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Opp", kwlist,
-                                     &matrix_arg, &isGray, &isRows))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Opppp", kwlist,
+                                     &matrix_arg, &isGray, &isRows, &useGlynn, &useDual))
         return Py_BuildValue("");
 
     // convert python object array to numpy C API array
@@ -197,7 +197,7 @@ ZOnePermanentCalculator_Wrapper_calculate(ZOnePermanentCalculator_wrapper *self,
     // create PIC version of the input matrices
     std::vector<uint64_t> matrix_mtx = numpybits2matrix(matrix_arg);
 
-    std::vector<uint64_t> perm = pic::ZOnePermanentCalculator().calculate(matrix_mtx, isGray, isRows);
+    std::vector<uint64_t> perm = pic::ZOnePermanentCalculator().calculate(matrix_mtx, isGray, isRows, useGlynn, useDual);
 
     // release numpy arrays
     Py_DECREF(matrix_arg);
@@ -221,15 +221,15 @@ ZOnePermanentCalculator_Wrapper_calculateDFE(ZOnePermanentCalculator_wrapper *se
 {
 
     // The tuple of expected keywords
-    static char *kwlist[] = {(char*)"matrix", (char*)"sim", (char*)"gray", (char*)"rows", NULL};
+    static char *kwlist[] = {(char*)"matrix", (char*)"sim", (char*)"gray", (char*)"rows", (char*)"glynn", (char*)"dual", NULL};
 
 
     // initiate variables for input arguments
     PyObject *matrix_arg = NULL;
-    int isSim = 0, isGray = 0, isRows = 0;
+    int isSim = 0, isGray = 0, isRows = 0, useGlynn = 0, useDual = 0;
     // parsing input arguments
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Oppp", kwlist,
-                                     &matrix_arg, &isSim, &isGray, &isRows))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Oppppp", kwlist,
+                                     &matrix_arg, &isSim, &isGray, &isRows, &useGlynn, &useDual))
         return Py_BuildValue("");
 
     // convert python object array to numpy C API array
@@ -250,7 +250,7 @@ ZOnePermanentCalculator_Wrapper_calculateDFE(ZOnePermanentCalculator_wrapper *se
     initialize_ZOne_DFE();
 
     std::vector<uint64_t> perm(512);
-    pic::ZOnePermanentCalculatorDFE(matrix_mtx, perm, isSim, isGray, isRows);
+    pic::ZOnePermanentCalculatorDFE(matrix_mtx, perm, isSim, isGray, isRows, useGlynn, useDual);
 
 
     // unload DFE
