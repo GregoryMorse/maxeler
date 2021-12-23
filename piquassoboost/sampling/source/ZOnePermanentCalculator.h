@@ -46,7 +46,7 @@ ZOnePermanentCalculator();
 @param mtx The effective scattering matrix of a boson sampling instance
 @return Returns with the calculated permanent
 */
-std::vector<uint64_t> calculate(std::vector<uint64_t> &mtx, int isGray, int isRows);
+std::vector<uint64_t> calculate(std::vector<uint64_t> &mtx, int isGray, int isRows, int useGlynn, int useDual);
 
 
 }; //ZOnePermanentCalculator
@@ -85,7 +85,7 @@ ZOnePermanentCalculatorTask();
 @param mtx The effective scattering matrix of a boson sampling instance
 @return Returns with the calculated permanent
 */
-std::vector<uint64_t> calculate(std::vector<uint64_t> &mtx, int isGray, int isRows);
+std::vector<uint64_t> calculate(std::vector<uint64_t> &mtx, int isGray, int isRows, int useGlynn, int useDual);
 
 
 
