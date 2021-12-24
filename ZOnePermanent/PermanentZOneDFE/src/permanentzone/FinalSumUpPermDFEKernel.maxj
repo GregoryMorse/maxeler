@@ -13,7 +13,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 
 
 
-public class FinalSumUpPermDFEKernel extends Kernel {
+public class SumUpPermDFEKernel extends Kernel {
 
   static int bitlength(long i)
   {
@@ -21,25 +21,43 @@ public class FinalSumUpPermDFEKernel extends Kernel {
     while ((i >>= 1) != 0) r++;
     return r+1;
   }
-	public FinalSumUpPermDFEKernel(final KernelParameters parameters, int rows) {
+	public SumUpPermDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean dual) {
 		super(parameters);
-    int rowbits = bitlength(rows-1);
-    DFEType MaxPartialSum = dfeInt(rowbits*rows+rows-2+1);
-    //DFEType MaxTotalSum = dfeUInt(296); //log2 n!/kernels math.factorial(64).bit_length()==296
-    DFEType MaxTotalSum = dfeUInt(3*2*64);
-    
+    DFEType UIntType = dfeUInt(64);
+    int colbits = bitlength(cols-1);
+    DFEType MaxPartialProd = dfeInt(colbits*rows+rows-2+1);
+    DFEType MaxPartialSubProd = dfeInt((colbits*rows+rows-2+1)<<1);
+    DFEType MaxPartialSum = dfeInt(colbits*cols+cols-2+1);
+
 		// tick count
-		DFEVar tickCount = control.count.simpleCounter(3, 4);
-		DFEVar InputCount = control.count.simpleCounter(2, 2);
+		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
 
-		DFEVar sum = io.input( "partialSum", MaxPartialSum, InputCount===0);
+    DFEVar colProdVal;
 
-		DFEVar sumCarried = MaxPartialSum.newInstance(this);
+		DFEVar colProdVal0 = io.input( "colProd0", MaxPartialProd);
+		DFEVar colProdVal1 = io.input( "colProd1", MaxPartialProd);
+    if (!dual) {
+		  DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
+		  DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
+      if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+      else colProdVal = (colProdVal0+colProdVal1)+(colProdVal2+colProdVal3);
+    } else {
+      if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+      else colProdVal = colProdVal0+colProdVal1;
+    }
 
-		sum = tickCount < 2 ? sum : sumCarried + sum;
+		// sum up partial permanents
+		DFEVar partCarried = MaxPartialSum.newInstance(this);
 
-		sumCarried <== stream.offset( sum, -2 );
-		io.output("res", sum.cast(MaxTotalSum), MaxTotalSum, tickCount === 3 );
+		DFEVar realPart = tickCount < 2 ? colProdVal : colProdVal + partCarried;
+		
+		partCarried <== stream.offset( realPart, -2 );
+		
+		DFEVar partialPerm = MaxPartialSum.newInstance(this);
+		partialPerm = realPart;
+
+		io.output("partialSum", partialPerm, MaxPartialSum, tickCount >= (ticksMax-2) );
 
 	}
 
