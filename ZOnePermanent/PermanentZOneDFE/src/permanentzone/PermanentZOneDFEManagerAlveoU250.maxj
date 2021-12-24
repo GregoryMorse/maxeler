@@ -72,7 +72,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
     int offset = 0;
     for (int i = 0; i < numkernels; i++) {
-		  colSumKernels[i] = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_" + i), divide_rows ? kernrows[i] : rows, cols, use_gray, divide_rows, i==0 || !divide_rows, offset, glynn, dual));
+		  colSumKernels[i] = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_" + i), divide_rows ? kernrows[i] : rows, cols, use_gray, divide_rows, i==0 || dual && isSim && i==(numkernels * numarrays / 2) || !divide_rows, offset, glynn, dual));
       offset += kernrows[i];
     }
     
@@ -94,7 +94,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
     if (dual) {
       KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), divide_rows ? dim/(numkernels*numarrays) : rows, cols, divide_rows, isSim));
       int singlekerns = numkernels * numarrays / 2;
-      for (int i = 0; i < singlekerns; i++) 
+      for (int i = 0; i < singlekerns; i++)
 		    ProdColsKernel.getInput("colProd" + i) <== colProds[i];
       SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
       if (!isSim) {
@@ -145,7 +145,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
 		manager.setDefaultStreamClockFrequency(180);
 
 
-		manager.createSlicInterface(PermanentZOneDFEManager.interfaceDefault(manager.numkernels, params.use_gray(), params.divide_rows(), manager.rows, manager.kernrows, params.dual(), params.isSim()));
+		manager.createSlicInterface(PermanentZOneDFEManager.interfaceDefault(manager.numkernels, manager.numarrays, params.use_gray(), params.divide_rows(), manager.rows, manager.kernrows, params.dual(), params.isSim()));
 		//manager.createSlicInterface(PermanentZOneDFEManager.interfaceConvertInput("convertInput"));
 
 		manager.addMaxFileConstant("MTXSIZE", manager.dim);
