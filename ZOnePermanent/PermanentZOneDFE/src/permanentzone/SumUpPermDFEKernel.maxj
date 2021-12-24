@@ -21,26 +21,42 @@ public class SumUpPermDFEKernel extends Kernel {
     while ((i >>= 1) != 0) r++;
     return r+1;
   }
-	public SumUpPermDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows) {
+  static DFEVar signextend(DFEVar var, DFEType t)
+  {
+    int size = var.getType().getTotalBits();
+    int bits = t.getTotalBits();
+    DFEVar sign = var[size-1];
+    for (int i = size; i != bits; i++) var = sign.cat(var);
+    return var.cast(t);
+  }
+  
+	public SumUpPermDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean dual) {
 		super(parameters);
     DFEType UIntType = dfeUInt(64);
-    int colbits = bitlength(cols);
-    DFEType MaxPartialProd = dfeInt(colbits*rows+rows-2+1);
-    DFEType MaxPartialSubProd = dfeInt((colbits*rows+rows-2+1)<<1);
-    DFEType MaxPartialSum = dfeInt(colbits*cols+cols-2+1);
+    int colbits = bitlength(cols-1);
+    int inpbits = dual && !divide_rows ? colbits*rows+2+1 : colbits*rows+1;
+    DFEType MaxPartialProd = dfeInt(inpbits);
+    DFEType MaxPartialSubProd = dfeInt(divide_rows ? (inpbits-1)*2+1 : inpbits+1);
+    DFEType MaxPartialOuterProd = dfeInt(divide_rows ? (inpbits-1)*2*2+1 : inpbits+2);
+    DFEType MaxPartialSum = dfeInt(colbits*cols+colbits-1+1);
 
 		// tick count
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
 		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
 
+    DFEVar colProdVal;
 
 		DFEVar colProdVal0 = io.input( "colProd0", MaxPartialProd);
 		DFEVar colProdVal1 = io.input( "colProd1", MaxPartialProd);
-		DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
-		DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
-    DFEVar colProdVal;
-    if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
-    else colProdVal = (colProdVal0+colProdVal1)+(colProdVal2+colProdVal3);
+    if (!dual) {
+		  DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
+		  DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
+      if (divide_rows) colProdVal = ((colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)).cast(MaxPartialSum);
+      else colProdVal = ((colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)).cast(MaxPartialSum);
+    } else {
+      if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+      else colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+    }
 
 		// sum up partial permanents
 		DFEVar partCarried = MaxPartialSum.newInstance(this);
