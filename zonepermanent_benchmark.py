@@ -106,9 +106,9 @@ permfuncs = [
   #permanent, permanent_ryser, permanent_ryser_gray, permanent_glynn, permanent_glynn_gray,
   calculate, calculateGray, #calculateRows, calculateRowsGray,
   calculateGlynn, calculateGlynnGray] + ([] if not hasSim else [
-  #calculateDFE, calculateDFEGray, calculateDFERows, calculateDFERowsGray,
+  calculateDFE, calculateDFEGray, calculateDFERows, calculateDFERowsGray,
   #calculateDFEGlynn, calculateDFEGlynnGray,
-  #calculateDFEDual, calculateDFEGrayDual, calculateDFERowsDual, calculateDFERowsGrayDual,
+  calculateDFEDual, #calculateDFEGrayDual, calculateDFERowsDual, calculateDFERowsGrayDual,
   #calculateDFEGlynnDual, calculateDFEGlynnGrayDual,
   ]) + ([] if not hasDFE else [
   ])
@@ -116,19 +116,20 @@ permfuncs = [
 #empirical validation of correctness
 def validate_permanent():
   import math
-  nmax = 26
+  nmax = 15
   alloneresult = list(math.factorial(n) for n in range(0, nmax))
   for n in range(nmax):
     Adiag = [[1 if i == j or i < 3 and j < 3 else 0 for j in range(n)] for i in range(n)]
     A = [[1 for _ in range(n)] for _ in range(n)]
     for func in permfuncs:
+      print(func.__name__, n)
       res = func(A)
       assert res == alloneresult[n], (func.__name__, n, res, alloneresult[n])
       res = func(Adiag)
       assert res == alloneresult[min(3, n)], (func.__name__, n, res, alloneresult[min(3, n)]) 
 def timing_permanent():
   import timeit
-  nmax = 26
+  nmax = 15
   xaxis = list(range(nmax))
   results = [[] for _ in permfuncs]
   for n in xaxis:
