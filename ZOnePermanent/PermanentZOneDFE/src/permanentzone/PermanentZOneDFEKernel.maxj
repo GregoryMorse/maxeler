@@ -30,12 +30,12 @@ public class PermanentZOneDFEKernel extends Kernel {
   }
 
 
-	public PermanentZOneDFEKernel(final KernelParameters parameters, int rows, int cols, boolean use_gray, boolean divide_rows, boolean implementsign, int rowoffset) {
+	public PermanentZOneDFEKernel(final KernelParameters parameters, int rows, int cols, boolean use_gray, boolean divide_rows, boolean implementsign, int rowoffset, boolean glynn, boolean dual) {
 		super(parameters);
     //if (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE)
 		DFEType UIntType          = dfeUInt(64);
-    int rowbits = bitlength(rows);
-    int colbits = bitlength(cols);
+    int rowbits = bitlength(rows-1);
+    int colbits = bitlength(cols-1);
     DFEType MaxRowSum = dfeUInt(rowbits);
     DFEType MaxColSum = dfeUInt(colbits); //e.g. log2 cols==log2 64==((1 << 6)-1).bit_length()==6
     //DFEType MaxRowProd = dfeUInt(colbits*rows);
@@ -74,7 +74,7 @@ public class PermanentZOneDFEKernel extends Kernel {
         rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
         oldrowsums[row_idx] <== stream.offset(rowsums[row_idx], -2);
       }
-      debug.simPrintf("%X %X %X %X %X\n", tickCount, gcodeidx, gcode, isOn.cast(UIntType), rowsums[0]);
+      //debug.simPrintf("%X %X %X %X %X\n", tickCount, gcodeidx, gcode, isOn.cast(UIntType), rowsums[0]);
     } else {
       DFEVar[] bits = new DFEVar[cols];
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
@@ -121,11 +121,15 @@ public class PermanentZOneDFEKernel extends Kernel {
       DFEVar sign = constant.var(false);
       for (int col_idx=0; col_idx<cols; ++col_idx) {
           sign = sign ^ gcode.get(col_idx).cast(dfeBool());
-      }    
-      signprod = (sign === 1) ? -signprod : signprod; //numberOfSetBits(set_idx)
+      }
+      if (dual) {
+        DFEVar canSign = io.scalarInput("canSign", dfeUInt(8));
+        signprod = ((sign === 1) & (canSign !== 0)) ? -signprod : signprod; //numberOfSetBits(set_idx)
+      } else signprod = (sign === 1) ? -signprod : signprod; //numberOfSetBits(set_idx)
     }
     //debug.simPrintf("%d %d %d %d %d %d\n", rowsums[0], rowsums[1], rowsums[2], sign, signprod, gcode);
     //debug.simPrintf("%d\n", signprod.getType().getTotalBits());
+    //io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
     io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
 
 	}
