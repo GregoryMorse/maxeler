@@ -29,7 +29,7 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
     return f;
   }
 
-	static EngineInterface interfaceDefault (int numkernels, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean dual, boolean isSim) { //EngineParameters params
+	static EngineInterface interfaceDefault (int numkernels, int numarrays, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean dual, boolean isSim) { //EngineParameters params
     //if (params.getTarget() != EngineParameters.Target.DFE)
     
 		EngineInterface ei = new EngineInterface();
@@ -42,16 +42,17 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
    
     if (dual) {
- 		  InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
-		  if (!isSim) {
-        ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
-		    ei.setTicks("SumUpPermDFEKernel", isLocal !== 0 ? ticksmax : 0);
-		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal !== 0 ? 4 : 0);
-      }
-        
-      for (int i = 0; i < numkernels; i++) {
-   		  if (i == 0) ei.setScalar("PermanentZOneDFEKernel_" + i, "canSign", isLocal);
-        else ei.setScalar("PermanentZOneDFEKernel_" + i, "canSign", 0);
+      if (!isSim || divide_rows) { 
+   		  InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
+  		  if (!isSim) {
+          ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
+  		    ei.setTicks("SumUpPermDFEKernel", isLocal !== 0 ? ticksmax : 0);
+  		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal !== 0 ? 4 : 0);
+        }
+        if (divide_rows) {
+          ei.setScalar("PermanentZOneDFEKernel_" + 0, "canSign", isLocal);
+          if (isSim) ei.setScalar("PermanentZOneDFEKernel_" + (numkernels * numarrays / 2), "canSign", 0);
+        }
       }
     }
     
