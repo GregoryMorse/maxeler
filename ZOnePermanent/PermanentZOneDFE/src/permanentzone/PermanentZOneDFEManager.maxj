@@ -1,137 +1,111 @@
 package permanentzone;
 
-import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-import com.maxeler.maxcompiler.v2.utils.Bits;
+//import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.Demux;
+//import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
+
 //import com.maxeler.maxcompiler.v2.build.EngineParameters;
 
-public class PermanentZOneDFEKernel extends Kernel {
+import java.math.BigInteger;
 
-  static int numberOfSetBits(long i)
-  {
-      i = i - ((i >> 1) & 0x5555555555555555L);
-      i = (i & 0x3333333333333333L) + ((i >> 2) & 0x3333333333333333L);
-      return (int)((((i + (i >> 4)) & 0xF0F0F0F0F0F0F0FL) * 0x101010101010101L) >> 56);
+
+
+public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
+
+  int singlemultiplier = 5;
+  int dualmultiplier = 4;
+ 
+  static BigInteger factorial(int n) {
+    BigInteger f = BigInteger.ONE;
+    for (int i = n; i > 1; i--) f = f.multiply(BigInteger.valueOf(i));
+    return f;
   }
 
-  static int bitlength(long i)
-  {
-    int r = 0;
-    while ((i >>= 1) != 0) r++;
-    return r+1;
-  }
+	static EngineInterface interfaceDefault (int numkernels, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean dual, boolean isSim) { //EngineParameters params
+    //if (params.getTarget() != EngineParameters.Target.DFE)
+    
+		EngineInterface ei = new EngineInterface();
 
+    //factorial(dim).bitLength();
 
-	public PermanentZOneDFEKernel(final KernelParameters parameters, int rows, int cols, boolean use_gray, boolean divide_rows, boolean implementsign, int rowoffset, boolean glynn, boolean dual) {
-		super(parameters);
-    //if (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE)
-		DFEType UIntType          = dfeUInt(64);
-    int rowbits = bitlength(rows-1);
-    int colbits = bitlength(cols-1);
-    DFEType MaxRowSum = dfeUInt(rowbits);
-    DFEType MaxColSum = dfeUInt(colbits); //e.g. log2 cols==log2 64==((1 << 6)-1).bit_length()==6
-    //DFEType MaxRowProd = dfeUInt(colbits*rows);
-    //DFEType MaxRowProdSigned = dfeInt(colbits*rows+1);
-    DFEType MaxPartialSum = dfeInt(colbits*rows+rows-2+1); //log2 gcodeendidx-gcodeidx 2^(n-2)
-		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
-    DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
-		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
-    DFEVar gcodeidx = tickCount+initialCount;
-    DFEVar gcode;
-    Memory<DFEVar> mappedInputMtx = mem.alloc(UIntType, rows);
-		mappedInputMtx.mapToCPU("mappedInputMtx_Row");
-    DFEVar[] rowsums = new DFEVar[rows];
-    int bitsize = 1;
-    if (use_gray) {
-      //https://en.wikipedia.org/wiki/Gray_code
-      gcodeidx = (gcodeidx.get(0)!==0 ? (divide_rows ? ticksMax : ticksMax<<2) : constant.zero(UIntType)) | (gcodeidx >> 1);
-      gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
-      gcode = ~((divide_rows ? ticksMax : ticksMax<<2)-1) | gcode;
-      //https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightParallel
-      gcodeidx &= (~gcodeidx + 1); //isolate the lowest 1 bit
-      //off is on and vice-versa, since to have early termination, we must go through the Gray codes in bit reversed order
-      DFEVar isOn = (gcode & gcodeidx) !== 0;
-      //DFEVar isOn = ((gcode & gcodeidx) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
-      bitsize = colbits;
-      DFEVar[] oldrowsums = new DFEVar[rows];
-      for (int row_idx=0; row_idx<rows; ++row_idx) {
-        DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowSum, new Bits(rowbits, row_idx))).cast(UIntType);
-        //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
-        DFEVar inits;
-        if (divide_rows) inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodeidx>>1)) !== 0).cast(MaxColSum));
-        else inits = ((constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
-        DFEVar colval = ((fullrow & gcodeidx) !== 0).cast(MaxColSum);
-        //DFEVar adjust = control.mux(isOn, colval,  ~colval+1, constant.zero(MaxColSum), constant.zero(MaxColSum));
-        oldrowsums[row_idx] = MaxColSum.newInstance(this);
-        rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
-        oldrowsums[row_idx] <== stream.offset(rowsums[row_idx], -2);
+		InterfaceParam ticksmax = ei.addParam("ticksMax", CPUTypes.UINT64);
+    for (int i = 0; i < numkernels; i++) 
+		  ei.setScalar("PermanentZOneDFEKernel_" + i, "ticksMax", ticksmax);
+		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
+   
+    if (dual) {
+ 		  InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
+		  if (!isSim) {
+        ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
+		    ei.setTicks("SumUpPermDFEKernel", isLocal !== 0 ? ticksmax : 0);
+		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal !== 0 ? 4 : 0);
       }
-      //debug.simPrintf("%X %X %X %X %X\n", tickCount, gcodeidx, gcode, isOn.cast(UIntType), rowsums[0]);
+        
+      for (int i = 0; i < numkernels; i++) {
+   		  if (i == 0) ei.setScalar("PermanentZOneDFEKernel_" + i, "canSign", isLocal);
+        else ei.setScalar("PermanentZOneDFEKernel_" + i, "canSign", 0);
+      }
+    }
+    
+		//InterfaceParam initialCount = ei.addParam("InitialCount", CPUTypes.UINT64);
+    if (divide_rows) {      
+      for (int i = 0; i < numkernels; i++)
+        ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", 0);
     } else {
-      DFEVar[] bits = new DFEVar[cols];
-      gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
-      gcode = ~((divide_rows ? ticksMax : ticksMax<<2)-1) | gcode;
-      //debug.simPrintf("%d %d %d\n", ticksMax, initialCount, tickCount);
-      for (int col_idx=0; col_idx<cols; ++col_idx) {
-          bits[col_idx] = gcode.get(col_idx).cast(dfeBool());
-      }
-      bitsize = 1;
-      for (int row_idx=0; row_idx<rows; ++row_idx) {
-        int sumsleft = cols;
-        DFEVar[] colsums = new DFEVar[sumsleft];
-        if (sumsleft != 0) {
-          DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowSum, new Bits(rowbits, row_idx))).cast(UIntType);
-          for (int col_idx = 0; col_idx < cols; col_idx++) {
-            bits[col_idx] = optimization.pipeline(bits[col_idx]);
-            colsums[col_idx] = bits[col_idx] & fullrow.get(col_idx).cast(dfeBool());
-          }
+      InterfaceParam startTicks = ticksmax;
+      for (int i = 0; i < numkernels; i++) {
+        if (i == 0) ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", 0);
+        else {
+          ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", startTicks);
+          startTicks += ticksmax;
         }
-        bitsize = 1;
-        while (sumsleft > 1) { //sums processed in binary tree
-          bitsize++;
-          for (int col_idx = 0; col_idx < sumsleft / 2; col_idx++) {
-            colsums[col_idx] = colsums[col_idx*2].cast(dfeUInt(bitsize)) + colsums[col_idx*2+1].cast(dfeUInt(bitsize));
-          }
-          if ((sumsleft & 1) != 0) { colsums[sumsleft/2] = colsums[sumsleft-1].cast(dfeUInt(bitsize)); sumsleft = sumsleft / 2 + 1; }
-          else sumsleft /= 2;
-        }
-        rowsums[row_idx] = sumsleft == 1 ? colsums[0] : constant.zero(dfeUInt(bitsize));
       }
-    }
-    int prodleft = rows;
-    while (prodleft > 1) { //products processed in binary tree
-      bitsize <<= 1;
-      for (int row_idx = 0; row_idx < prodleft / 2; row_idx++) {
-        rowsums[row_idx] = rowsums[row_idx*2].cast(dfeUInt(bitsize)) * rowsums[row_idx*2+1].cast(dfeUInt(bitsize));
-      }
-      if ((prodleft & 1) != 0) { rowsums[prodleft/2] = rowsums[prodleft-1].cast(dfeUInt(bitsize)); prodleft = prodleft / 2 + 1; }
-      else prodleft /= 2;
-    }
-    DFEVar prod = prodleft == 1 ? rowsums[0] : constant.var(dfeUInt(bitsize), new Bits(1, 1));
-    DFEVar signprod = prod.cast(MaxPartialSum);
-    if (implementsign) {
-      DFEVar sign = constant.var(false);
-      for (int col_idx=0; col_idx<cols; ++col_idx) {
-          sign = sign ^ gcode.get(col_idx).cast(dfeBool());
-      }
-      if (dual) {
-        DFEVar canSign = io.scalarInput("canSign", dfeUInt(8));
-        signprod = ((sign === 1) & (canSign !== 0)) ? -signprod : signprod; //numberOfSetBits(set_idx)
-      } else signprod = (sign === 1) ? -signprod : signprod; //numberOfSetBits(set_idx)
-    }
-    //debug.simPrintf("%d %d %d %d %d %d\n", rowsums[0], rowsums[1], rowsums[2], sign, signprod, gcode);
-    //debug.simPrintf("%d\n", signprod.getType().getTotalBits());
-    //io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
-    io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
+    } 
 
+		// setting mapped memories
+		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.UINT64, "unsigned integer array containing the input matrix");
+    if (!divide_rows) {
+      for (int i = 0; i < numkernels; i++) {
+		    for (int rowIdx=0; rowIdx<rows; rowIdx++) 
+			    ei.setMem( "PermanentZOneDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+		  }
+    } else {
+      int offset = 0;
+      for (int i = 0; i < numkernels; i++) {
+        for (int rowIdx = 0; rowIdx<kernrows[i]; rowIdx++)
+          ei.setMem( "PermanentZOneDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[offset+rowIdx]);
+        offset += kernrows[i];       
+      }
+    }
+
+		// stream to CPU containing the result
+		ei.setStream("res", CPUTypes.UINT64, CPUTypes.UINT64.sizeInBytes()*6); // unsigned integer representation of the resulted permanent, bytes must be multiple of 16
+
+		// set the ticks of the computing kernel
+    for (int i = 0; i < numkernels; i++)
+		  ei.setTicks("PermanentZOneDFEKernel_" + i, ticksmax);
+    if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
+    if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
+    if (!dual || isSim) { 
+      ei.setTicks("SumUpPermDFEKernel", ticksmax);
+		  ei.setTicks("FinalSumUpPermDFEKernel", 4);
+    }
+
+		ei.ignoreAll(EngineInterface.Direction.IN_OUT);
+		return ei ;
 	}
 
 }
+
+
+
+
+
