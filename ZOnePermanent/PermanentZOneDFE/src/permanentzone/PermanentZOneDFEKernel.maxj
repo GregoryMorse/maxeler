@@ -39,36 +39,40 @@ public class PermanentZOneDFEKernel extends Kernel {
     DFEType MaxRowSum = dfeUInt(rowbits);
     DFEType MaxColSum = dfeUInt(colbits); //e.g. log2 cols==log2 64==((1 << 6)-1).bit_length()==6
     //DFEType MaxRowProd = dfeUInt(colbits*rows);
-    //DFEType MaxRowProdSigned = dfeInt(colbits*rows+1);
-    DFEType MaxPartialSum = dfeInt(colbits*rows+rows-2+1); //log2 gcodeendidx-gcodeidx 2^(n-2)
+    DFEType MaxRowProdSigned = dfeInt(colbits*rows+1);
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
     DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
 		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
     DFEVar gcodeidx = tickCount+initialCount;
     DFEVar gcode;
+    int kernpow2 = dual ? 3 : 2;
     Memory<DFEVar> mappedInputMtx = mem.alloc(UIntType, rows);
 		mappedInputMtx.mapToCPU("mappedInputMtx_Row");
     DFEVar[] rowsums = new DFEVar[rows];
     int bitsize = 1;
     if (use_gray) {
       //https://en.wikipedia.org/wiki/Gray_code
-      gcodeidx = (gcodeidx.get(0)!==0 ? (divide_rows ? ticksMax : ticksMax<<2) : constant.zero(UIntType)) | (gcodeidx >> 1);
+      gcodeidx = (gcodeidx.get(0)!==0 ? (divide_rows ? ticksMax : ticksMax<<kernpow2) : constant.zero(UIntType)) | (gcodeidx >> 1);
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
-      gcode = ~((divide_rows ? ticksMax : ticksMax<<2)-1) | gcode;
+      gcode = ~((divide_rows ? ticksMax : ticksMax<<kernpow2)-1) | gcode;
       //https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightParallel
-      gcodeidx &= (~gcodeidx + 1); //isolate the lowest 1 bit
+      DFEVar gcodelowbit = gcodeidx & (~gcodeidx + 1); //isolate the lowest 1 bit
       //off is on and vice-versa, since to have early termination, we must go through the Gray codes in bit reversed order
-      DFEVar isOn = (gcode & gcodeidx) !== 0;
-      //DFEVar isOn = ((gcode & gcodeidx) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
+      DFEVar isOn = (gcode & gcodelowbit) !== 0;
+      //DFEVar isOn = ((gcode & gcodelowbit) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
       bitsize = colbits;
       DFEVar[] oldrowsums = new DFEVar[rows];
       for (int row_idx=0; row_idx<rows; ++row_idx) {
         DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowSum, new Bits(rowbits, row_idx))).cast(UIntType);
         //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
         DFEVar inits;
-        if (divide_rows) inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodeidx>>1)) !== 0).cast(MaxColSum));
-        else inits = ((constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
-        DFEVar colval = ((fullrow & gcodeidx) !== 0).cast(MaxColSum);
+        if (divide_rows) inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
+        else {
+          inits = (constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum);
+          if (dual) inits = inits + ((fullrow & gcode & (ticksMax << 2)) !== 0).cast(MaxColSum);
+          inits = inits + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
+        }          
+        DFEVar colval = ((fullrow & gcodelowbit) !== 0).cast(MaxColSum);
         //DFEVar adjust = control.mux(isOn, colval,  ~colval+1, constant.zero(MaxColSum), constant.zero(MaxColSum));
         oldrowsums[row_idx] = MaxColSum.newInstance(this);
         rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
@@ -78,7 +82,7 @@ public class PermanentZOneDFEKernel extends Kernel {
     } else {
       DFEVar[] bits = new DFEVar[cols];
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
-      gcode = ~((divide_rows ? ticksMax : ticksMax<<2)-1) | gcode;
+      gcode = ~((divide_rows ? ticksMax : ticksMax<<kernpow2)-1) | gcode;
       //debug.simPrintf("%d %d %d\n", ticksMax, initialCount, tickCount);
       for (int col_idx=0; col_idx<cols; ++col_idx) {
           bits[col_idx] = gcode.get(col_idx).cast(dfeBool());
@@ -116,21 +120,19 @@ public class PermanentZOneDFEKernel extends Kernel {
       else prodleft /= 2;
     }
     DFEVar prod = prodleft == 1 ? rowsums[0] : constant.var(dfeUInt(bitsize), new Bits(1, 1));
-    DFEVar signprod = prod.cast(MaxPartialSum);
+    DFEVar signprod = prod.cast(MaxRowProdSigned);
     if (implementsign) {
-      DFEVar sign = constant.var(false);
-      for (int col_idx=0; col_idx<cols; ++col_idx) {
-          sign = sign ^ gcode.get(col_idx).cast(dfeBool());
-      }
-      if (dual) {
+      DFEVar sign = gcodeidx[0]; //constant.var(false);
+      //for (int col_idx=0; col_idx<cols; ++col_idx) {
+      //    sign = sign ^ gcode.get(col_idx).cast(dfeBool());
+      //}
+      if (dual && divide_rows) {
         DFEVar canSign = io.scalarInput("canSign", dfeUInt(8));
         signprod = ((sign === 1) & (canSign !== 0)) ? -signprod : signprod; //numberOfSetBits(set_idx)
       } else signprod = (sign === 1) ? -signprod : signprod; //numberOfSetBits(set_idx)
     }
     //debug.simPrintf("%d %d %d %d %d %d\n", rowsums[0], rowsums[1], rowsums[2], sign, signprod, gcode);
-    //debug.simPrintf("%d\n", signprod.getType().getTotalBits());
-    //io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
-    io.output("colProd", signprod.cast(MaxPartialSum), MaxPartialSum );
+    io.output("colProd", signprod, MaxRowProdSigned );
 
 	}
 
