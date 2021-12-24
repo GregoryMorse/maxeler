@@ -1,0 +1,61 @@
+package permanentzone;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+
+
+
+public class ProdColsDFEKernel extends Kernel {
+
+  static int bitlength(long i)
+  {
+    int r = 0;
+    while ((i >>= 1) != 0) r++;
+    return r+1;
+  }
+
+	public ProdColsDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean isSim) {
+		super(parameters);
+
+		//DFEType UIntType          = dfeUInt(64);  
+    int colbits = bitlength(cols-1);
+    DFEType MaxPartialProd = dfeInt(colbits*rows+rows-2+1);
+    DFEType MaxPartialSubProd = dfeInt((colbits*rows+rows-2+1)<<1);
+    DFEType MaxPartialSum = dfeInt(colbits*cols+cols-2+1);
+
+		// tick count
+		//DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+		//DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
+
+
+		DFEVar colProdVal0 = io.input( "colProd0", MaxPartialProd);
+		DFEVar colProdVal1 = io.input( "colProd1", MaxPartialProd);
+		DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
+		DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
+    DFEVar colProdVal;
+    if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+    else colProdVal = (colProdVal0+colProdVal1)+(colProdVal2+colProdVal3);
+  
+    if (!isSim) {
+	  	// scalar input variable to control the output
+  		DFEVar localOutput = io.scalarInput("localOutput", dfeUInt(8) );
+	    // controlled maxfile-local output 
+	    io.output("colProd", colProdVal, MaxPartialProd, localOutput !== 0 );
+	    // controlled inter-maxfile output 
+	    io.output("colProdRemote", colProdVal, MaxPartialProd, localOutput === 0 );
+    } else {
+	    // controlled maxfile-local output 
+	    io.output("colProd", colProdVal, MaxPartialProd);
+    }
+
+	}
+
+}
