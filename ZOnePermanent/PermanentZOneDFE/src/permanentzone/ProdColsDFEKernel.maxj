@@ -27,9 +27,9 @@ public class ProdColsDFEKernel extends Kernel {
 
 		//DFEType UIntType          = dfeUInt(64);  
     int colbits = bitlength(cols-1);
-    DFEType MaxPartialProd = dfeInt(colbits*rows+rows-2+1);
-    DFEType MaxPartialSubProd = dfeInt((colbits*rows+rows-2+1)<<1);
-    DFEType MaxPartialSum = dfeInt(colbits*cols+cols-2+1);
+    DFEType MaxPartialProd = dfeInt(colbits*rows+1);
+    DFEType MaxPartialSubProd = dfeInt(divide_rows ? colbits*rows*2+1 : colbits*rows+1+1);
+    DFEType MaxPartialSum = dfeInt(divide_rows ? colbits*rows*2*2+1 : colbits*rows+2+1);
 
 		// tick count
 		//DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
@@ -42,18 +42,18 @@ public class ProdColsDFEKernel extends Kernel {
 		DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
     DFEVar colProdVal;
     if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
-    else colProdVal = (colProdVal0+colProdVal1)+(colProdVal2+colProdVal3);
+    else colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
   
     if (!isSim) {
 	  	// scalar input variable to control the output
   		DFEVar localOutput = io.scalarInput("localOutput", dfeUInt(8) );
 	    // controlled maxfile-local output 
-	    io.output("colProd", colProdVal, MaxPartialProd, localOutput !== 0 );
+	    io.output("colProd", colProdVal, MaxPartialSum, localOutput !== 0 );
 	    // controlled inter-maxfile output 
-	    io.output("colProdRemote", colProdVal, MaxPartialProd, localOutput === 0 );
+	    io.output("colProdRemote", colProdVal, MaxPartialSum, localOutput === 0 );
     } else {
 	    // controlled maxfile-local output 
-	    io.output("colProd", colProdVal, MaxPartialProd);
+	    io.output("colProd", colProdVal, MaxPartialSum);
     }
 
 	}
