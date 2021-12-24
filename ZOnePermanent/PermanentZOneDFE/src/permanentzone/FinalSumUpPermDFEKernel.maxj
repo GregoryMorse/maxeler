@@ -23,10 +23,10 @@ public class FinalSumUpPermDFEKernel extends Kernel {
   }
 	public FinalSumUpPermDFEKernel(final KernelParameters parameters, int rows) {
 		super(parameters);
-    int rowbits = bitlength(rows);
+    int rowbits = bitlength(rows-1);
     DFEType MaxPartialSum = dfeInt(rowbits*rows+rows-2+1);
     //DFEType MaxTotalSum = dfeUInt(296); //log2 n!/kernels math.factorial(64).bit_length()==296
-    DFEType MaxTotalSum = dfeUInt(6*64);
+    DFEType MaxTotalSum = dfeUInt(3*2*64);
     
 		// tick count
 		DFEVar tickCount = control.count.simpleCounter(3, 4);
