@@ -10,7 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-
+import java.math.BigInteger;
 
 
 public class SumUpPermDFEKernel extends Kernel {
@@ -21,6 +21,10 @@ public class SumUpPermDFEKernel extends Kernel {
     while ((i >>= 1) != 0) r++;
     return r+1;
   }
+  static int ceilBitLength(long i)
+  {
+    return bitlength(i) + ((i != 0 && (i & (i-1)) == 0) ? 0 : 1);
+  }
   static DFEVar signextend(DFEVar var, DFEType t)
   {
     int size = var.getType().getTotalBits();
@@ -29,16 +33,31 @@ public class SumUpPermDFEKernel extends Kernel {
     for (int i = size; i != bits; i++) var = sign.cat(var);
     return var.cast(t);
   }
+  DFEVar addBigIntegers(DFEVar a, DFEVar b)
+  {
+    int alen = a.getType().getTotalBits(), blen = b.getType().getTotalBits();
+    int clen = alen > blen ? alen : blen;
+    int offset = 0;
+    DFEVar res = null;
+    DFEVar carry = constant.zero(dfeBool());
+    while (clen-offset >= 128) {
+      DFEVar bits = a.slice(offset, 127).cast(dfeUInt(127)).cast(dfeUInt(128)) + b.slice(offset, 127).cast(dfeUInt(127)).cast(dfeUInt(128)) + carry.cast(dfeUInt(128));
+      carry = bits[127].cast(dfeBool());
+      bits = bits.slice(0, 127).cast(dfeUInt(127));
+      res = res == null ? bits : bits.cat(res);
+      offset += 127;
+    }
+    DFEVar bits = a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + carry.cast(dfeInt(clen-offset+1));
+    return bits.cat(res).cast(dfeInt(clen+1));
+  }
   
 	public SumUpPermDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean dual) {
 		super(parameters);
     DFEType UIntType = dfeUInt(64);
-    int colbits = bitlength(cols-1);
-    int inpbits = dual && !divide_rows ? colbits*rows+2+1 : colbits*rows+1;
-    DFEType MaxPartialProd = dfeInt(inpbits);
-    DFEType MaxPartialSubProd = dfeInt(divide_rows ? (inpbits-1)*2+1 : inpbits+1);
-    DFEType MaxPartialOuterProd = dfeInt(divide_rows ? (inpbits-1)*2*2+1 : inpbits+2);
-    DFEType MaxPartialSum = dfeInt(colbits*cols+colbits-1+1);
+    DFEType MaxPartialProd = dfeInt(BigInteger.valueOf(cols).pow(rows).bitLength()+1);
+    DFEType MaxPartialSubProd = divide_rows ? dfeInt(BigInteger.valueOf(cols).pow(rows*2).bitLength()+1) : MaxPartialProd;
+    DFEType MaxPartialOuterProd = divide_rows ? dfeInt(BigInteger.valueOf(cols).pow(rows*2*2).bitLength()+1) : MaxPartialProd;
+    DFEType MaxPartialSum = dfeInt(BigInteger.valueOf(cols).pow(cols).bitLength()+1);
 
 		// tick count
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
@@ -52,10 +71,10 @@ public class SumUpPermDFEKernel extends Kernel {
 		  DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
 		  DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
       if (divide_rows) colProdVal = ((colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)).cast(MaxPartialSum);
-      else colProdVal = ((colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialOuterProd)).cast(MaxPartialSum);
+      else colProdVal = (colProdVal0 + colProdVal1) + (colProdVal2 + colProdVal3);
     } else {
       if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum);
-      else colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+      else colProdVal = colProdVal0 + colProdVal1;
     }
 
 		// sum up partial permanents
