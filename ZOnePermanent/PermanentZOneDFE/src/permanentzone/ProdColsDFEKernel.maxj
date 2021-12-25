@@ -10,8 +10,10 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-
-
+//import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
+import java.math.BigInteger;
 
 public class ProdColsDFEKernel extends Kernel {
 
@@ -21,15 +23,39 @@ public class ProdColsDFEKernel extends Kernel {
     while ((i >>= 1) != 0) r++;
     return r+1;
   }
-
+  static DFEVar signextend(DFEVar var, DFEType t)
+  {
+    int size = var.getType().getTotalBits();
+    int bits = t.getTotalBits();
+    DFEVar sign = var[size-1];
+    for (int i = size; i != bits; i++) var = sign.cat(var);
+    return var.cast(t);
+  }
+  DFEVar addBigIntegers(DFEVar a, DFEVar b)
+  {
+    int alen = a.getType().getTotalBits(), blen = b.getType().getTotalBits();
+    int clen = alen > blen ? alen : blen;
+    int offset = 0;
+    DFEVar res = null;
+    DFEVar carry = constant.zero(dfeBool());
+    while (clen-offset >= 128) {
+      DFEVar bits = a.slice(offset, 127).cast(dfeUInt(127)).cast(dfeUInt(128)) + b.slice(offset, 127).cast(dfeUInt(127)).cast(dfeUInt(128)) + carry.cast(dfeUInt(128));
+      carry = bits[127].cast(dfeBool());
+      bits = bits.slice(0, 127).cast(dfeUInt(127));
+      res = res == null ? bits : bits.cat(res);
+      offset += 127;
+    }
+    DFEVar bits = a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + carry.cast(dfeInt(clen-offset+1));
+    return bits.cat(res).cast(dfeInt(clen+1));
+  }
 	public ProdColsDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean isSim) {
 		super(parameters);
-
+    //optimization.pushRoundingMode(RoundingMode.TRUNCATE);
+    //optimization.pushFixOpMode(Optimization.bitSizeAll(), Optimization.offsetLargest(), MathOps.values());
 		//DFEType UIntType          = dfeUInt(64);  
-    int colbits = bitlength(cols-1);
-    DFEType MaxPartialProd = dfeInt(colbits*rows+1);
-    DFEType MaxPartialSubProd = dfeInt(divide_rows ? colbits*rows*2+1 : colbits*rows+1+1);
-    DFEType MaxPartialSum = dfeInt(divide_rows ? colbits*rows*2*2+1 : colbits*rows+2+1);
+    DFEType MaxPartialProd = dfeInt(BigInteger.valueOf(cols).pow(rows).bitLength()+1);
+    DFEType MaxPartialSubProd = divide_rows ? dfeInt(BigInteger.valueOf(cols).pow(rows*2).bitLength()+1) : MaxPartialProd;
+    DFEType MaxPartialSum = divide_rows ? dfeInt(BigInteger.valueOf(cols).pow(rows*4).bitLength()+1) : MaxPartialProd;
 
 		// tick count
 		//DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
@@ -42,7 +68,10 @@ public class ProdColsDFEKernel extends Kernel {
 		DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
     DFEVar colProdVal;
     if (divide_rows) colProdVal = (colProdVal0.cast(MaxPartialSubProd)*colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)*(colProdVal2.cast(MaxPartialSubProd)*colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
-    else colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+    else colProdVal = (colProdVal0 + colProdVal1) + (colProdVal2 + colProdVal3); 
+    //colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+    //colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
+    //debug.simPrintf("%X %X %X %X %X %X\n", colProdVal0, colProdVal1, colProdVal2, colProdVal3, addBigIntegers(colProdVal0, colProdVal1), colProdVal);
   
     if (!isSim) {
 	  	// scalar input variable to control the output
@@ -55,7 +84,8 @@ public class ProdColsDFEKernel extends Kernel {
 	    // controlled maxfile-local output 
 	    io.output("colProd", colProdVal, MaxPartialSum);
     }
-
+    //optimization.popFixOpMode(MathOps.values());
+    //optimization.popRoundingMode();
 	}
 
 }
