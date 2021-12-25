@@ -58,13 +58,13 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
 
     numarrays = dual && !isSim ? 2 : 1;
     numkernels = (dual ? 8 : 4) / numarrays;
-  	dim = (dual ? dualmultiplier * numkernels : singlemultiplier * numkernels); //must be multiple of kernel count
+  	dim = (dual ? dualmultiplier : singlemultiplier) * numkernels; //must be multiple of kernel count
   	rows = dim;
     cols = rows;
     kernrows = new int[numkernels];
     int tot = 0;
     for (int i = 0; i < numkernels-1; i++) {
-      kernrows[i] = dim/numkernels;
+      kernrows[i] = dim/(numkernels*numarrays);
       tot += kernrows[i];
     }
     kernrows[numkernels-1] = dim/numarrays - tot; //must be dim/numkernels
@@ -72,7 +72,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
     int offset = 0;
     for (int i = 0; i < numkernels; i++) {
-		  colSumKernels[i] = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_" + i), divide_rows ? kernrows[i] : rows, cols, use_gray, divide_rows, i==0 || dual && isSim && i==(numkernels * numarrays / 2) || !divide_rows, offset, glynn, dual));
+		  colSumKernels[i] = addKernel(new PermanentZOneDFEKernel(makeKernelParameters("PermanentZOneDFEKernel_" + i), divide_rows ? kernrows[i] : rows, cols, use_gray, divide_rows, (i==0) || dual && isSim && (i==(numkernels * numarrays / 2)) || !divide_rows, offset, glynn, dual));
       offset += kernrows[i];
     }
     
