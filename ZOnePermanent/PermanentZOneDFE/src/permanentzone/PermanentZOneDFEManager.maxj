@@ -14,21 +14,12 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 
 //import com.maxeler.maxcompiler.v2.build.EngineParameters;
 
-import java.math.BigInteger;
-
-
 
 public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 
   int singlemultiplier = 5;
-  int dualmultiplier = 4;
+  int dualmultiplier = 3;
  
-  static BigInteger factorial(int n) {
-    BigInteger f = BigInteger.ONE;
-    for (int i = n; i > 1; i--) f = f.multiply(BigInteger.valueOf(i));
-    return f;
-  }
-
 	static EngineInterface interfaceDefault (int numkernels, int numarrays, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean dual, boolean isSim) { //EngineParameters params
     //if (params.getTarget() != EngineParameters.Target.DFE)
     
