@@ -51,14 +51,19 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
     
 		//InterfaceParam initialCount = ei.addParam("InitialCount", CPUTypes.UINT64);
     if (divide_rows) {      
-      for (int i = 0; i < numkernels; i++)
+      for (int i = 0; i < numkernels; i++) {
         ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", 0);
+        if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "InitialCount", 0);
+      }
     } else {
       InterfaceParam startTicks = ticksmax;
       for (int i = 0; i < numkernels; i++) {
-        if (i == 0) ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", 0);
-        else {
+        if (i == 0) {
+          ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", 0);
+          if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "InitialCount", 0);
+        } else {
           ei.setScalar("PermanentZOneDFEKernel_" + i, "InitialCount", startTicks);
+          if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "InitialCount", startTicks);
           startTicks += ticksmax;
         }
       }
@@ -68,14 +73,18 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.UINT64, "unsigned integer array containing the input matrix");
     if (!divide_rows) {
       for (int i = 0; i < numkernels; i++) {
-		    for (int rowIdx=0; rowIdx<rows; rowIdx++) 
+		    for (int rowIdx=0; rowIdx<rows; rowIdx++) {
 			    ei.setMem( "PermanentZOneDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+          if (glynn && use_gray) ei.setMem( "InitializeColSumDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[rowIdx]);
+        }
 		  }
     } else {
       int offset = 0;
       for (int i = 0; i < numkernels; i++) {
-        for (int rowIdx = 0; rowIdx<kernrows[i]; rowIdx++)
+        for (int rowIdx = 0; rowIdx<kernrows[i]; rowIdx++) {
           ei.setMem( "PermanentZOneDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[offset+rowIdx]);
+          if (glynn && use_gray) ei.setMem( "InitializeColSumDFEKernel_" + i, "mappedInputMtx_Row", rowIdx, inputMtx[offset+rowIdx]); 
+        }
         offset += kernrows[i];       
       }
     }
@@ -84,8 +93,10 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 		ei.setStream("res", CPUTypes.UINT64, CPUTypes.UINT64.sizeInBytes()*6); // unsigned integer representation of the resulted permanent, bytes must be multiple of 16
 
 		// set the ticks of the computing kernel
-    for (int i = 0; i < numkernels; i++)
+    for (int i = 0; i < numkernels; i++) {
 		  ei.setTicks("PermanentZOneDFEKernel_" + i, ticksmax);
+      if (glynn && use_gray) ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax);
+    }
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     if (!dual || isSim) { 
