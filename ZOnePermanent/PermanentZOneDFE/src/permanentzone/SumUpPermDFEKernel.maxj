@@ -10,6 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import java.math.BigInteger;
 
 
@@ -66,7 +67,7 @@ public class SumUpPermDFEKernel extends Kernel {
     DFEVar colProdVal;
 
 		DFEVar colProdVal0 = io.input( "colProd0", MaxPartialProd);
-		DFEVar colProdVal1 = io.input( "colProd1", MaxPartialProd);
+		DFEVar colProdVal1 = dual && (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE) ? io.input( "colProd1", dfeInt(256)).slice(0, MaxPartialProd.getTotalBits()).cast(MaxPartialProd) : io.input( "colProd1", MaxPartialProd);
     if (!dual) {
 		  DFEVar colProdVal2 = io.input( "colProd2", MaxPartialProd);
 		  DFEVar colProdVal3 = io.input( "colProd3", MaxPartialProd);
