@@ -65,6 +65,7 @@ ZOnePermanentCalculator_wrapper_dealloc(ZOnePermanentCalculator_wrapper *self)
     Py_TYPE(self)->tp_free((PyObject *) self);
 
     // unload DFE
+    releive_ZOne_SIM();
     //releive_ZOne_DFE();
 }
 
@@ -203,7 +204,7 @@ ZOnePermanentCalculator_Wrapper_calculate(ZOnePermanentCalculator_wrapper *self,
     Py_DECREF(matrix_arg);
 
     //return Py_BuildValue("D", &ret);
-    return _PyLong_FromByteArray((const unsigned char*)perm.data(), perm.size() * 8, 1, 0);
+    return _PyLong_FromByteArray((const unsigned char*)perm.data(), perm.size() * sizeof(uint64_t), 1, 0);
 }
 
 
@@ -247,20 +248,21 @@ ZOnePermanentCalculator_Wrapper_calculateDFE(ZOnePermanentCalculator_wrapper *se
     std::vector<uint64_t> matrix_mtx = numpybits2matrix(matrix_arg);
 
     // initialize DFE array
-    initialize_ZOne_DFE();
+    if (isSim) initialize_ZOne_SIM(isGray, isRows, useGlynn, useDual);
+    //else initialize_ZOne_DFE(isGray, isRows, useGlynn, useDual);
 
-    std::vector<uint64_t> perm(512);
+    std::vector<uint64_t> perm(6);
     pic::ZOnePermanentCalculatorDFE(matrix_mtx, perm, isSim, isGray, isRows, useGlynn, useDual);
 
 
     // unload DFE
-    releive_ZOne_DFE();
+    //releive_ZOne_DFE();
 
     // release numpy arrays
     Py_DECREF(matrix_arg);
 
     //return Py_BuildValue("D", &perm);
-    return _PyLong_FromByteArray((const unsigned char*)perm.data(), perm.size() * 8, 1, 0);
+    return _PyLong_FromByteArray((const unsigned char*)perm.data(), perm.size() * sizeof(uint64_t), 1, 0);
 }
 
 
