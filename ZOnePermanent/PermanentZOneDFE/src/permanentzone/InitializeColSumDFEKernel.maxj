@@ -1,0 +1,73 @@
+package permanentzone;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+
+public class InitializeColSumDFEKernel extends Kernel {
+  static int bitlength(long i)
+  {
+    int r = 0;
+    while ((i >>= 1) != 0) r++;
+    return r+1;
+  }
+ 
+	public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean dual) {
+		super(parameters);
+    DFEType UIntType          = dfeUInt(64);
+    int colbits = bitlength(cols);
+    int membits = bitlength(rows-1);
+    DFEType MaxRowIdx = dfeUInt(membits);
+    DFEType MaxColSum = dfeInt(colbits+1); //e.g. ceil(log2 cols)==log2 64==((1 << 6)-1).bit_length()==6
+    DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(MaxColSum, rows);
+    Memory<DFEVar> mappedInputMtx = mem.alloc(UIntType, rows);
+		mappedInputMtx.mapToCPU("mappedInputMtx_Row");
+		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+    int kernpow2 = dual ? 3 : 2;
+    DFEVar ticksAdj = divide_rows ? ticksMax : ticksMax<<kernpow2;
+    DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
+    DFEVar gcodeidx = initialCount;
+    gcodeidx = (gcodeidx.get(0)!==0 ? ticksAdj : constant.zero(UIntType)) | (gcodeidx >> 1);
+    DFEVar gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
+    gcode = ~(ticksAdj-1) | gcode;
+    DFEVar[] bits = new DFEVar[cols];
+    for (int col_idx=0; col_idx<cols; ++col_idx) {
+        if (col_idx==cols-1) bits[col_idx] = constant.zero(dfeBool());
+        else bits[col_idx] = gcode.get(col_idx).cast(dfeBool());
+    }
+    DFEVector<DFEVar> rowsums = vectorType.newInstance(this);
+    for (int row_idx=0; row_idx<rows; ++row_idx) {
+      int sumsleft = cols;
+      DFEVar[] colsums = new DFEVar[sumsleft];
+      if (sumsleft != 0) {
+        DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
+        for (int col_idx = 0; col_idx < cols; col_idx++) {
+          bits[col_idx] = optimization.pipeline(bits[col_idx]);            
+          colsums[col_idx] = bits[col_idx].cat(constant.var(dfeBool(), 1)).cast(dfeInt(2)) & fullrow.get(col_idx).cat(fullrow.get(col_idx)).cast(dfeInt(2));
+        }
+      }
+      int bitsize = 1;
+      while (sumsleft > 1) { //sums processed in binary tree
+        if (bitsize != colbits) bitsize++;
+        DFEType SumType = dfeInt(bitsize+1);
+        for (int col_idx = 0; col_idx < sumsleft / 2; col_idx++) {
+          colsums[col_idx] = colsums[col_idx*2].cast(SumType) + colsums[col_idx*2+1].cast(SumType);
+        }
+        if ((sumsleft & 1) != 0) { colsums[sumsleft/2] = colsums[sumsleft-1].cast(SumType); sumsleft = sumsleft / 2 + 1; }
+        else sumsleft /= 2;
+      }
+      rowsums.get(row_idx) <== sumsleft == 1 ? colsums[0] : constant.zero(dfeInt(bitsize+1));
+    }
+    io.output("rowSums", rowsums, vectorType); 
+	}
+
+}
