@@ -77,7 +77,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
     }
     
 		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), divide_rows ? dim/(dual ? 2 : numkernels) : rows, cols, divide_rows, dual));
-		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel"), rows));
+		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel"), rows, glynn));
 
 		assignToNamedRegion(colSumKernels[0], XilinxAlveoU250Manager.NamedRegion.SLR0);
 		//assignToNamedRegion(colSumKernels[1], XilinxAlveoU250Manager.NamedRegion.SLR1);
@@ -145,7 +145,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
 		manager.setDefaultStreamClockFrequency(180);
 
 
-		manager.createSlicInterface(PermanentZOneDFEManager.interfaceDefault(manager.numkernels, manager.numarrays, params.use_gray(), params.divide_rows(), manager.rows, manager.kernrows, params.dual(), params.isSim()));
+		manager.createSlicInterface(PermanentZOneDFEManager.interfaceDefault(manager.numkernels, manager.numarrays, params.use_gray(), params.divide_rows(), manager.rows, manager.kernrows, params.glynn(), params.dual(), params.isSim()));
 		//manager.createSlicInterface(PermanentZOneDFEManager.interfaceConvertInput("convertInput"));
 
 		manager.addMaxFileConstant("MTXSIZE", manager.dim);
