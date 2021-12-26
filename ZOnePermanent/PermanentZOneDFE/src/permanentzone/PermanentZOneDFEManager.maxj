@@ -29,8 +29,10 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 
 		InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
     InterfaceParam ticksmax = 1 << (divide_rows ? (glynn ? origRows-1 : origRows) : (dual ? (origRows-(glynn ? 4 : 3)) : (origRows-(glynn ? 3 : 2)))); //numkernels==4 or 8
-    for (int i = 0; i < numkernels; i++)
+    for (int i = 0; i < numkernels; i++) {
 		  ei.setScalar("PermanentZOneDFEKernel_" + i, "ticksMax", ticksmax);
+      if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "ticksMax", ticksmax);        
+    }
 		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
     ei.setScalar("FinalSumUpPermDFEKernel", "origRowsMinusOne", origRows-1);
    
