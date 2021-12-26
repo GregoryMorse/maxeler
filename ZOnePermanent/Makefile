@@ -28,7 +28,10 @@ SIMZONE:
 CPUZONE:
 	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/ SIM=true
 	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -C ./PermanentZOneCPU/
-	@$(MAKE) run_sim MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/
+	@$(MAKE) run_sim MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/ SIM=true
+
+CPUSIMZONE:
+	@$(MAKE) run_sim MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/ SIM=true
   
 .PHONY: all
 
