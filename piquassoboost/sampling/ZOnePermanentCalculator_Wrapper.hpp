@@ -8,6 +8,7 @@
 #include "ZOnePermanentCalculator.h"
 #include "ZOnePermanentCalculatorDFE.h"
 #include "numpy_interface.h"
+#include <dlfcn.h>
 
 
 
@@ -16,6 +17,7 @@
 */
 typedef struct ZOnePermanentCalculator_wrapper {
     PyObject_HEAD
+    void *handle = NULL;
     /// The C++ variant of class CZOnePermanentCalculator
     pic::ZOnePermanentCalculator* calculator;
 } ZOnePermanentCalculator_wrapper;
@@ -39,7 +41,7 @@ void
 release_ZOnePermanentCalculator( pic::ZOnePermanentCalculator*  instance ) {
     if ( instance != NULL ) {
         delete instance;
-    }
+    }  
     return;
 }
 
@@ -59,14 +61,15 @@ static void
 ZOnePermanentCalculator_wrapper_dealloc(ZOnePermanentCalculator_wrapper *self)
 {
 
+    // unload DFE
+    releive_ZOne_DFE();
+    dlclose(self->handle);
+
     // deallocate the instance of class N_Qubit_Decomposition
     release_ZOnePermanentCalculator( self->calculator );
    
     Py_TYPE(self)->tp_free((PyObject *) self);
 
-    // unload DFE
-    releive_ZOne_SIM();
-    //releive_ZOne_DFE();
 }
 
 /**
@@ -79,7 +82,11 @@ ZOnePermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObject
     ZOnePermanentCalculator_wrapper *self;
     self = (ZOnePermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-
+    self->handle = dlopen(getenv("SLIC_CONF") ? "/home/morse/workspace/PermanentZOneCPU/dist/release/lib/libPermanentZOneSIM.so" : "/home/morse/workspace/PermanentZOneCPU/dist/release/lib/libPermanentZOneDFE.so", RTLD_NOW); //"MAXELEROSDIR"
+  
+    calcPermanentZOneDFE = (CALCPERMDFE)dlsym(self->handle, "calcPermanentZOneDFE");
+    initialize_ZOne_DFE = (INITPERMDFE)dlsym(self->handle, "initialize_ZOne_DFE");
+    releive_ZOne_DFE = (FREEPERMDFE)dlsym(self->handle, "releive_ZOne_DFE");
 
     return (PyObject *) self;
 }
@@ -248,8 +255,7 @@ ZOnePermanentCalculator_Wrapper_calculateDFE(ZOnePermanentCalculator_wrapper *se
     std::vector<uint64_t> matrix_mtx = numpybits2matrix(matrix_arg);
 
     // initialize DFE array
-    if (isSim) initialize_ZOne_SIM(isGray, isRows, useGlynn, useDual);
-    //else initialize_ZOne_DFE(isGray, isRows, useGlynn, useDual);
+    initialize_ZOne_DFE(isGray, isRows, useGlynn, useDual);
 
     std::vector<uint64_t> perm(6);
     pic::ZOnePermanentCalculatorDFE(matrix_mtx, perm, isSim, isGray, isRows, useGlynn, useDual);
