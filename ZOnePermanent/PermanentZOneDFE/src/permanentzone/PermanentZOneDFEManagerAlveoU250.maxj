@@ -58,7 +58,7 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
 
     numarrays = dual && !isSim ? 2 : 1;
     numkernels = (dual ? 8 : 4) / numarrays;
-  	dim = (dual ? dualmultiplier : singlemultiplier) * numkernels; //must be multiple of kernel count
+  	dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	rows = dim;
     cols = rows;
     kernrows = new int[numkernels];
