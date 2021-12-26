@@ -7,21 +7,16 @@
 #endif
 
 // the maximal dimension of matrix to be ported to FPGA for permanent calculation
-#define MAX_FPGA_DIM 24
-#define MAX_SINGLE_FPGA_DIM 20
+#define ZONE_MAX_FPGA_DIM 24
+#define ZONE_MAX_SINGLE_FPGA_DIM 20
 //#define PermanentZOneRowsGrayDFE_MTXSIZE (20)
 
-extern "C"
-{
-    void calcPermanentZOneSIM(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
-    void initialize_ZOne_SIM(int isGray, int isRows, int useGlynn, int useDual);
-    void releive_ZOne_SIM();
-    //void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm);
-    //void initialize_ZOne_DFE(int isGray, int isRows, int useGlynn, int useDual);
-    //void releive_ZOne_DFE();
-}
-
-
+typedef void(*CALCPERMDFE)(const uint64_t*, const uint64_t, const uint64_t, uint64_t*);
+typedef void(*INITPERMDFE)(int,int,int,int);
+typedef void(*FREEPERMDFE)(void);
+extern "C" CALCPERMDFE calcPermanentZOneDFE; 
+extern "C" INITPERMDFE initialize_ZOne_DFE; 
+extern "C" FREEPERMDFE releive_ZOne_DFE; 
 
 namespace pic {
 
