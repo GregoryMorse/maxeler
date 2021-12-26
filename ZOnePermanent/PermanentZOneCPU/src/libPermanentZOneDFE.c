@@ -63,17 +63,17 @@ void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const u
       PermanentZOneRowsDFE_actions_t rows;
       PermanentZOneRowsGrayDFE_actions_t rowsGray;
       PermanentZOneGlynnDFE_actions_t glynn;
-      //PermanentZOneGlynnGrayDFE_actions_t glynnGray;
+      PermanentZOneGlynnGrayDFE_actions_t glynnGray;
       PermanentZOneGlynnRowsDFE_actions_t glynnRows;
-      //PermanentZOneGlynnRowsGrayDFE_actions_t glynnRowsGray;
+      PermanentZOneGlynnRowsGrayDFE_actions_t glynnRowsGray;
       PermanentZOneDualDFE_actions_t dual;
       PermanentZOneGrayDualDFE_actions_t dualGray;
       PermanentZOneRowsDualDFE_actions_t dualRows;
       PermanentZOneRowsGrayDualDFE_actions_t dualRowsGray;
       PermanentZOneGlynnDualDFE_actions_t dualGlynn;
-      //PermanentZOneGlynnGrayDualDFE_actions_t dualGlynnGray;
+      PermanentZOneGlynnGrayDualDFE_actions_t dualGlynnGray;
       PermanentZOneGlynnRowsDualDFE_actions_t dualGlynnRows;
-      //PermanentZOneGlynnRowsGrayDualDFE_actions_t dualGlynnRowsGray;
+      PermanentZOneGlynnRowsGrayDualDFE_actions_t dualGlynnRowsGray;
     } actions;
     // simulation
     if (!useDual) {
