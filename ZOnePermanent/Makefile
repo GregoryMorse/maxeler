@@ -1,5 +1,11 @@
 
-all: SIMZONE CPUZONE
+all: SIMZONE DFEZONE CPUZONE
+
+DFEZONE:
+	@$(MAKE)  DFEROWSGRAY -C ./PermanentZOneDFE/
+	@$(MAKE)  DFEGLYNNROWSGRAY -C ./PermanentZOneDFE/
+	@$(MAKE)  DFEROWSGRAYDUAL -C ./PermanentZOneDFE/
+	@$(MAKE)  DFEGLYNNROWSGRAYDUAL -C ./PermanentZOneDFE/
 
 SIMZONE:
 	@$(MAKE)  SIM -C ./PermanentZOneDFE/
@@ -21,6 +27,7 @@ SIMZONE:
 
 CPUZONE:
 	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/
+	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -C ./PermanentZOneCPU/
 	@$(MAKE) run_sim MAXFILE_DIRS=/home/morse/workspace/PermanentZOneDFE/builds/simulation -C ./PermanentZOneCPU/
   
 .PHONY: all
