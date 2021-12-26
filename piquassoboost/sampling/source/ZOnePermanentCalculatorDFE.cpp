@@ -20,7 +20,7 @@ void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<u
     if (rows == 0) { perm[0] = 1; return; }
     else if (rows == 1) { perm[0] = matrix_mtx[0]; return; }
     else if (rows == 2) { perm[0] = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0); return; } //ad + bc
-    else if (rows == 3 && useDual) {
+    else if (rows == 3 && !isRows && (useDual || useGlynn)) {
       perm[0] = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) +
                 ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) +
                 ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 1) +
@@ -28,6 +28,7 @@ void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<u
                 ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1);
      return; } //aei + bfg + cdh + ceg + bdi + afh
+    //else if (rows == 4 && useDual && !isRows && useGlynn) {}
     size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
     while (matrix_mtx.size() < max_dim) {
       matrix_mtx.push_back(1UL << matrix_mtx.size());
