@@ -79,7 +79,7 @@ public class ProdColsDFEKernel extends Kernel {
 	    // controlled maxfile-local output 
 	    io.output("colProd", colProdVal, MaxPartialSum, localOutput !== 0 );
 	    // controlled inter-maxfile output 
-	    io.output("colProdRemote", colProdVal, MaxPartialSum, localOutput === 0 );
+	    io.output("colProdRemote", colProdVal.cast(dfeInt(256)), dfeInt(256), localOutput === 0 );
     } else {
 	    // controlled maxfile-local output 
 	    io.output("colProd", colProdVal, MaxPartialSum);
