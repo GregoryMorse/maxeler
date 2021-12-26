@@ -99,9 +99,9 @@ void initialize_ZOne_DFE(int gray, int rows, int glynn, int dual)
     }
 #else
     if (isGray && isRows && !useGlynn) {
-      initFunc = PermanentZOneRowsGrayDualDFE_init, runFunc = (RUNARRAYFUNC)PermanentZOneRowsGrayDualDFE_run_array, freeFunc = PermanentZOneRowsGrayDualDFE_free;
+      initFunc = PermanentZOneRowsGrayDualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermanentZOneRowsGrayDualDFE_run_array, freeFunc = PermanentZOneRowsGrayDualDFE_free;
     } else if (isGray && isRows && useGlynn) {
-      //initFunc = PermanentZOneGlynnRowsGrayDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsGrayDualDFE_run, freeFunc = PermanentZOneGlynnRowsGrayDualDFE_free;
+      //initFunc = PermanentZOneGlynnRowsGrayDualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermanentZOneGlynnRowsGrayDualDFE_run_array, freeFunc = PermanentZOneGlynnRowsGrayDualDFE_free;
     }
 #endif
   }
