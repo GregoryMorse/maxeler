@@ -9,10 +9,6 @@ include $(MAXCOMPILERDIR)/lib/Makefile.include
 
 MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*.max))
 
-##### Simulator configuration #####
-SIM_NAME := $(USER)_$(basename $(TARGET))_sim
-SIM_CARD := XilinxAlveoU250
-
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
   TARGET := libPermanentZOneSIM.so
@@ -22,6 +18,10 @@ else
   TARGET := libPermanentZOneDFE.so
   COMPVAR :=
 endif
+
+##### Simulator configuration #####
+SIM_NAME := $(USER)_$(basename $(TARGET))_sim
+SIM_CARD := XilinxAlveoU250
 
 ##### Compiler flags #####
 INCLUDES :=	\
