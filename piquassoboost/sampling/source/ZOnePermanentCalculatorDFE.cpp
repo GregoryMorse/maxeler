@@ -58,7 +58,8 @@ void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<u
     while (matrix_mtx.size() < max_dim) {
       matrix_mtx.push_back(1UL << matrix_mtx.size());
     }
-    calcPermanentZOneDFE( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data(), isSim, isGray, isRows, useGlynn, useDual);
+    if (isSim) calcPermanentZOneSIM( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data());
+    //else calcPermanentZOneDFE( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data());
 
     return;
 }
