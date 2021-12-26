@@ -7,17 +7,17 @@
 #include "PermanentZOneRowsDFE.h"
 #include "PermanentZOneRowsGrayDFE.h"
 #include "PermanentZOneGlynnDFE.h"
-//#include "PermanentZOneGlynnGrayDFE.h"
+#include "PermanentZOneGlynnGrayDFE.h"
 #include "PermanentZOneGlynnRowsDFE.h"
-//#include "PermanentZOneGlynnRowsGrayDFE.h"
+#include "PermanentZOneGlynnRowsGrayDFE.h"
 #include "PermanentZOneDualDFE.h"
 #include "PermanentZOneGrayDualDFE.h"
 #include "PermanentZOneRowsDualDFE.h"
 #include "PermanentZOneRowsGrayDualDFE.h"
 #include "PermanentZOneGlynnDualDFE.h"
-//#include "PermanentZOneGlynnGrayDualDFE.h"
+#include "PermanentZOneGlynnGrayDualDFE.h"
 #include "PermanentZOneGlynnRowsDualDFE.h"
-//#include "PermanentZOneGlynnRowsGrayDualDFE.h"
+#include "PermanentZOneGlynnRowsGrayDualDFE.h"
 
 /// static variable to indicate whether DFE is initialized
 static bool initialized = false;
@@ -93,14 +93,14 @@ void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const u
         initFunc = PermanentZOneGlynnDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnDFE_run, freeFunc = PermanentZOneGlynnDFE_free;
         actions.glynn.param_ticksMax = numOfPartialPerms, actions.glynn.param_InputMtx = mtx_data, actions.glynn.outstream_res = perm;
       } else if (isGray && !isRows && useGlynn) {
-        //initFunc = PermanentZOneGlynnGrayDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnGrayDFE_run, freeFunc = PermanentZOneGlynnGrayDFE_free;
-        //actions.glynnGray.param_ticksMax = numOfPartialPerms, actions.glynnGray.param_InputMtx = mtx_data, actions.glynnGray.outstream_res = perm;
+        initFunc = PermanentZOneGlynnGrayDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnGrayDFE_run, freeFunc = PermanentZOneGlynnGrayDFE_free;
+        actions.glynnGray.param_ticksMax = numOfPartialPerms, actions.glynnGray.param_InputMtx = mtx_data, actions.glynnGray.outstream_res = perm;
       } else if (!isGray && isRows && useGlynn) {
         initFunc = PermanentZOneGlynnRowsDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsDFE_run, freeFunc = PermanentZOneGlynnRowsDFE_free;
         actions.glynnRows.param_ticksMax = numOfPartialPerms, actions.glynnRows.param_InputMtx = mtx_data, actions.glynnRows.outstream_res = perm;
       } else if (isGray && isRows && useGlynn) {
-        //initFunc = PermanentZOneGlynnRowsGrayDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsGrayDFE_run, freeFunc = PermanentZOneGlynnRowsGrayDFE_free;
-        //actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.param_InputMtx = mtx_data, actions.glynnRowsGray.outstream_res = perm;
+        initFunc = PermanentZOneGlynnRowsGrayDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsGrayDFE_run, freeFunc = PermanentZOneGlynnRowsGrayDFE_free;
+        actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.param_InputMtx = mtx_data, actions.glynnRowsGray.outstream_res = perm;
       }
     } else {
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
@@ -120,14 +120,14 @@ void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const u
         initFunc = PermanentZOneGlynnDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnDualDFE_run, freeFunc = PermanentZOneGlynnDualDFE_free;
         actions.dualGlynn.param_ticksMax = numOfPartialPerms, actions.dualGlynn.param_InputMtx = mtx_data, actions.dualGlynn.outstream_res = perm;
       } else if (isGray && !isRows && useGlynn) {
-        //initFunc = PermanentZOneGlynnGrayDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnGrayDualDFE_run, freeFunc = PermanentZOneGlynnGrayDualDFE_free;
-        //actions.dualGlynnGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnGray.param_InputMtx = mtx_data, actions.dualGlynnGray.outstream_res = perm;
+        initFunc = PermanentZOneGlynnGrayDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnGrayDualDFE_run, freeFunc = PermanentZOneGlynnGrayDualDFE_free;
+        actions.dualGlynnGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnGray.param_InputMtx = mtx_data, actions.dualGlynnGray.outstream_res = perm;
       } else if (!isGray && isRows && useGlynn) {
         initFunc = PermanentZOneGlynnRowsDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsDualDFE_run, freeFunc = PermanentZOneGlynnRowsDualDFE_free;
         actions.dualGlynnRows.param_ticksMax = numOfPartialPerms, actions.dualGlynnRows.param_InputMtx = mtx_data, actions.dualGlynnRows.outstream_res = perm;
       } else if (isGray && isRows && useGlynn) {
-        //initFunc = PermanentZOneGlynnRowsGrayDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsGrayDualDFE_run, freeFunc = PermanentZOneGlynnRowsGrayDualDFE_free;
-        //actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = mtx_data, actions.dualGlynnRowsGray.outstream_res = perm;
+        initFunc = PermanentZOneGlynnRowsGrayDualDFE_init, runFunc = (RUNFUNC)PermanentZOneGlynnRowsGrayDualDFE_run, freeFunc = PermanentZOneGlynnRowsGrayDualDFE_free;
+        actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = mtx_data, actions.dualGlynnRowsGray.outstream_res = perm;
       }
     }
 
