@@ -1,4 +1,10 @@
 import numpy as np
+def checkSim():
+  import os
+  return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
+hasSim = checkSim(); hasDFE = not hasSim
+import os
+os.environ["LD_LIBRARY_PATH"]+=":"+"/home/morse/workspace/PermanentZOneCPU/dist/release/lib" + ":"
 from piquassoboost.sampling.Boson_Sampling_Utilities import ZOnePermanent
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
@@ -80,45 +86,47 @@ def get_fact_bitsizes(n):
 #print(list(get_fact_bitsizes(n) for n in range(64)))    
 
 permanent_ZOne_calculator = ZOnePermanent()
-def checkSim():
-  import os
-  return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
-hasSim, hasDFE = checkSim(), False
 def calculate(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8))
 def calculateGray(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8), gray=True)
 def calculateRows(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8), rows=True)
 def calculateRowsGray(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8), rows=True, gray=True)
 def calculateGlynn(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8), glynn=True)
 def calculateGlynnGray(x): return permanent_ZOne_calculator.calculate(np.array(x, dtype=np.uint8), gray=True, glynn=True)
-def calculateDFE(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True)
-def calculateDFEGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True)
-def calculateDFERows(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True)
-def calculateDFERowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True)
-def calculateDFEGlynn(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, glynn=True)
-def calculateDFEGlynnGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, glynn=True)
-def calculateDFEGlynnRows(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, glynn=True)
-def calculateDFEGlynnRowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, glynn=True)
-def calculateDFEDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, dual=True)
-def calculateDFEGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, dual=True)
-def calculateDFERowsDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, dual=True)
-def calculateDFERowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, dual=True)
-def calculateDFEGlynnDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, glynn=True, dual=True)
-def calculateDFEGlynnGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, glynn=True, dual=True)
-def calculateDFEGlynnRowsDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, glynn=True, dual=True)
-def calculateDFEGlynnRowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, glynn=True, dual=True)
+def calculateSIM(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True)
+def calculateSIMGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True)
+def calculateSIMRows(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True)
+def calculateSIMRowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True)
+def calculateSIMGlynn(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, glynn=True)
+def calculateSIMGlynnGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, glynn=True)
+def calculateSIMGlynnRows(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, glynn=True)
+def calculateSIMGlynnRowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, glynn=True)
+def calculateSIMDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, dual=True)
+def calculateSIMGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, dual=True)
+def calculateSIMRowsDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, dual=True)
+def calculateSIMRowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, dual=True)
+def calculateSIMGlynnDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, glynn=True, dual=True)
+def calculateSIMGlynnGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, gray=True, glynn=True, dual=True)
+def calculateSIMGlynnRowsDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, glynn=True, dual=True)
+def calculateSIMGlynnRowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), sim=True, rows=True, gray=True, glynn=True, dual=True)
+def calculateDFERowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), rows=True, gray=True)
+def calculateDFEGlynnRowsGray(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), rows=True, gray=True, glynn=True)
+def calculateDFERowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), rows=True, gray=True, dual=True)
+def calculateDFEGlynnRowsGrayDual(x): return permanent_ZOne_calculator.calculateDFE(np.array(x, dtype=np.uint8), rows=True, gray=True, glynn=True, dual=True)
 permfuncs = [
   #permanent, permanent_ryser, permanent_ryser_gray, permanent_glynn, permanent_glynn_gray,
   calculate, calculateGray, #calculateRows, calculateRowsGray,
   calculateGlynn, calculateGlynnGray] + ([] if not hasSim else [
-  calculateDFE, calculateDFEGray,
-  calculateDFERows, calculateDFERowsGray,
-  calculateDFEGlynn, calculateDFEGlynnGray,
-  calculateDFEGlynnRows, calculateDFEGlynnRowsGray, 
-  calculateDFEDual, calculateDFEGrayDual,
-  calculateDFERowsDual, calculateDFERowsGrayDual,
-  calculateDFEGlynnDual, calculateDFEGlynnGrayDual,
-  calculateDFEGlynnRowsDual, calculateDFEGlynnRowsGrayDual,
+  calculateSIM, calculateSIMGray,
+  calculateSIMRows, calculateSIMRowsGray,
+  calculateSIMGlynn, calculateSIMGlynnGray,
+  calculateSIMGlynnRows, calculateSIMGlynnRowsGray, 
+  calculateSIMDual, calculateSIMGrayDual,
+  calculateSIMRowsDual, calculateSIMRowsGrayDual,
+  calculateSIMGlynnDual, calculateSIMGlynnGrayDual,
+  calculateSIMGlynnRowsDual, calculateSIMGlynnRowsGrayDual,
   ]) + ([] if not hasDFE else [
+  calculateDFERowsGray,
+  #calculateDFEGlynnRowsGray, calculateDFERowsGrayDual, calculateDFEGlynnRowsGrayDual,
   ])
 
 #empirical validation of correctness
@@ -126,10 +134,10 @@ def validate_permanent():
   import math
   nmax = 15
   alloneresult = list(math.factorial(n) for n in range(0, nmax))
-  for n in range(nmax):
-    Adiag = [[1 if i == j or i < 3 and j < 3 else 0 for j in range(n)] for i in range(n)]
-    A = [[1 for _ in range(n)] for _ in range(n)]
-    for func in permfuncs:
+  for func in permfuncs:
+    for n in range(nmax):
+      Adiag = [[1 if i == j or i < 3 and j < 3 else 0 for j in range(n)] for i in range(n)]
+      A = [[1 for _ in range(n)] for _ in range(n)]
       print(func.__name__, n)
       res = func(A)
       if res != alloneresult[n]: print(func.__name__, n, res, alloneresult[n])
@@ -141,9 +149,9 @@ def timing_permanent():
   nmax = 15
   xaxis = list(range(nmax))
   results = [[] for _ in permfuncs]
-  for n in xaxis:
-    A = [[1 for _ in range(n)] for _ in range(n)]
-    for i, func in enumerate(permfuncs):
+  for i, func in enumerate(permfuncs):
+    for n in xaxis:
+      A = [[1 for _ in range(n)] for _ in range(n)]
       results[i].append(timeit.timeit(lambda: func(A), number=2)) 
   import matplotlib.pyplot as plt
   from matplotlib.ticker import MaxNLocator
