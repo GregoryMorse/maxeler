@@ -11,10 +11,16 @@ SIMROWSGRAY:
 	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true use_gray=true\"
 
 SIMGLYNN:
-	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGlynnDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true\"
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"glynn=true\"
+
+SIMGLYNNROWS:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnRowsDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true\"
 
 SIMGLYNNGRAY:
-	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGlynnGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true use_gray=true\"
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"glynn=true use_gray=true\"
+
+SIMGLYNNROWSGRAY:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnRowsGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true use_gray=true\"
 
 SIMDUAL:
 	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"dual=true\"
@@ -29,10 +35,16 @@ SIMROWSGRAYDUAL:
 	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true use_gray=true dual=true\"
 
 SIMGLYNNDUAL:
-	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGlynnDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true dual=true\"
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"glynn=true dual=true\"
+
+SIMGLYNNROWSDUAL:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnRowsDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true dual=true\"
 
 SIMGLYNNGRAYDUAL:
-	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneRowsGlynnGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true use_gray=true dual=true\"
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"glynn=true use_gray=true dual=true\"
+
+SIMGLYNNROWSGRAYDUAL:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnRowsGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true use_gray=true dual=true\"
  
 DFE:
 	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"\"
