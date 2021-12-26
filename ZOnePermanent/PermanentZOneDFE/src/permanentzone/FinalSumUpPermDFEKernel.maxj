@@ -25,6 +25,10 @@ public class FinalSumUpPermDFEKernel extends Kernel {
     while ((i >>= 1) != 0) r++;
     return r+1;
   }
+  static int ceilBitLength(long i)
+  {
+    return bitlength(i) + ((i != 0 && (i & (i-1)) == 0) ? 0 : 1);
+  }
   DFEVar addBigIntegers(DFEVar a, DFEVar b)
   {
     int alen = a.getType().getTotalBits(), blen = b.getType().getTotalBits();
@@ -42,9 +46,11 @@ public class FinalSumUpPermDFEKernel extends Kernel {
     DFEVar bits = a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + carry.cast(dfeInt(clen-offset+1));
     return bits.cat(res).cast(dfeInt(clen+1));
   }    
-	public FinalSumUpPermDFEKernel(final KernelParameters parameters, int rows) {
+	public FinalSumUpPermDFEKernel(final KernelParameters parameters, int rows, boolean glynn) {
 		super(parameters);
-    DFEType MaxFullSum = dfeInt(BigInteger.valueOf(rows).pow(rows).bitLength()+1);
+    DFEType UIntType = dfeUInt(8);
+    int sumbits = BigInteger.valueOf(rows).pow(rows).bitLength();
+    DFEType MaxFullSum = dfeInt(sumbits+1);
     //DFEType MaxTotalSum = dfeUInt(296); //log2 n!/kernels math.factorial(rows=64).bit_length()==296
     //factorial(rows).bitLength()
     DFEType MaxTotalSum = dfeUInt(3*2*64); //rounded up to nearest 128 bit multiple
@@ -62,7 +68,8 @@ public class FinalSumUpPermDFEKernel extends Kernel {
 		sum = tickCount < 2 ? sum : sumCarried + sum;
 
 		sumCarried <== stream.offset( sum, -2 );
-		io.output("res", sum.cast(MaxTotalSum), MaxTotalSum, tickCount === 3 );
+    DFEVar origRowsMinusOne = io.scalarInput("origRowsMinusOne", UIntType );
+		io.output("res", (glynn ? sum >> origRowsMinusOne.cast(dfeUInt(bitlength(sumbits))) : (origRowsMinusOne[0].cast(dfeBool()) === 0 ? -sum : sum)).cast(MaxTotalSum), MaxTotalSum, tickCount === 3 );
 
 	}
 
