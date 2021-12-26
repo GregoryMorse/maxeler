@@ -5,8 +5,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
@@ -69,12 +69,18 @@ public class PermanentZOneDFEKernel extends Kernel {
       //DFEVar isOn = ((gcode & gcodelowbit) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
       //bitsize = glynn ? colbits+1 : colbits;
       DFEVar[] oldrowsums = new DFEVar[rows];
+      DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(MaxColSum, rows);
+      DFEVector<DFEVar> initrowsums = null;
+      if (glynn) initrowsums = io.input( "rowSums", vectorType, tickCount<2);
       for (int row_idx=0; row_idx<rows; ++row_idx) {
         DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
         //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
         DFEVar inits;
-        if (divide_rows) inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
-        else {
+        if (glynn) {
+          inits = initrowsums.get(row_idx);
+        } else if (divide_rows) {
+          inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
+        } else {
           inits = (constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum);
           if (dual) inits = inits + ((fullrow & gcode & (ticksMax << 2)) !== 0).cast(MaxColSum);
           inits = inits + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
@@ -135,12 +141,16 @@ public class PermanentZOneDFEKernel extends Kernel {
     DFEVar prod = prodleft == 1 ? rowsums[0] : constant.var(glynn ? dfeInt(bitsize+1) : dfeUInt(bitsize), new Bits(1, 1));
     DFEVar signprod = prod.cast(MaxRowProdSigned);
     if (implementsign) {
-      DFEVar sign = gcodeidx[0];
-      if (use_gray) sign ^= (ticksAdj & gcodeidx) !== 0; 
-      //DFEVar sign = constant.var(false);
-      //for (int col_idx=0; col_idx<cols; ++col_idx) {
-      //    sign = sign ^ gcode.get(col_idx).cast(dfeBool());
-      //}
+      DFEVar sign; 
+      if (glynn) {
+        sign = constant.var(true);
+        for (int col_idx=0; col_idx<cols; ++col_idx) {
+            sign = sign ^ gcode.get(col_idx).cast(dfeBool());
+        }
+      } else {
+      sign = gcodeidx[0];
+      if (use_gray) sign ^= (ticksAdj & gcodeidx) !== 0;
+      }
       if (dual && divide_rows) {
         DFEVar canSign = io.scalarInput("canSign", dfeUInt(8));
         signprod = ((sign !== 0) & (canSign !== 0)) ? -signprod : signprod; //numberOfSetBits(set_idx)
