@@ -47,7 +47,7 @@ typedef void (*RUNFUNC)(max_engine_t*, void*);
 */
 void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const uint64_t cols, uint64_t* perm, int isSim, int isGray, int isRows, int useGlynn, int useDual)
 {
-    uint64_t numOfPartialPerms = 1 << (isRows ? (useGlynn ? rows-1 : rows) : (useDual ? (rows-3) : (rows-2))); //numkernels==4 or 8
+    uint64_t numOfPartialPerms = rows;
 
     if (isSim) {
 #ifdef DEBUG
