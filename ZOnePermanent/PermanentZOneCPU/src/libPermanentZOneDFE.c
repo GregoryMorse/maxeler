@@ -110,7 +110,7 @@ void initialize_ZOne_DFE(int gray, int rows, int glynn, int dual)
 #ifdef MAXELER_SIM 
   mavDFE = max_load(mavMaxFile, "local:*");
 #else
-  if (dual) array = max_load_array(mavMaxFile, 2, "local:*");
+  if (dual) array = max_load_array(mavMaxFile, 2, "*");
   else mavDFE = max_load(mavMaxFile, "local:*");
 #endif
   initialized = true;
@@ -231,10 +231,10 @@ void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const u
 #else
       if (isGray && isRows && !useGlynn) {
         actions.dualRowsGray.param_isLocal = 1, actions.dualRowsGray.param_ticksMax = numOfPartialPerms, actions.dualRowsGray.param_InputMtx = mtx_data, actions.dualRowsGray.outstream_res = perm;
-        dualactions.dualRowsGray.param_isLocal = 0, dualactions.dualRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualRowsGray.param_InputMtx = mtx_data, dualactions.dualRowsGray.outstream_res = perm;
+        dualactions.dualRowsGray.param_isLocal = 0, dualactions.dualRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualRowsGray.param_InputMtx = &mtx_data[PermanentZOneRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualRowsGray.outstream_res = NULL;
       } else if (isGray && isRows && useGlynn) {
         //actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = mtx_data, actions.dualGlynnRowsGray.outstream_res = perm;
-        //dualactions.dualGlynnRowsGray.param_isLocal = 1, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = mtx_data, dualactions.dualGlynnRowsGray.outstream_res = perm;
+        //dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = &mtx_data[PermanentZOneRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualGlynnRowsGray.outstream_res = NULL;
       }
 #endif
     }
