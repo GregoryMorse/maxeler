@@ -17,12 +17,10 @@ ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
   TARGET := libPermanentZOneSIM.so
   COMPVAR := -DMAXELER_SIM
-  SOURCEDFEDIR := /home/morse/workspace/PermanentZOneDFE/builds/simulation
 else
   ##### Target executable or shared-object name. ####
   TARGET := libPermanentZOneDFE.so
   COMPVAR :=
-  SOURCEDFEDIR := /home/morse/workspace/PermanentZOneDFE/builds/bitstream
 endif
 
 ##### Compiler flags #####
@@ -35,8 +33,7 @@ INCLUDES :=	\
 	$(MAXFILE_HEADERDIR) \
 	$(MAXUDPFPDIR)/include \
 	$(MAXPOWERDIR)/src/maxpower/kernel/random/runtime \
-	$(MAXFILE_DIRS) \
-	$(SOURCEDFEDIR)
+	$(MAXFILE_DIRS)
 
 INCLUDE_FLAGS := $(foreach DIR,$(INCLUDES),-I$(DIR))
 
