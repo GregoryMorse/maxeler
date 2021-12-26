@@ -5,6 +5,10 @@
 #include <tbb/tbb.h>
 #endif
 
+CALCPERMDFE calcPermanentZOneDFE = NULL;
+INITPERMDFE initialize_ZOne_DFE = NULL;
+FREEPERMDFE releive_ZOne_DFE = NULL;
+
 
 namespace pic {
 
@@ -54,12 +58,11 @@ void ZOnePermanentCalculatorDFE(std::vector<uint64_t>& matrix_mtx, std::vector<u
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 1) +
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0);
       return; }
-    size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    size_t max_dim = useDual ? ZONE_MAX_FPGA_DIM : ZONE_MAX_SINGLE_FPGA_DIM;
     while (matrix_mtx.size() < max_dim) {
       matrix_mtx.push_back(1UL << matrix_mtx.size());
     }
-    if (isSim) calcPermanentZOneSIM( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data());
-    //else calcPermanentZOneDFE( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data());
+    calcPermanentZOneDFE( (const uint64_t*)matrix_mtx.data(), rows, cols, perm.data());
 
     return;
 }
