@@ -20,17 +20,19 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
   int singlemultiplier = 5;
   int dualmultiplier = 3;
  
-	static EngineInterface interfaceDefault (int numkernels, int numarrays, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean dual, boolean isSim) { //EngineParameters params
+	static EngineInterface interfaceDefault (int numkernels, int numarrays, boolean use_gray, boolean divide_rows, int rows, int[] kernrows, boolean glynn, boolean dual, boolean isSim) { //EngineParameters params
     //if (params.getTarget() != EngineParameters.Target.DFE)
     
 		EngineInterface ei = new EngineInterface();
 
     //factorial(dim).bitLength();
 
-		InterfaceParam ticksmax = ei.addParam("ticksMax", CPUTypes.UINT64);
-    for (int i = 0; i < numkernels; i++) 
+		InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
+    InterfaceParam ticksmax = 1 << (divide_rows ? (glynn ? origRows-1 : origRows) : (dual ? (origRows-(glynn ? 4 : 3)) : (origRows-(glynn ? 3 : 2)))); //numkernels==4 or 8
+    for (int i = 0; i < numkernels; i++)
 		  ei.setScalar("PermanentZOneDFEKernel_" + i, "ticksMax", ticksmax);
 		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
+    ei.setScalar("FinalSumUpPermDFEKernel", "origRowsMinusOne", origRows-1);
    
     if (dual) {
       if (!isSim || divide_rows) { 
