@@ -68,6 +68,7 @@ public class InitializeColSumDFEKernel extends Kernel {
       }
       rowsums.get(row_idx) <== sumsleft == 1 ? colsums[0] : constant.zero(dfeInt(bitsize+1));
     }
+    //debug.simPrintf(tickCount < 2, "%KObj%\n", rowsums);
     io.output("rowSums", rowsums, vectorType, tickCount<2); 
 	}
 
