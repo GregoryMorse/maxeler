@@ -46,8 +46,17 @@ SIMGLYNNGRAYDUAL:
 SIMGLYNNROWSGRAYDUAL:
 	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentZOneGlynnRowsGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/simulation -Dengine-params=\"divide_rows=true glynn=true use_gray=true dual=true\"
  
-DFE:
-	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"\"
+DFEROWSGRAY:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneRowsGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"divide_rows=true use_gray=true\"
+
+DFEROWSGRAYDUAL:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneRowsGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"divide_rows=true use_gray=true dual=true\"
+
+DFEGLYNNROWSGRAY:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneGlynnRowsGrayDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"divide_rows=true glynn=true use_gray=true\"
+
+DFEGLYNNROWSGRAYDUAL:
+	ant build -Dmanager=permanentzone.PermanentZOneDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentZOneGlynnRowsGrayDualDFE -Dresult-dir=/home/morse/workspace/PermanentZOneDFE/builds/bitstream -Dengine-params=\"divide_rows=true glynn=true use_gray=true dual=true\"
 
 .PHONY:
 
