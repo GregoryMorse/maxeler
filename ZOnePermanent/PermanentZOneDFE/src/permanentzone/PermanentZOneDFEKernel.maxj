@@ -66,12 +66,16 @@ public class PermanentZOneDFEKernel extends Kernel {
       DFEVar gcodelowbit = gcodeidx & (~gcodeidx + 1); //isolate the lowest 1 bit
       //off is on and vice-versa, since to have early termination, we must go through the Gray codes in bit reversed order
       DFEVar isOn = (gcode & gcodelowbit) !== 0;
+      if (glynn) isOn = ~isOn;
       //DFEVar isOn = ((gcode & gcodelowbit) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
       //bitsize = glynn ? colbits+1 : colbits;
       DFEVar[] oldrowsums = new DFEVar[rows];
       DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(MaxColSum, rows);
       DFEVector<DFEVar> initrowsums = null;
-      if (glynn) initrowsums = io.input( "rowSums", vectorType, tickCount<2);
+      if (glynn) {
+        initrowsums = io.input( "rowSums", vectorType, tickCount<2);
+        //debug.simPrintf(tickCount < 2, "%KObj%\n", initrowsums);
+      }
       for (int row_idx=0; row_idx<rows; ++row_idx) {
         DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
         //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
@@ -86,11 +90,13 @@ public class PermanentZOneDFEKernel extends Kernel {
           inits = inits + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
         }          
         DFEVar colval = ((fullrow & gcodelowbit) !== 0).cast(MaxColSum);
+        if (glynn) colval <<= 1;
         //DFEVar adjust = control.mux(isOn, colval,  ~colval+1, constant.zero(MaxColSum), constant.zero(MaxColSum));
         oldrowsums[row_idx] = MaxColSum.newInstance(this);
         rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
         oldrowsums[row_idx] <== stream.offset(rowsums[row_idx], -2);
       }
+      //for (int row_idx=0; row_idx<rows; ++row_idx) debug.simPrintf("%X ", rowsums[row_idx]); debug.simPrintf("\n");
     } else {
       DFEVar[] bits = new DFEVar[cols];
       gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
