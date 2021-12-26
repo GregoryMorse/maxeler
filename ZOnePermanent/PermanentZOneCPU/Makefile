@@ -3,9 +3,6 @@ DIST_DIR = dist
 RELEASE_DIR := "$(DIST_DIR)/release"
 DEBUG_DIR := "$(DIST_DIR)/debug"
 
-##### Target executable or shared-object name. ####
-TARGET := libPermanentZOneDFE.so
-
 ##### SLiC configuration #####
 USE_SLIC=1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
@@ -17,9 +14,13 @@ SIM_NAME := $(USER)_$(basename $(TARGET))_sim
 SIM_CARD := XilinxAlveoU250
 
 ifeq ($(strip $(SIM)),true)
+  ##### Target executable or shared-object name. ####
+  TARGET := libPermanentZOneSIM.so
   COMPVAR := -DMAXELER_SIM
   SOURCEDFEDIR := /home/morse/workspace/PermanentZOneDFE/builds/simulation
 else
+  ##### Target executable or shared-object name. ####
+  TARGET := libPermanentZOneDFE.so
   COMPVAR :=
   SOURCEDFEDIR := /home/morse/workspace/PermanentZOneDFE/builds/bitstream
 endif
