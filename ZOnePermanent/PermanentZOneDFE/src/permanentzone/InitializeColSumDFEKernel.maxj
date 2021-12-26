@@ -32,10 +32,11 @@ public class InitializeColSumDFEKernel extends Kernel {
     Memory<DFEVar> mappedInputMtx = mem.alloc(UIntType, rows);
 		mappedInputMtx.mapToCPU("mappedInputMtx_Row");
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+    DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
     int kernpow2 = dual ? 3 : 2;
     DFEVar ticksAdj = divide_rows ? ticksMax : ticksMax<<kernpow2;
     DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
-    DFEVar gcodeidx = initialCount;
+    DFEVar gcodeidx = tickCount+initialCount;
     gcodeidx = (gcodeidx.get(0)!==0 ? ticksAdj : constant.zero(UIntType)) | (gcodeidx >> 1);
     DFEVar gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
     gcode = ~(ticksAdj-1) | gcode;
@@ -67,7 +68,7 @@ public class InitializeColSumDFEKernel extends Kernel {
       }
       rowsums.get(row_idx) <== sumsleft == 1 ? colsums[0] : constant.zero(dfeInt(bitsize+1));
     }
-    io.output("rowSums", rowsums, vectorType); 
+    io.output("rowSums", rowsums, vectorType, tickCount<2); 
 	}
 
 }
