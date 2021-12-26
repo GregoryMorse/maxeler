@@ -76,6 +76,14 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
       offset += kernrows[i];
     }
     
+    if (glynn && use_gray) {
+      KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
+      for (int i = 0; i < numkernels; i++) {
+        initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), divide_rows ? kernrows[i] : rows, cols, divide_rows, dual));
+        colSumKernels[i].getInput("rowSums") <== initColSumKernels[i].getOutput("rowSums");
+      }
+    }
+    
 		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), divide_rows ? dim/(dual ? 2 : numkernels) : rows, cols, divide_rows, dual));
 		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel"), rows, glynn));
 
