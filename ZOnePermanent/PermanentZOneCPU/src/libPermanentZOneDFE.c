@@ -228,12 +228,12 @@ void calcPermanentZOneDFE(const uint64_t* mtx_data, const uint64_t rows, const u
       }
 #else
       if (isGray && isRows && !useGlynn) {
-        actions.dualRowsGray.param_isLocal = 1, actions.dualRowsGray.param_ticksMax = numOfPartialPerms, actions.dualRowsGray.param_InputMtx = mtx_data, actions.dualRowsGray.outstream_res = perm;
-        dualactions.dualRowsGray.param_isLocal = 0, dualactions.dualRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualRowsGray.param_InputMtx = &mtx_data[PermanentZOneRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualRowsGray.outstream_res = NULL;
+        actions.dualRowsGray.param_isLocal = 1, actions.dualRowsGray.param_ticksMax = numOfPartialPerms, actions.dualRowsGray.param_InputMtx = mtx_data, actions.dualRowsGray.outstream_res = perm, actions.dualRowsGray.outstream_size_res = sizeof(uint64_t)*6;
+        dualactions.dualRowsGray.param_isLocal = 0, dualactions.dualRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualRowsGray.param_InputMtx = &mtx_data[PermanentZOneRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualRowsGray.outstream_res = NULL, dualactions.dualRowsGray.outstream_size_res = 0;
         arractions[0] = &actions.dualRowsGray; arractions[1] = &dualactions.dualRowsGray;
       } else if (isGray && isRows && useGlynn) {
-        actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = mtx_data, actions.dualGlynnRowsGray.outstream_res = perm;
-        dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = &mtx_data[PermanentZOneRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualGlynnRowsGray.outstream_res = NULL;
+        actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = mtx_data, actions.dualGlynnRowsGray.outstream_res = perm, actions.dualGlynnRowsGray.outstream_size_res = sizeof(uint64_t)*6;
+        dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = &mtx_data[PermanentZOneGlynnRowsGrayDualDFE_MTXSIZE>>1], dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
       }
 #endif
     }
