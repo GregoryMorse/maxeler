@@ -87,7 +87,7 @@ public class SumUpPermDFEKernel extends Kernel {
 		
 		DFEVar partialPerm = MaxPartialSum.newInstance(this);
 		partialPerm = realPart;
-
+    //debug.dfePrintf("SumUp %X\n", tickCount);
 		io.output("partialSum", partialPerm, MaxPartialSum, tickCount >= (ticksMax-2) );
 
 	}
