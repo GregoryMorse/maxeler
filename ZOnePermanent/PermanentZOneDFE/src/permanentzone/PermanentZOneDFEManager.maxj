@@ -33,7 +33,6 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
 		  ei.setScalar("PermanentZOneDFEKernel_" + i, "ticksMax", ticksmax);
       if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "ticksMax", ticksmax);        
     }
-		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
     ei.setScalar("FinalSumUpPermDFEKernel", "origRowsMinusOne", origRows-1);
    
     if (dual) {
@@ -41,6 +40,7 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
    		  InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
   		  if (!isSim) {
           ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
+      		ei.setScalar("SumUpPermDFEKernel", "ticksMax", isLocal ? ticksmax : 0);
   		    ei.setTicks("SumUpPermDFEKernel", isLocal ? ticksmax : 0); //isLocal !== 0 generates <> in the C output and seems to be a compiler bug 
   		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal ? 4 : 0);
         }
@@ -92,21 +92,23 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
     }
 
 		// stream to CPU containing the result
-		ei.setStream("res", CPUTypes.UINT64, CPUTypes.UINT64.sizeInBytes()*6); // unsigned integer representation of the resulted permanent, bytes must be multiple of 16
+    if (!dual || isSim)
+		  ei.setStream("res", CPUTypes.UINT64, CPUTypes.UINT64.sizeInBytes()*6); // unsigned integer representation of the resulted permanent, bytes must be multiple of 16
 
 		// set the ticks of the computing kernel
     for (int i = 0; i < numkernels; i++) {
 		  ei.setTicks("PermanentZOneDFEKernel_" + i, ticksmax);
-      if (glynn && use_gray) ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax);
+      if (glynn && use_gray) ei.setTicks("InitializeColSumDFEKernel_" + i, 2);
     }
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     if (!dual || isSim) { 
+      ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);    
       ei.setTicks("SumUpPermDFEKernel", ticksmax);
 		  ei.setTicks("FinalSumUpPermDFEKernel", 4);
     }
 
-		ei.ignoreAll(EngineInterface.Direction.IN_OUT);
+		//ei.ignoreAll(EngineInterface.Direction.IN_OUT);
 		return ei ;
 	}
 
