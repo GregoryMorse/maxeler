@@ -76,6 +76,7 @@ public class ProdColsDFEKernel extends Kernel {
     if (!isSim) {
 	  	// scalar input variable to control the output
   		DFEVar localOutput = io.scalarInput("localOutput", dfeUInt(8) );
+      //debug.dfePrintf("Prod %X\n", localOutput);
 	    // controlled maxfile-local output 
 	    io.output("colProd", colProdVal, MaxPartialSum, localOutput !== 0 );
 	    // controlled inter-maxfile output 
