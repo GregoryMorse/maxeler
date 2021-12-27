@@ -41,8 +41,8 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
    		  InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
   		  if (!isSim) {
           ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
-  		    ei.setTicks("SumUpPermDFEKernel", isLocal != 0 ? ticksmax : 0);
-  		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal != 0 ? 4 : 0);
+  		    ei.setTicks("SumUpPermDFEKernel", isLocal ? ticksmax : 0); //isLocal !== 0 generates <> in the C output and seems to be a compiler bug 
+  		    ei.setTicks("FinalSumUpPermDFEKernel", isLocal ? 4 : 0);
         }
         if (divide_rows) {
           ei.setScalar("PermanentZOneDFEKernel_" + 0, "canSign", isLocal);
