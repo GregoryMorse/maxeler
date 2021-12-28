@@ -100,18 +100,18 @@ public class PermanentZOneDFEManagerAlveoU250 extends XilinxAlveoU250Manager imp
 	    colProds[i].setAdditionalRegisters(2);
 
     if (dual) {
-      KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), divide_rows ? dim/(numkernels*numarrays) : rows, cols, divide_rows, isSim));
+      KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), divide_rows ? dim/(numkernels*numarrays) : rows, cols, divide_rows));
       int singlekerns = numkernels * numarrays / 2;
       for (int i = 0; i < singlekerns; i++)
 		    ProdColsKernel.getInput("colProd" + i) <== colProds[i];
       SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
       if (!isSim) {
         //MaxRingConnection.MAXRING_QSFP0.getNativeWidth() == 256 && MaxRingConnection.MAXRING_QSFP1.getNativeWidth() == 256
-        MaxRingBidirectionalStream maxRingStream0 = addMaxRingBidirectionalStream( "maxRingStream0", MaxRingConnection.MAXRING_QSFP0);
+        MaxRingBidirectionalStream maxRingStream0 = addMaxRingBidirectionalStream( "maxRingStream", MaxRingConnection.MAXRING_QSFP0);
         maxRingStream0.getLinkToRemoteDFE()  <== ProdColsKernel.getOutput("colProdRemote");
         SumUpPermKernel.getInput("colProd1") <==  maxRingStream0.getLinkFromRemoteDFE();
       } else {
-        KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), divide_rows ? dim/(numkernels*numarrays) : rows, cols, divide_rows, isSim));
+        KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), divide_rows ? dim/(numkernels*numarrays) : rows, cols, divide_rows));
         for (int i = singlekerns; i < numkernels; i++)
           ProdColsKernel2.getInput("colProd" + (i-singlekerns)) <== colProds[i];
         SumUpPermKernel.getInput("colProd1") <==  ProdColsKernel2.getOutput("colProd");
