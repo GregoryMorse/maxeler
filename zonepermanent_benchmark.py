@@ -126,7 +126,9 @@ permfuncs = [
   calculateSIMGlynnRowsDual, calculateSIMGlynnRowsGrayDual,
   ]) + ([] if not hasDFE else [
   calculateDFERowsGray,
-  #calculateDFEGlynnRowsGray, calculateDFERowsGrayDual, calculateDFEGlynnRowsGrayDual,
+  calculateDFEGlynnRowsGray,
+  calculateDFERowsGrayDual,
+  calculateDFEGlynnRowsGrayDual,
   ])
 
 #empirical validation of correctness
@@ -159,7 +161,8 @@ def timing_permanent():
   ax1 = fig.add_subplot(111)
   for i, resset in enumerate(results):
     ax1.plot(xaxis, resset, label=permfuncs[i].__name__)
-  ax1.set_xlabel("Size (n)")
+  ax1.set_xlabel("Size (log2 n)")  
+  ax1.set_xscale('log', base=2)
   ax1.set_ylabel("Time (s)")
   ax1.legend()
   ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
