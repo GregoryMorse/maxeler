@@ -11,7 +11,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.utils.Bits;
-//import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import java.math.BigInteger;
 
 public class PermanentZOneDFEKernel extends Kernel {
@@ -72,9 +72,12 @@ public class PermanentZOneDFEKernel extends Kernel {
       DFEVar[] oldrowsums = new DFEVar[rows];
       DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(MaxColSum, rows);
       DFEVector<DFEVar> initrowsums = null;
+      DFEVar arrayRowOffset = null;
       if (glynn) {
         initrowsums = io.input( "rowSums", vectorType, tickCount<2);
         //debug.simPrintf(tickCount < 2, "%KObj%\n", initrowsums);
+      } else if (dual && divide_rows && parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE) {
+        arrayRowOffset = io.scalarInput("arrayRowOffset", dfeUInt(7)); //maximum shift amount for 64 bits is log2 64=7 bits 
       }
       for (int row_idx=0; row_idx<rows; ++row_idx) {
         DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
@@ -83,7 +86,10 @@ public class PermanentZOneDFEKernel extends Kernel {
         if (glynn) {
           inits = initrowsums.get(row_idx);
         } else if (divide_rows) {
-          inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum)) + (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
+          if (dual && parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE)
+            inits = ((constant.var(UIntType, new Bits(64, 1)) << (arrayRowOffset+rowoffset+row_idx)) >= ticksMax ? (fullrow >> (arrayRowOffset+rowoffset+row_idx)).get(0).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum));
+          else inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum));
+          inits += (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
         } else {
           inits = (constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum);
           if (dual) inits = inits + ((fullrow & gcode & (ticksMax << 2)) !== 0).cast(MaxColSum);
