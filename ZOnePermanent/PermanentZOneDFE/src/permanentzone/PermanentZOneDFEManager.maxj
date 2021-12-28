@@ -31,7 +31,7 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
     InterfaceParam ticksmax = 1 << (divide_rows ? (glynn ? origRows-1 : origRows) : (dual ? (origRows-(glynn ? 4 : 3)) : (origRows-(glynn ? 3 : 2)))); //numkernels==4 or 8
     for (int i = 0; i < numkernels; i++) {
 		  ei.setScalar("PermanentZOneDFEKernel_" + i, "ticksMax", ticksmax);
-      if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "ticksMax", ticksmax);        
+      if (glynn && use_gray) ei.setScalar("InitializeColSumDFEKernel_" + i, "ticksMax", ticksmax);
     }
     ei.setScalar("FinalSumUpPermDFEKernel", "origRowsMinusOne", origRows-1);
    
@@ -47,6 +47,11 @@ public interface PermanentZOneDFEManager extends ManagerPCIe, ManagerKernel {
         if (divide_rows) {
           ei.setScalar("PermanentZOneDFEKernel_" + 0, "canSign", isLocal);
           if (isSim) ei.setScalar("PermanentZOneDFEKernel_" + (numkernels * numarrays / 2), "canSign", 0);
+          else if (!glynn && use_gray && !isSim) {
+            for (int i = 0; i < numkernels; i++) {
+              ei.setScalar("PermanentZOneDFEKernel_" + i, "arrayRowOffset", isLocal ? 0 : (rows / 2));
+            }
+          }
         }
       }
     }
