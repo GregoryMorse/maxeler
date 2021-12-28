@@ -10,6 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
@@ -48,7 +49,7 @@ public class ProdColsDFEKernel extends Kernel {
     DFEVar bits = a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + a.slice(offset, clen-offset).cast(dfeUInt(clen-offset)).cast(dfeInt(clen-offset+1)) + carry.cast(dfeInt(clen-offset+1));
     return bits.cat(res).cast(dfeInt(clen+1));
   }
-	public ProdColsDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows, boolean isSim) {
+	public ProdColsDFEKernel(final KernelParameters parameters, int rows, int cols, boolean divide_rows) {
 		super(parameters);
     //optimization.pushRoundingMode(RoundingMode.TRUNCATE);
     //optimization.pushFixOpMode(Optimization.bitSizeAll(), Optimization.offsetLargest(), MathOps.values());
@@ -73,7 +74,7 @@ public class ProdColsDFEKernel extends Kernel {
     //colProdVal = (colProdVal0.cast(MaxPartialSubProd)+colProdVal1.cast(MaxPartialSubProd)).cast(MaxPartialSum)+(colProdVal2.cast(MaxPartialSubProd)+colProdVal3.cast(MaxPartialSubProd)).cast(MaxPartialSum);
     //debug.simPrintf("%X %X %X %X %X %X\n", colProdVal0, colProdVal1, colProdVal2, colProdVal3, addBigIntegers(colProdVal0, colProdVal1), colProdVal);
   
-    if (!isSim) {
+    if (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE) {
 	  	// scalar input variable to control the output
   		DFEVar localOutput = io.scalarInput("localOutput", dfeUInt(8) );
       //debug.dfePrintf("Prod %X\n", localOutput);
