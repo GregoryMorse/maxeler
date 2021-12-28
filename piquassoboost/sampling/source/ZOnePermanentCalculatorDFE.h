@@ -7,8 +7,8 @@
 #endif
 
 // the maximal dimension of matrix to be ported to FPGA for permanent calculation
-#define ZONE_MAX_FPGA_DIM 24
-#define ZONE_MAX_SINGLE_FPGA_DIM 20
+#define ZONE_MAX_FPGA_DIM 3*8
+#define ZONE_MAX_SINGLE_FPGA_DIM 5*4
 //#define PermanentZOneRowsGrayDFE_MTXSIZE (20)
 
 typedef void(*CALCPERMDFE)(const uint64_t*, const uint64_t, const uint64_t, uint64_t*);
