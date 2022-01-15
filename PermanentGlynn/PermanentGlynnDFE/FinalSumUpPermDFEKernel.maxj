@@ -1,0 +1,60 @@
+package permanentglynn;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+
+
+
+public class FinalSumUpPermDFEKernel extends Kernel {
+
+
+
+	public FinalSumUpPermDFEKernel(final KernelParameters parameters) {
+		super(parameters);
+
+		//DFEType UIntType          = dfeUInt(64);  
+		//DFEType IntType           = dfeInt(64);  
+		//DFEType doubleType         = dfeFloat(11,53);
+		//DFEType dataTypeFix64     = dfeFixOffset(64, -60, SignMode.TWOSCOMPLEMENT);
+		DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+
+		//DFEComplexType cplxDoubleType = new DFEComplexType(doubleType);
+		DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
+		//DFEComplexType cplxFix64Type    = new DFEComplexType(dataTypeFix64);
+
+
+
+		// tick count
+		DFEVar tickCount = control.count.simpleCounter(3, 4);
+		DFEVar InputCount = control.count.simpleCounter(2, 2);
+
+
+		DFEComplex sum = io.input( "partialSum", cplxFix128Type, InputCount===0);
+
+
+		DFEComplex sumCarried = cplxFix128Type.newInstance(this);
+
+		sum = tickCount < 2 ? sum : sumCarried + sum;
+
+		sumCarried <== stream.offset( sum, -2 );
+//debug.simPrintf("%d: %d, %f + i*%f \n", tickCount, InputCount, sum.cast( cplxFix64Type ).getReal(), sum.cast( cplxFix64Type ).getImaginary() );
+
+		//io.output("res", sum.cast( cplxFix64Type ).cast( cplxDoubleType ), cplxDoubleType, tickCount === 3 );
+		io.output("res", sum, cplxFix128Type, tickCount === 3 );
+
+
+
+
+
+
+	}
+
+}
