@@ -1,0 +1,153 @@
+package permanentglynn;
+
+//import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
+import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnection;
+
+public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
+
+  int singlemultiplier = 4;//10;
+  int dualmultiplier = 2;//6;
+
+	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
+ 
+    int numarrays = dual && !isSim ? 2 : 1;
+    int numkernels = (dual ? 8 : 4) / numarrays;
+	  int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
+  	int rows = dim;
+    int cols = rows;
+    KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
+    KernelBlock[] colSumKernels = new KernelBlock[numkernels];
+    for (int i = 0; i < numkernels; i++) {
+		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols));
+      initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols, dual));
+      colSumKernels[i].getInput("colSums") <== initColSumKernels[i].getOutput("colSums");
+    }
+
+		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual));
+		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel")));
+    for (int i = 0; i < numkernels; i++)
+		  if (i < 4) assignKernelToSLR(colSumKernels[i], i);
+    DFELink colProds[] = new DFELink[numkernels];
+    for (int i = 0; i < numkernels; i++)
+		  colProds[i] = colSumKernels[i].getOutput("colProd"); 
+    for (int i = 0; i < numkernels; i++)
+		  colProds[i].setAdditionalRegisters(2);
+    
+    if (dual) {
+      KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel")));
+      int singlekerns = numkernels * numarrays / 2;
+      for (int i = 0; i < singlekerns; i++)
+		    ProdColsKernel.getInput("colProd" + i) <== colProds[i];
+      SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
+      if (!isSim) {
+        //MaxRingConnection.MAXRING_QSFP0.getNativeWidth() == 256 && MaxRingConnection.MAXRING_QSFP1.getNativeWidth() == 256
+        MaxRingBidirectionalStream maxRingStream0 = parent.addMaxRingBidirectionalStream( "maxRingStream", MaxRingConnection.MAXRING_QSFP0);
+        maxRingStream0.getLinkToRemoteDFE()  <== ProdColsKernel.getOutput("colProdRemote");
+        SumUpPermKernel.getInput("colProd1") <==  maxRingStream0.getLinkFromRemoteDFE();
+      } else {
+        KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2")));
+        for (int i = singlekerns; i < numkernels; i++)
+          ProdColsKernel2.getInput("colProd" + (i-singlekerns)) <== colProds[i];
+        SumUpPermKernel.getInput("colProd1") <==  ProdColsKernel2.getOutput("colProd");
+      }      
+    } else {
+      for (int i = 0; i < numkernels; i++)
+		    SumUpPermKernel.getInput("colProd" + i) <== colProds[i];
+    }
+
+		FinalSumUpPermKernel.getInput("partialSum") <== SumUpPermKernel.getOutput("partialSum");
+		DFELink toCPU = FinalSumUpPermKernel.getOutput("res");
+		addStreamToCPU("res") <== toCPU;
+    addMaxFileConstant("MTXSIZE", dim);
+
+	}
+
+	void assignKernelToSLR(KernelBlock kernel, int slr_index);
+	
+
+	static EngineInterface interfaceDefault (boolean dual, boolean isSim) {
+    int numarrays = dual && !isSim ? 2 : 1;
+    int numkernels = (dual ? 8 : 4) / numarrays;
+	  int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
+  	int rows = dim;
+    int cols = rows;
+
+		EngineInterface ei = new EngineInterface();
+    InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
+    InterfaceParam ticksmax = 1 << (dual ? (origRows-4) : (origRows-3));
+    if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
+    if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
+    if (dual && !isSim) {
+      InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
+      ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
+      ei.setScalar("SumUpPermDFEKernel", "ticksMax", isLocal ? ticksmax : 0);
+      ei.setTicks("SumUpPermDFEKernel", isLocal ? ticksmax : 0);
+      ei.setTicks("FinalSumUpPermDFEKernel", isLocal ? 4 : 0);
+    } else {
+  		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
+  
+  		ei.setTicks("SumUpPermDFEKernel", ticksmax);
+  		ei.setTicks("FinalSumUpPermDFEKernel", 4);
+    }
+	
+    InterfaceParam startTicks = ticksmax;
+		for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
+			ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "ticksMax", ticksmax);
+      ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "ticksMax", ticksmax);
+      if (kernel_n == 0) {
+			  ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "InitialCount", 0);
+        ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", 0);
+      } else {
+        ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "InitialCount", startTicks);
+        ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", startTicks);      
+        startTicks += ticksmax;
+      }
+			
+			// set the ticks of the computing kernel
+			ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax);
+      ei.setTicks("InitializeColSumDFEKernel_" + kernel_n, 1);
+		}
+
+		// setting mapped memories
+		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.DOUBLE, "fixed point array containing the input matrix times 2");
+    for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
+  		for (int rowIdx=0; rowIdx<rows; rowIdx++) { 
+  			for (int colIdx=0; colIdx<cols; colIdx++) { 
+  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, inputMtx[(rowIdx*cols+colIdx)*2]);
+  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, inputMtx[(rowIdx*cols+colIdx)*2+1]);
+  				ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, inputMtx[(rowIdx*cols+colIdx)*2]);
+  				ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, inputMtx[(rowIdx*cols+colIdx)*2+1]);
+  			}
+  		}
+    }
+   
+
+		// stream to CPU containing the result
+    if (!dual || isSim)
+		  ei.setStream("res", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent
+		
+		//ei.ignoreAll(EngineInterface.Direction.IN_OUT);
+		//for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
+			//ei.unignoreMem("PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_kernel_" + kernel_n);
+			//ei.unignoreMem("InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_kernel_" + kernel_n);
+		//}
+		
+		return ei ;
+	}
+
+}
+
+
+
+
+
