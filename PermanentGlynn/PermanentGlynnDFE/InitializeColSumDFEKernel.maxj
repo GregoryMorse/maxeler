@@ -1,0 +1,75 @@
+package permanentglynn;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+
+public class InitializeColSumDFEKernel extends Kernel {
+  static int bitlength(long i)
+  {
+    int r = 0;
+    while ((i >>= 1) != 0) r++;
+    return r+1;
+  }
+ 
+	public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual) {
+		super(parameters);
+    DFEType UIntType          = dfeUInt(64);
+		DFEType dataTypeFix64     = dfeFixOffset(64, -60, SignMode.TWOSCOMPLEMENT);
+    DFEType doubleType         = dfeFloat(11,53);
+		//DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+
+		//DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
+		DFEComplexType cplxFix64Type    = new DFEComplexType(dataTypeFix64);
+    DFEVectorType<DFEComplex> colType = new DFEVectorType<DFEComplex>(cplxFix64Type, cols);
+    int bitsToAddressMtx = MathUtils.bitsToAddress(rows*cols*2);
+    Memory<DFEVar> mappedInputMtx = mem.alloc(doubleType, rows*cols*2);
+		mappedInputMtx.mapToCPU("mappedInputMtx_Rows");
+		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+    DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
+    //int kernpow2 = dual ? 3 : 2;
+    //DFEVar ticksAdj = ticksMax<<kernpow2;
+    DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
+    DFEVar gcodeidx = tickCount+initialCount;
+    //gcodeidx = (gcodeidx.get(0)!==0 ? ticksAdj : constant.zero(UIntType)) | (gcodeidx >> 1);
+    DFEVar gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
+    //gcode = ~(ticksAdj-1) | gcode;
+    DFEVector<DFEComplex> fincolsums = colType.newInstance(this);
+    for (int col_idx=0; col_idx<cols; ++col_idx) {
+      int sumsleft = rows;
+      DFEComplex colsums[] = new DFEComplex[cols];
+      if (sumsleft != 0) {
+        for(int i = 0; i < rows; i++){
+          colsums[i] = cplxFix64Type.newInstance(this);
+          colsums[i].getReal() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), new Bits(bitsToAddressMtx, (i * cols + col_idx) * 2))).cast(dataTypeFix64);
+    			colsums[i].getImaginary() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), new Bits(bitsToAddressMtx, (i * cols + col_idx) * 2 + 1))).cast(dataTypeFix64);
+          //debug.simPrintf(gcodeidx===0, "%f %f ", colsums[i].getReal(), colsums[i].getImaginary());
+        }
+        //debug.simPrintf(gcodeidx===0, "\n");
+        for (int row_idx = 1; row_idx < rows; row_idx++) {
+          colsums[row_idx] = gcode.get(row_idx-1).cast(dfeBool()) ? -colsums[row_idx] : colsums[row_idx];
+        }
+      }
+      while (sumsleft > 1) { //sums processed in binary tree
+        for (int row_idx = 0; row_idx < sumsleft / 2; row_idx++) {
+          colsums[row_idx] = colsums[row_idx*2] + colsums[row_idx*2+1];
+        }
+        if ((sumsleft & 1) != 0) { colsums[sumsleft/2] = colsums[sumsleft-1]; sumsleft = sumsleft / 2 + 1; }
+        else sumsleft /= 2;
+      }
+      fincolsums.get(col_idx) <== sumsleft == 1 ? colsums[0] : constant.zero(cplxFix64Type);
+    }
+    //debug.simPrintf(gcodeidx===0, "%d %d %KObj%\n", gcodeidx, gcode, fincolsums);
+    io.output("colSums", fincolsums, colType, tickCount===0); 
+	}
+
+}
