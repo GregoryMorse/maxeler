@@ -11,7 +11,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
-import com.maxeler.maxcompiler.v2.utils.Bits;
+//import com.maxeler.maxcompiler.v2.utils.Bits;
 
 public class InitializeColSumDFEKernel extends Kernel {
   static int bitlength(long i)
@@ -44,22 +44,28 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVar gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
     //gcode = ~(ticksAdj-1) | gcode;
     DFEVector<DFEComplex> fincolsums = colType.newInstance(this);
+    DFEVar gcodes[] = new DFEVar[rows-1];
+    for (int row_idx = 1; row_idx < rows; row_idx++) {
+      gcodes[row_idx-1] = gcode.get(row_idx-1).cast(dfeBool());
+    }
     for (int col_idx=0; col_idx<cols; ++col_idx) {
       int sumsleft = rows;
+      DFEVector<DFEComplex> colToAdd = colType.newInstance(this);
       DFEComplex colsums[] = new DFEComplex[cols];
       if (sumsleft != 0) {
         for(int i = 0; i < rows; i++){
-          colsums[i] = cplxFix64Type.newInstance(this);
-          colsums[i].getReal() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), new Bits(bitsToAddressMtx, (i * cols + col_idx) * 2))).cast(dataTypeFix64);
-    			colsums[i].getImaginary() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), new Bits(bitsToAddressMtx, (i * cols + col_idx) * 2 + 1))).cast(dataTypeFix64);
+          colToAdd[i].getReal() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), (i * cols + col_idx) * 2)).slice(0, 64).cast(dataTypeFix64);
+    			colToAdd[i].getImaginary() <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), (i * cols + col_idx) * 2 + 1)).slice(0, 64).cast(dataTypeFix64);
           //debug.simPrintf(gcodeidx===0, "%f %f ", colsums[i].getReal(), colsums[i].getImaginary());
         }
         //debug.simPrintf(gcodeidx===0, "\n");
+        colsums[0] = colToAdd[0];
         for (int row_idx = 1; row_idx < rows; row_idx++) {
-          colsums[row_idx] = gcode.get(row_idx-1).cast(dfeBool()) ? -colsums[row_idx] : colsums[row_idx];
+          colsums[row_idx] = gcodes[row_idx-1] ? -colToAdd[row_idx] : colToAdd[row_idx];
         }
       }
       while (sumsleft > 1) { //sums processed in binary tree
+        //colsums[0] = colsums[0] + colsums[rows-sumsleft+1]; sumsleft--;
         for (int row_idx = 0; row_idx < sumsleft / 2; row_idx++) {
           colsums[row_idx] = colsums[row_idx*2] + colsums[row_idx*2+1];
         }
