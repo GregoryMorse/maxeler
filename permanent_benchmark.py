@@ -85,14 +85,16 @@ def permanent_glynn_gray(mat): #optimal row-major order
 
 
 permanent_Glynn_calculator = GlynnPermanent( )
-def permanent_walrus_quad_Ryser(Arep): return perm_complex(Arep, quad=True)
-def permanent_walrus_quad_BBFG(Arep): return perm_BBFG_complex(Arep)
+#https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
+def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True)
+def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep)
 def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep)
 def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
 def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
 def permanent_ChinHuh_calculator(Arep):
+  if len(Arep) == 0: return 1+0j
   input_state = np.ones(Arep.shape[0], np.int64)
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
@@ -217,12 +219,13 @@ def verify():
   nmax = 15
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
-    A = {dim:gen_test_data(dim) for dim in range(5, nmax)}
+    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax)}
     res = [[] for _ in permFuncs]
     for i, func in enumerate(permFuncs):
-      for dim in range(5, nmax):
+      #print(func.__name__)
+      for dim in range(nmax):
         res[i].append(func(A[dim]))
-        #print(dim, func.__name__, func(A[dim]))
+        print(dim, func.__name__, func(A[dim]))
     for i in range(len(res[0])):
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
 def timing():
@@ -231,9 +234,9 @@ def timing():
   xaxis = list(range(nmax))
   results = [[] for _ in permFuncs]
   for gen_test_data in (unitary_group.rvs, ):
-    A = {dim:gen_test_data(dim) for dim in range(5, nmax)}
+    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax)}
     for i, func in enumerate(permFuncs):
-      for dim in range(5, xaxis):
+      for dim in xaxis:
         results[i].append(timeit.timeit(lambda: func(A[dim]), number=2))
   import matplotlib.pyplot as plt
   from matplotlib.ticker import MaxNLocator
