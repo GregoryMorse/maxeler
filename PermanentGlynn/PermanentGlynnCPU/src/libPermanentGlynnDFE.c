@@ -23,6 +23,13 @@ typedef struct Complex16 {
   double imag;
 } Complex16;
 
+typedef struct ComplexFix16 {
+  /// the real part of a complex number
+  __int64_t real;
+  /// the imaginary part of a complex number
+  __int64_t imag;
+} ComplexFix16;
+
 
 /// @brief Structure type representing 32 byte complex numbers
 typedef struct Complex32 {
@@ -139,7 +146,7 @@ void releive_DFE()
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
-void calcPermanentGlynnDFE(const Complex16* mtx_data, const double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
+void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
 {
     if (!initialized) return;
     
@@ -168,14 +175,14 @@ void calcPermanentGlynnDFE(const Complex16* mtx_data, const double* renormalize_
 
     // simulation
     if (!useDual) {
-      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.param_InputMtx = (double*)mtx_data, actions.glynnRowsGray.outstream_res = res;
+      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, actions.glynnRowsGray.outstream_res = res;
     } else {
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
-      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (double*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res;
+      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res;
 #else
-      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (double*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
-      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (double*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
+      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
+      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
 #endif
     }
 
@@ -193,8 +200,10 @@ void calcPermanentGlynnDFE(const Complex16* mtx_data, const double* renormalize_
 #ifdef DEBUG
 	printf("Permanent calulation on DFE finished\n");
 #endif
+
+    //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     numOfPartialPerms = 1 << (numOfPartialPerms-1);
-    long double factor = (long double)power_of_2(62);
+    long double factor = (long double)(1ULL<<62);
 
     perm->real = ((long double)res[0])/factor/factor;
     perm->imag = ((long double)res[1])/factor/factor;
@@ -202,7 +211,7 @@ void calcPermanentGlynnDFE(const Complex16* mtx_data, const double* renormalize_
     perm->real = perm->real / numOfPartialPerms;
     perm->imag = perm->imag / numOfPartialPerms;
 
-    // renormalize the result according to the normalization of th einput matrix
+    // renormalize the result according to the normalization of the input matrix
     for (int jdx=0; jdx<cols; jdx++ ) {
         perm->real = perm->real * renormalize_data[jdx];
         perm->imag = perm->imag * renormalize_data[jdx];
