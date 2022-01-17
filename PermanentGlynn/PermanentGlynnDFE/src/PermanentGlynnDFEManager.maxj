@@ -25,12 +25,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 	  int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	int rows = dim;
     int cols = rows;
-    KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
+    //KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
     for (int i = 0; i < numkernels; i++) {
 		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols));
-      initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols, dual));
-      colSumKernels[i].getInput("colSums") <== initColSumKernels[i].getOutput("colSums");
+      //initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols, dual));
+      //colSumKernels[i].getInput("colSums") <== initColSumKernels[i].getOutput("colSums");
     }
 
 		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual));
@@ -84,7 +84,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 		EngineInterface ei = new EngineInterface();
     InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
-    InterfaceParam ticksmax = 1 << (dual ? (origRows-4) : (origRows-3));
+    InterfaceParam ticksmax = 1 << (dual ? origRows-4 : origRows-3);
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     if (dual && !isSim) {
@@ -103,30 +103,44 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     InterfaceParam startTicks = ticksmax;
 		for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
 			ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "ticksMax", ticksmax);
-      ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "ticksMax", ticksmax);
+      //ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "ticksMax", ticksmax);
       if (kernel_n == 0) {
 			  ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "InitialCount", 0);
-        ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", 0);
+        //ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", 0);
       } else {
         ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "InitialCount", startTicks);
-        ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", startTicks);      
+        //ei.setScalar("InitializeColSumDFEKernel_" + kernel_n, "InitialCount", startTicks);      
         startTicks += ticksmax;
       }
 			
 			// set the ticks of the computing kernel
 			ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax);
-      ei.setTicks("InitializeColSumDFEKernel_" + kernel_n, 1);
+      //ei.setTicks("InitializeColSumDFEKernel_" + kernel_n, 1);
 		}
 
 		// setting mapped memories
-		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.DOUBLE, "fixed point array containing the input matrix times 2");
+		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.INT64, "fixed point array containing the input matrix times 2");
+    InterfaceParam gcodeidx = ticksmax ^ ticksmax;
     for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
+      InterfaceParam[] colsums = new InterfaceParam[cols*2];
+      InterfaceParam gcode = gcodeidx ^ (gcodeidx >> 1);
+      for (int colIdx=0; colIdx < cols; colIdx++) {
+        colsums[colIdx*2] = inputMtx[colIdx*2];
+        colsums[colIdx*2+1] = inputMtx[colIdx*2+1];
+        for (int rowIdx=1; rowIdx < rows; rowIdx++) {
+          colsums[colIdx*2] += (gcode & (1 << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2] : inputMtx[(rowIdx*cols+colIdx)*2];
+          colsums[colIdx*2+1] += (gcode & (1 << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2+1] : inputMtx[(rowIdx*cols+colIdx)*2+1];
+        }
+      }
+      gcodeidx += ticksmax;
   		for (int rowIdx=0; rowIdx<rows; rowIdx++) { 
+        ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInput_colSums", rowIdx*2, colsums[rowIdx*2].cast(CPUTypes.UINT64));
+  			ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInput_colSums", rowIdx*2+1, colsums[rowIdx*2+1].cast(CPUTypes.UINT64));
   			for (int colIdx=0; colIdx<cols; colIdx++) { 
-  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, inputMtx[(rowIdx*cols+colIdx)*2]);
-  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, inputMtx[(rowIdx*cols+colIdx)*2+1]);
-  				ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, inputMtx[(rowIdx*cols+colIdx)*2]);
-  				ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, inputMtx[(rowIdx*cols+colIdx)*2+1]);
+  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, (inputMtx[(rowIdx*cols+colIdx)*2]+inputMtx[(rowIdx*cols+colIdx)*2]).cast(CPUTypes.UINT64));
+  				ei.setMem( "PermanentGlynnDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, (inputMtx[(rowIdx*cols+colIdx)*2+1]+inputMtx[(rowIdx*cols+colIdx)*2+1]).cast(CPUTypes.UINT64));
+  				//ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2, inputMtx[(rowIdx*cols+colIdx)*2]);
+  				//ei.setMem( "InitializeColSumDFEKernel_" + kernel_n, "mappedInputMtx_Rows", (rowIdx*cols+colIdx)*2+1, inputMtx[(rowIdx*cols+colIdx)*2+1]);
   			}
   		}
     }
