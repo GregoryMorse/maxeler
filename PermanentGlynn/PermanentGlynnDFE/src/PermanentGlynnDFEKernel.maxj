@@ -200,10 +200,7 @@ static long power_of_2(long n) {
 			limit = limitNew;
 
 		}
-    DFEVar sign = constant.zero(dfeUInt(1));
-		for (int rowIdx=0; rowIdx<rows; rowIdx++) {
-			sign ^= grayCounter.grayCount[rowIdx];
-		}    
+    DFEVar sign = counter.get(0).cast(dfeBool());
     DFEComplex colProdVal = sign === 0 ? colSumFix[0] : -colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
    
    
