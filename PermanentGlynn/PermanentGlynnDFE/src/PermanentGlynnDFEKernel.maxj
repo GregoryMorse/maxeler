@@ -53,7 +53,7 @@ static long power_of_2(long n) {
 			grayCount <== inCounter ^ (inCounter >> 1);
 			DFEVar bitDiffMask = grayCount ^ stream.offset(grayCount, -1);
 			
-			changeValue <== (grayCount & bitDiffMask) === 0 ? constant.var(dfeUInt(1), 0) : constant.var(dfeUInt(1), 1);
+			changeValue <== (grayCount & bitDiffMask) !== 0;
 			changePosition <==  Bitops.onehotDecode(bitDiffMask)+1;
 		}
 	}
@@ -133,7 +133,8 @@ static long power_of_2(long n) {
     int bitsToAddressCol = MathUtils.bitsToAddress(cols*2);
 		Memory<DFEVar> mappedInputColSums = mem.alloc(int64Type, cols*2);
 		mappedInputColSums.mapToCPU("mappedInput_colSums");
-		DFEVector<DFEComplex> initialColmnSumVector = colSumType.newInstance(this); //io.input("colSums", colSumType, tickCount===0);
+    DFEVar firstTick = tickCount===0;
+		DFEVector<DFEComplex> initialColmnSumVector = colSumType.newInstance(this); //io.input("colSums", colSumType, firstTick);
     for (int i = 0; i < cols; i++) {
       initialColmnSumVector[i].getReal() <== mappedInputColSums.read(constant.var(dfeUInt(bitsToAddressCol), i*2)).slice(0, 64).cast(dataTypeFix64);
       initialColmnSumVector[i].getImaginary() <== mappedInputColSums.read(constant.var(dfeUInt(bitsToAddressCol), i*2+1)).slice(0, 64).cast(dataTypeFix64);
@@ -141,12 +142,12 @@ static long power_of_2(long n) {
 		//update sum vector
 		for(int i = 0; i < cols; i++){
 			//removepipelining from multiplexers ==> no loop but might cause problems with meeting timing
-			DFEComplex toAdd = ((grayCounter.changeValue === 0) ? rowToAdd[i] : -rowToAdd[i]);
+			DFEComplex toAdd = firstTick ? constant.zero(cplxFix64Type) : (grayCounter.changeValue ? -rowToAdd[i] : rowToAdd[i]);
 			optimization.pushNoPipelining();
-			DFEComplex prevColmnSumVector = (tickCount===0) ? initialColmnSumVector[i] : stream.offset(colmnSumVector[i],-1);
+			DFEComplex prevColmnSumVector = firstTick ? initialColmnSumVector[i] : stream.offset(colmnSumVector[i],-1);
 			optimization.popNoPipelining();
 			
-			colmnSumVector[i] <== prevColmnSumVector + ((tickCount===0) ? constant.zero(cplxFix64Type) : toAdd);
+			colmnSumVector[i] <== prevColmnSumVector + toAdd;
 		}
 		//ArrayList<DFEComplex> toReduce = new ArrayList<>(cols);
 		//DFEComplex reducedValue = colmnSumVector[0].cast(cplxFix64Type);//.cast(cplxFix128Type);
