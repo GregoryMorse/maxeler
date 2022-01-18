@@ -177,7 +177,8 @@ static long power_of_2(long n) {
  		if ( 2*limit < cols ) {
 			DFEComplex colSumFix1 = colmnSumVector[cols-1]
 				.cast( cplxFix128Type );
-			colSumFix[limit-1] = colSumFix[limit-1]*colSumFix1;
+      limit++;
+			colSumFix[limit-1] = colSumFix1;
 		}
 
 
@@ -192,7 +193,8 @@ static long power_of_2(long n) {
 			}
 
  			if ( 2*limitNew < limit ) {
-				colSumFix[limitNew-1] = colSumFix[limitNew-1]*colSumFix[limit-1];
+        limitNew++;
+				colSumFix[limitNew-1] = colSumFix[limit-1];
 			}
 
 			limit = limitNew;
