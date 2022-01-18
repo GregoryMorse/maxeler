@@ -87,17 +87,20 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     InterfaceParam ticksmax = 1 << (dual ? origRows-4 : origRows-3);
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
+    InterfaceParam adjticks;
     if (dual && !isSim) {
       InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
       ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
       ei.setScalar("SumUpPermDFEKernel", "ticksMax", isLocal ? ticksmax : 0);
       ei.setTicks("SumUpPermDFEKernel", isLocal ? ticksmax : 0);
       ei.setTicks("FinalSumUpPermDFEKernel", isLocal ? 4 : 0);
+      adjticks = isLocal ? 0 : ticksmax * numkernels * numarrays / 2;
     } else {
   		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
   
   		ei.setTicks("SumUpPermDFEKernel", ticksmax);
   		ei.setTicks("FinalSumUpPermDFEKernel", 4);
+      adjticks = ticksmax ^ ticksmax;
     }
 	
     InterfaceParam startTicks = ticksmax;
@@ -120,7 +123,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 		// setting mapped memories
 		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.INT64, "fixed point array containing the input matrix times 2");
-    InterfaceParam gcodeidx = ticksmax ^ ticksmax;
+    InterfaceParam gcodeidx = adjticks;
     for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
       InterfaceParam[] colsums = new InterfaceParam[cols*2];
       InterfaceParam gcode = gcodeidx ^ (gcodeidx >> 1);
