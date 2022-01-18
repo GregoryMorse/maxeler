@@ -15,8 +15,9 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnectio
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
-  int singlemultiplier = 4;//10;
-  int dualmultiplier = 2;//6;
+  //40x40 is a large enough limit in all cases
+  int singlemultiplier = 10;
+  int dualmultiplier = 5;
 
 	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
  
