@@ -11,7 +11,7 @@ SIM:
 
 CPU:
 	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentGlynnDFE/builds/simulation -C ./PermanentGlynnCPU/ SIM=true
-#	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentGlynnDFE/builds/bitstream -C ./PermanentGlynnCPU/
+	@$(MAKE) MODE=release MAXFILE_DIRS=/home/morse/workspace/PermanentGlynnDFE/builds/bitstream -C ./PermanentGlynnCPU/
 	@$(MAKE) run_sim MAXFILE_DIRS=/home/morse/workspace/PermanentGlynnDFE/builds/simulation -C ./PermanentGlynnCPU/ SIM=true
   
 CPUSIM:
