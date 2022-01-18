@@ -90,7 +90,7 @@ void initialize_DFE(int dual)
 #ifdef MAXELER_SIM
     initFunc = PermanentGlynn_dualSIM_init, runFunc = (RUNFUNC)PermanentGlynn_dualSIM_run, freeFunc = PermanentGlynn_dualSIM_free;
 #else
-    initFunc = PermanentGlynn_dualDFE_init, runFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFE_run_array, freeFunc = PermanentGlynn_dualDFE_free;
+    initFunc = PermanentGlynn_dualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFE_run_array, freeFunc = PermanentGlynn_dualDFE_free;
 #endif  
   }
 	// initialize the max file
