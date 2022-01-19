@@ -97,7 +97,7 @@ static long power_of_2(long n) {
     DFEVar b = n1.getImaginary();
     DFEVar d = n2.getImaginary();
     DFEVar bd = b * d;
-    return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - ac - bd);
+    return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
   }
 	
 	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols) {
