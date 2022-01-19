@@ -216,7 +216,7 @@ print(' ')
 
 def verify():
   ERRBOUND = 1e-10
-  nmax = 15
+  nmax = 17
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax)}
@@ -230,7 +230,7 @@ def verify():
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
 def timing():
   import timeit
-  nmax = 15
+  nmax = 17
   xaxis = list(range(nmax))
   results = [[] for _ in permFuncs]
   for gen_test_data in (unitary_group.rvs, ):
@@ -244,9 +244,9 @@ def timing():
   ax1 = fig.add_subplot(111)
   for i, resset in enumerate(results):
     ax1.plot(xaxis, resset, label=permFuncs[i].__name__)
-  ax1.set_xlabel("Size (log2 n)")  
-  ax1.set_xscale('log', base=2)
-  ax1.set_ylabel("Time (s)")
+  ax1.set_xlabel("Size")  
+  ax1.set_yscale('log', base=2)
+  ax1.set_ylabel("Time (log2 s)")
   ax1.legend()
   ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
   ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
