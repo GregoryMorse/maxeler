@@ -9,8 +9,8 @@
 #endif
 
 // the maximal dimension of matrix to be ported to FPGA for permanent calculation
-#define MAX_FPGA_DIM 8*2
-#define MAX_SINGLE_FPGA_DIM 4*4
+#define MAX_FPGA_DIM 8*5
+#define MAX_SINGLE_FPGA_DIM 4*10
 
 namespace pic {
 
