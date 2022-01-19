@@ -88,6 +88,17 @@ static long power_of_2(long n) {
 			return result;
 		}
 	}
+ 
+  DFEComplex doMult(DFEComplex n1, DFEComplex n2, KernelBase<?> owner)
+  {
+    DFEVar a = n1.getReal();
+    DFEVar c = n2.getReal();
+    DFEVar ac = a * c;
+    DFEVar b = n1.getImaginary();
+    DFEVar d = n2.getImaginary();
+    DFEVar bd = b * d;
+    return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - ac - bd);
+  }
 	
 	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols) {
 		super(parameters);
@@ -174,7 +185,7 @@ static long power_of_2(long n) {
 			DFEComplex colSumFix2 = colmnSumVector[2*idx+1]
 				.cast( cplxFix80Type );
 
-			colSumFix[idx] = colSumFix1 * colSumFix2;
+			colSumFix[idx] = doMult(colSumFix1, colSumFix2, this);
 		}
 
  		if ( 2*limit < cols ) {
@@ -192,7 +203,7 @@ static long power_of_2(long n) {
 			for (int idx=0; idx<limitNew; idx++) {
 				DFEComplex colSumFix1 = colSumFix[2*idx];
 				DFEComplex colSumFix2 = colSumFix[2*idx+1];
-				colSumFix[idx] = colSumFix1 * colSumFix2;
+				colSumFix[idx] = doMult(colSumFix1, colSumFix2, this);
 			}
 
  			if ( 2*limitNew < limit ) {
