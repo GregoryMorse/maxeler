@@ -99,7 +99,8 @@ def permanent_ChinHuh_calculator(Arep):
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
-permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_Ryser, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator, permanent_Glynn_Cpp) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+largePermFuncs = (permanent_Glynn_Cpp,) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_Ryser, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator) + largePermFuncs
 
 #np.save("mtx", A )
 #A = np.load("mtx.npy")
@@ -216,26 +217,27 @@ print(' ')
 
 def verify():
   ERRBOUND = 1e-10
-  nmax = 17
+  nmax = 40
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
-    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax)}
-    res = [[] for _ in permFuncs]
-    for i, func in enumerate(permFuncs):
-      #print(func.__name__)
-      for dim in range(nmax):
+    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
+    res = [[] for _ in largePermFuncs]
+    for i, func in enumerate(largePermFuncs):
+      #print("Verifying", func.__name__)
+      for dim in range(nmax+1):
         res[i].append(func(A[dim]))
         print(dim, func.__name__, func(A[dim]))
     for i in range(len(res[0])):
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
 def timing():
   import timeit
-  nmax = 17
-  xaxis = list(range(nmax))
-  results = [[] for _ in permFuncs]
+  nmax = 40
+  xaxis = list(range(nmax+1))
+  results = [[] for _ in largePermFuncs]
   for gen_test_data in (unitary_group.rvs, ):
-    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax)}
-    for i, func in enumerate(permFuncs):
+    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
+    for i, func in enumerate(largePermFuncs):
+      print("Testing", func.__name__)
       for dim in xaxis:
         results[i].append(timeit.timeit(lambda: func(A[dim]), number=2))
   import matplotlib.pyplot as plt
@@ -243,7 +245,7 @@ def timing():
   fig = plt.figure()
   ax1 = fig.add_subplot(111)
   for i, resset in enumerate(results):
-    ax1.plot(xaxis, resset, label=permFuncs[i].__name__)
+    ax1.plot(xaxis, resset, label=largePermFuncs[i].__name__)
   ax1.set_xlabel("Size")  
   ax1.set_yscale('log', base=2)
   ax1.set_ylabel("Time (log2 s)")
