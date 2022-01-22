@@ -18,11 +18,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
   //40x40 is a large enough limit in all cases
   int singlemultiplier = 10;
   int dualmultiplier = 5;
+  int basekernpow2 = 3;
 
 	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
  
     int numarrays = dual && !isSim ? 2 : 1;
-    int numkernels = (dual ? 8 : 4) / numarrays;
+    int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
 	  int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	int rows = dim;
     int cols = rows;
@@ -34,7 +35,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
       //colSumKernels[i].getInput("colSums") <== initColSumKernels[i].getOutput("colSums");
     }
 
-		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual));
+		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels));
 		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel")));
     for (int i = 0; i < numkernels; i++)
 		  if (i < 4) assignKernelToSLR(colSumKernels[i], i);
@@ -45,8 +46,8 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 		  colProds[i].setAdditionalRegisters(2);
     
     if (dual) {
-      KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel")));
       int singlekerns = numkernels * numarrays / 2;
+      KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), singlekerns));
       for (int i = 0; i < singlekerns; i++)
 		    ProdColsKernel.getInput("colProd" + i) <== colProds[i];
       SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
@@ -56,7 +57,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         maxRingStream0.getLinkToRemoteDFE()  <== ProdColsKernel.getOutput("colProdRemote");
         SumUpPermKernel.getInput("colProd1") <==  maxRingStream0.getLinkFromRemoteDFE();
       } else {
-        KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2")));
+        KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), singlekerns));
         for (int i = singlekerns; i < numkernels; i++)
           ProdColsKernel2.getInput("colProd" + (i-singlekerns)) <== colProds[i];
         SumUpPermKernel.getInput("colProd1") <==  ProdColsKernel2.getOutput("colProd");
@@ -78,14 +79,14 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 	static EngineInterface interfaceDefault (boolean dual, boolean isSim) {
     int numarrays = dual && !isSim ? 2 : 1;
-    int numkernels = (dual ? 8 : 4) / numarrays;
+    int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
 	  int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	int rows = dim;
     int cols = rows;
 
 		EngineInterface ei = new EngineInterface();
     InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
-    InterfaceParam ticksmax = 1 << (dual ? origRows-4 : origRows-3);
+    InterfaceParam ticksmax = 1 << (dual ? origRows-1-1-basekernpow2 : origRows-1-basekernpow2);
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     InterfaceParam adjticks;
