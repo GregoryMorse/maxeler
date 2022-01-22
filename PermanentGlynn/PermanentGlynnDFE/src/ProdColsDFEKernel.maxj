@@ -30,7 +30,7 @@ static long power_of_2(long n) {
 
 
 
-	public ProdColsDFEKernel(final KernelParameters parameters) {
+	public ProdColsDFEKernel(final KernelParameters parameters, int n) {
 		super(parameters);
 
 		DFEType UIntType          = dfeUInt(64);  
@@ -43,13 +43,18 @@ static long power_of_2(long n) {
 		DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
 		//DFEComplexType cplxFix64Type    = new DFEComplexType(dataTypeFix64);
 
-
-		DFEComplex colProdVal0 = io.input( "colProd0", cplxFix128Type);
-		DFEComplex colProdVal1 = io.input( "colProd1", cplxFix128Type);
-		DFEComplex colProdVal2 = io.input( "colProd2", cplxFix128Type);
-		DFEComplex colProdVal3 = io.input( "colProd3", cplxFix128Type);
-
-		DFEComplex colProdVal = (colProdVal0+colProdVal1)+(colProdVal2+colProdVal3);
+    DFEComplex colProdVals[] = new DFEComplex[n];
+    for (int i = 0; i < n; i++)
+      colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
+      
+    int sumsleft = n;
+    while (sumsleft > 1) { //sums processed in binary tree
+      for (int i = 0; i < sumsleft / 2; i++) {
+        colProdVals[i] = colProdVals[i*2] + colProdVals[i*2+1];
+      }
+      if ((sumsleft & 1) != 0) { colProdVals[sumsleft/2] = colProdVals[sumsleft-1]; sumsleft = sumsleft / 2 + 1; }
+      else sumsleft /= 2;
+    }
 
 //debug.simPrintf("ProdColsDFEKernel %f, %f \n", colProdVal.getReal(), colProdVal.getImaginary() );
 
@@ -58,12 +63,12 @@ static long power_of_2(long n) {
   		// scalar input variable to control the output
   		DFEVar localOutput = io.scalarInput("localOutput", UIntType );
 		  // controlled maxfile-local output 
-		  io.output("colProd", colProdVal, cplxFix128Type, localOutput === 1 );
+		  io.output("colProd", colProdVals[0], cplxFix128Type, localOutput === 1 );
 		  // controlled inter-maxfile output 
-		  io.output("colProdRemote", colProdVal, cplxFix128Type, localOutput === 0 );
+		  io.output("colProdRemote", colProdVals[0], cplxFix128Type, localOutput === 0 );
     } else {
   		// for simulation
-	  	io.output("colProd", colProdVal, cplxFix128Type );
+	  	io.output("colProd", colProdVals[0], cplxFix128Type );
     }
 
 	}
