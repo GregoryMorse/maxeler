@@ -30,7 +30,7 @@ static long power_of_2(long n) {
 
 
 
-	public SumUpPermDFEKernel(final KernelParameters parameters, boolean dual) {
+	public SumUpPermDFEKernel(final KernelParameters parameters, int n) {
 		super(parameters);
 
 		DFEType UIntType          = dfeUInt(64);  
@@ -49,25 +49,28 @@ static long power_of_2(long n) {
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
 		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
 
-
-		DFEComplex colProdVal0 = io.input( "colProd0", cplxFix128Type);
-		DFEComplex colProdVal1 = io.input( "colProd1", cplxFix128Type);
-    DFEComplex colProdVal = colProdVal0+colProdVal1;
-    if (!dual) {
-		  DFEComplex colProdVal2 = io.input( "colProd2", cplxFix128Type);
-		  DFEComplex colProdVal3 = io.input( "colProd3", cplxFix128Type);
-
-		  colProdVal = colProdVal+(colProdVal2+colProdVal3);
+    DFEComplex colProdVals[] = new DFEComplex[n];
+    for (int i = 0; i < n; i++)
+      colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
+      
+    int sumsleft = n;
+    while (sumsleft > 1) { //sums processed in binary tree
+      for (int i = 0; i < sumsleft / 2; i++) {
+        colProdVals[i] = colProdVals[i*2] + colProdVals[i*2+1];
+      }
+      if ((sumsleft & 1) != 0) { colProdVals[sumsleft/2] = colProdVals[sumsleft-1]; sumsleft = sumsleft / 2 + 1; }
+      else sumsleft /= 2;
     }
-//debug.simPrintf("%f, %f \n", colProdVal.getReal()*1000, colProdVal.getImaginary()*1000 );
-//debug.simPrintf("%f, %f \n", colProdVal0.getReal(), colProdVal0.getImaginary() );
+
+//debug.simPrintf("%f, %f \n", colProdVals[0].getReal()*1000, colProdVals[0].getImaginary()*1000 );
+//debug.simPrintf("%f, %f \n", colProdVals[0].getReal(), colProdVals[0].getImaginary() );
 		// sum up partial permanents
 		DFEVar realPartCarried = dataTypeFix128.newInstance(this);
 		DFEVar imagPartCarried = dataTypeFix128.newInstance(this);
 
 
-		DFEVar realPart = tickCount < 2 ? colProdVal.getReal() : colProdVal.getReal() + realPartCarried;
-		DFEVar imagPart = tickCount < 2 ? colProdVal.getImaginary() : colProdVal.getImaginary() + imagPartCarried;
+		DFEVar realPart = tickCount < 2 ? colProdVals[0].getReal() : colProdVals[0].getReal() + realPartCarried;
+		DFEVar imagPart = tickCount < 2 ? colProdVals[0].getImaginary() : colProdVals[0].getImaginary() + imagPartCarried;
 
 
 
@@ -79,7 +82,7 @@ static long power_of_2(long n) {
 		DFEComplex partialPerm = cplxFix128Type.newInstance(this);
 		partialPerm.setReal( realPart );
 		partialPerm.setImaginary( imagPart );
-//debug.simPrintf("%d: %f, %f, %f, %f \n", tickCount, realPart, imagPart, colProdVal.getReal(), colProdVal.getImaginary() );
+//debug.simPrintf("%d: %f, %f, %f, %f \n", tickCount, realPart, imagPart, colProdVals[0].getReal(), colProdVals[0].getImaginary() );
 
 
 
