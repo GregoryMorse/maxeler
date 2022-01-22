@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 40
+DEPTH = 16 if hasSim else 30
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -99,8 +99,8 @@ def permanent_ChinHuh_calculator(Arep):
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
-largePermFuncs = (permanent_Glynn_Cpp,) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_Ryser, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator) + largePermFuncs
+largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser, permanent_ChinHuh_calculator) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_BBFG) + largePermFuncs
 
 #np.save("mtx", A )
 #A = np.load("mtx.npy")
@@ -217,7 +217,7 @@ print(' ')
 
 def verify():
   ERRBOUND = 1e-10
-  nmax = 40
+  nmax = DEPTH
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
@@ -231,7 +231,7 @@ def verify():
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
 def timing():
   import timeit
-  nmax = 40
+  nmax = DEPTH
   xaxis = list(range(nmax+1))
   results = [[] for _ in largePermFuncs]
   for gen_test_data in (unitary_group.rvs, ):
