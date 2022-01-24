@@ -12,7 +12,7 @@
 
 #define SIZE 8
 
-
+#define BASEKERNPOW2 3
 
 
 /// @brief Structure type representing 16 byte complex numbers
@@ -151,6 +151,7 @@ void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const double* renormali
     if (!initialized) return;
     
     uint64_t numOfPartialPerms = rows;
+    //numOfPartialPerms = max(numOfPartialPerms, BASEKERNPOW2+1+1+(useDual ? 1 : 0));//extra 1 since maxTicks cannot be 1, minimum of 2
 
     //printf("%lld, %d\n", numOfPartialPerms, rows);
 
@@ -202,7 +203,7 @@ void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const double* renormali
 #endif
 
     //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
-    numOfPartialPerms = 1 << (numOfPartialPerms-1);
+    numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
     long double factor = (long double)(1ULL<<62);
 
     perm->real = ((long double)res[0])/factor/factor;
