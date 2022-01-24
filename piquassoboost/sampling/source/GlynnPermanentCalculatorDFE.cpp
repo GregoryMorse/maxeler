@@ -1,5 +1,5 @@
 #include "GlynnPermanentCalculatorDFE.h"
-
+#include "GlynnPermanentCalculator.h"
 
 #ifndef CPYTHON
 #include <tbb/tbb.h>
@@ -19,7 +19,7 @@ namespace pic {
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 {
-    if (matrix_mtx.rows < 4 || matrix_mtx.rows < 5 && useDual) { //compute with other method
+    if (matrix_mtx.rows < 5 || matrix_mtx.rows < 6 && useDual) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
       else if (matrix_mtx.rows == 1) perm = ROWCOL(matrix_mtx, 0, 0);
       else if (matrix_mtx.rows == 2) perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0);
@@ -30,7 +30,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) +
                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) +
                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1);
-      else
+      else if (matrix_mtx.rows == 4)
         perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 3) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 2) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 3) +
@@ -54,7 +54,11 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 2) +
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 0) +
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0);               
+                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0);
+      else {
+        GlynnPermanentCalculator gpc;
+        perm = gpc.calculate(matrix_mtx);
+      }        
       return;
     }
     // calulate the maximal sum of the columns to normalize the matrix
