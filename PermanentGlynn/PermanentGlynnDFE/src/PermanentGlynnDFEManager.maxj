@@ -71,6 +71,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 		DFELink toCPU = FinalSumUpPermKernel.getOutput("res");
 		addStreamToCPU("res") <== toCPU;
     addMaxFileConstant("MTXSIZE", dim);
+    addMaxFileConstant("BASEKERNPOW2", basekernpow2);
 
 	}
 
