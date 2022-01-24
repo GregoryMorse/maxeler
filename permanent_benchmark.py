@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 16 if hasSim else 30
+DEPTH = 16 if hasSim else 36
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -86,21 +86,21 @@ def permanent_glynn_gray(mat): #optimal row-major order
 
 permanent_Glynn_calculator = GlynnPermanent( )
 #https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
-def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True)
-def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep)
-def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep)
+def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #fastest
+def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep) #ChinHuh, 2^4*Glynn_Cpp, 2^5*walrus_quad_Ryser
+def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep) #2*walrus_quad_Ryser
 def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
 def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
-def permanent_ChinHuh_calculator(Arep):
+def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^4*Glynn_Cpp, 2^5*walrus_quad_Ryser
   if len(Arep) == 0: return 1+0j
   input_state = np.ones(Arep.shape[0], np.int64)
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
-largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser, permanent_ChinHuh_calculator) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_BBFG) + largePermFuncs
+largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator) + largePermFuncs
 
 #np.save("mtx", A )
 #A = np.load("mtx.npy")
