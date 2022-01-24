@@ -16,8 +16,8 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnectio
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
   //40x40 is a large enough limit in all cases
-  int singlemultiplier = 10;
-  int dualmultiplier = 5;
+  int singlemultiplier = 10/2;
+  int dualmultiplier = 5/2+1;
   int basekernpow2 = 3;
 
 	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
@@ -87,7 +87,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 		EngineInterface ei = new EngineInterface();
     InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
-    InterfaceParam ticksmax = 1 << (dual ? origRows-1-1-basekernpow2 : origRows-1-basekernpow2);
+    InterfaceParam ticksmax = 1 << (dual ? origRows-1-1-basekernpow2 : (origRows-1-basekernpow2));
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     InterfaceParam adjticks;
