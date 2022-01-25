@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 16 if hasSim else 36
+DEPTH = 16 if hasSim else 32
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -239,7 +239,9 @@ def timing():
     for i, func in enumerate(largePermFuncs):
       print("Testing", func.__name__)
       for dim in xaxis:
-        results[i].append(timeit.timeit(lambda: func(A[dim]), number=2))
+        mplier = 5 if dim < 24 else 1
+        results[i].append(timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier)
+  print(results)
   import matplotlib.pyplot as plt
   from matplotlib.ticker import MaxNLocator
   fig = plt.figure()
@@ -247,8 +249,8 @@ def timing():
   for i, resset in enumerate(results):
     ax1.plot(xaxis, resset, label=largePermFuncs[i].__name__)
   ax1.set_xlabel("Size")  
-  ax1.set_yscale('log', base=2)
-  ax1.set_ylabel("Time (log2 s)")
+  ax1.set_yscale('log', base=10)
+  ax1.set_ylabel("Time (log10 s)")
   ax1.legend()
   ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
   ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
