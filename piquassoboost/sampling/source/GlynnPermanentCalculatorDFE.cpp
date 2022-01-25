@@ -19,7 +19,7 @@ namespace pic {
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 {
-    if (matrix_mtx.rows < 5 || matrix_mtx.rows < 6 && useDual) { //compute with other method
+    if (matrix_mtx.rows < 5 || (matrix_mtx.rows < 6 && useDual)) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
       else if (matrix_mtx.rows == 1) perm = ROWCOL(matrix_mtx, 0, 0);
       else if (matrix_mtx.rows == 2) perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0);
@@ -64,8 +64,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     // calulate the maximal sum of the columns to normalize the matrix
     matrix colSumMax( matrix_mtx.cols, 1);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex16) );
-    for (int idx=0; idx<matrix_mtx.rows; idx++) {
-        for( int jdx=0; jdx<matrix_mtx.cols; jdx++) {
+    for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
             Complex16 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
             Complex16 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
             if ( std::abs( value1 ) < std::abs( value2 ) ) {
@@ -84,13 +84,13 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 
     // calculate the renormalization coefficients
     matrix_base<double> renormalize_data(matrix_mtx.cols, 1);
-    for (int jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
+    for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
         renormalize_data[jdx] = std::abs(colSumMax[jdx]);
     }
 
     // renormalize the input matrix
-    for (int idx=0; idx<matrix_mtx.rows; idx++) {
-        for( int jdx=0; jdx<matrix_mtx.cols; jdx++) {
+    for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
             matrix_mtx[ idx*matrix_mtx.stride + jdx] = matrix_mtx[ idx*matrix_mtx.stride + jdx]/renormalize_data[jdx];
         }
 
@@ -124,7 +124,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     memset( mtx_data + rows*mtx.stride, 0.0, (max_fpga_rows-rows)*max_fpga_cols*sizeof(Complex16));
     matrix_base<ComplexFix16> mtxfix = matrix_base<ComplexFix16>(max_fpga_rows, max_fpga_cols);
     ComplexFix16* mtx_fix_data = mtxfix.get_data();
-    for (int idx = 0; idx < max_fpga_rows; idx++) {
+    for (size_t idx = 0; idx < max_fpga_rows; idx++) {
         size_t offset = idx*mtx.stride;
         size_t offset_small = idx*mtxfix.stride;
         for (size_t jdx = 0; jdx < max_fpga_cols; jdx++) {
