@@ -18,12 +18,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
   //40x40 is a large enough limit in all cases
   int dim = 40;
   //int singlemultiplier = 10/2;
-  //int dualmultiplier = 5/2+1;
-  int basekernpow2 = 3;
+  //int dualmultiplier = 5/2+1;  
 
 	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
  
     int numarrays = dual && !isSim ? 2 : 1;
+    int basekernpow2 = dual && isSim ? 2 : 3;
     int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
 	  //int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	int rows = dim;
@@ -81,6 +81,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 	static EngineInterface interfaceDefault (boolean dual, boolean isSim) {
     int numarrays = dual && !isSim ? 2 : 1;
+    int basekernpow2 = dual && isSim ? 2 : 3;
     int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
 	  //int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
   	int rows = dim;
