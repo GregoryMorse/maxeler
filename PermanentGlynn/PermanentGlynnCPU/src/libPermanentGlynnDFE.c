@@ -146,7 +146,7 @@ void releive_DFE()
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
-void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
+void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
 {
     if (!initialized) return;
     
@@ -206,21 +206,18 @@ void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const double* renormali
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
     long double factor = (long double)(1ULL<<62);
 
-    perm->real = ((long double)res[0])/factor/factor;
-    perm->imag = ((long double)res[1])/factor/factor;
+    long double real = ((long double)res[0])/factor/factor;
+    long double imag = ((long double)res[1])/factor/factor;
 
-    perm->real = perm->real / numOfPartialPerms;
-    perm->imag = perm->imag / numOfPartialPerms;
+    real /= numOfPartialPerms;
+    imag /= numOfPartialPerms;
 
     // renormalize the result according to the normalization of the input matrix
     for (int jdx=0; jdx<cols; jdx++ ) {
-        perm->real = perm->real * renormalize_data[jdx];
-        perm->imag = perm->imag * renormalize_data[jdx];
+        real *= renormalize_data[jdx];
+        imag *= renormalize_data[jdx];
     }
-
-
-
-
+    perm->real = real; perm->imag = imag;
 
     return;
 }
