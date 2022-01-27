@@ -62,12 +62,12 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
       return;
     }
     // calulate the maximal sum of the columns to normalize the matrix
-    matrix colSumMax( matrix_mtx.cols, 1);
-    memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex16) );
+    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
+    memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
     for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
         for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-            Complex16 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
-            Complex16 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
+            Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
+            Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
             if ( std::abs( value1 ) < std::abs( value2 ) ) {
                 colSumMax[jdx] = value2;
             }
@@ -83,7 +83,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 
 
     // calculate the renormalization coefficients
-    matrix_base<double> renormalize_data(matrix_mtx.cols, 1);
+    matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
         renormalize_data[jdx] = std::abs(colSumMax[jdx]);
     }
@@ -128,8 +128,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
         size_t offset = idx*mtx.stride;
         size_t offset_small = idx*mtxfix.stride;
         for (size_t jdx = 0; jdx < max_fpga_cols; jdx++) {
-            mtx_fix_data[offset_small+jdx].real = __int64_t(round(mtx_data[offset+jdx].real() * (1L<<60)));
-            mtx_fix_data[offset_small+jdx].imag = __int64_t(round(mtx_data[offset+jdx].imag() * (1L<<60)));
+            mtx_fix_data[offset_small+jdx].real = __int64_t(round(mtx_data[offset+jdx].real() * (1L<<62)));
+            mtx_fix_data[offset_small+jdx].imag = __int64_t(round(mtx_data[offset+jdx].imag() * (1L<<62)));
         }
     }
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
