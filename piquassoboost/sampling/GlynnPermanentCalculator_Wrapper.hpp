@@ -6,6 +6,7 @@
 #include <numpy/arrayobject.h>
 #include "structmember.h"
 #include "GlynnPermanentCalculator.h"
+#include "GlynnPermanentCalculatorRepeated.h"
 #include "GlynnPermanentCalculatorDFE.h"
 #include "numpy_interface.h"
 #include <dlfcn.h>
@@ -156,6 +157,82 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
 }
 
 
+/**
+@brief Wrapper function to call the calculate method of C++ class CGlynnPermanentCalculator
+@param self A pointer pointing to an instance of the class GlynnPermanentCalculator_Wrapper.
+@param args A tuple of the input arguments: ??????????????
+@param kwds A tuple of keywords
+*/
+static PyObject *
+GlynnPermanentCalculator_Wrapper_calculate_repeated(GlynnPermanentCalculator_wrapper *self, PyObject *args, PyObject *kwds)
+{
+
+    // The tuple of expected keywords
+    static char *kwlist[] = {(char*)"matrix", (char*)"input_state", (char*)"output_state", NULL};
+
+    // initiate variables for input arguments
+    PyObject *matrix_arg = NULL;
+    PyObject *input_state_arg = NULL;
+    PyObject *output_state_arg = NULL;
+    /// pointer to numpy matrix to keep it alive
+    PyObject *matrix = NULL;
+    /// pointer to numpy matrix of input states to keep it alive
+    PyObject *input_state = NULL;
+    /// pointer to numpy matrix of output states to keep it alive
+    PyObject *output_state = NULL;
+
+
+    // parsing input arguments
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOO", kwlist,
+                                     &matrix_arg, &input_state_arg, &output_state_arg))
+        return Py_BuildValue("");
+
+    // convert python object array to numpy C API array
+    if ( matrix_arg == NULL ) return Py_BuildValue("");
+    if ( input_state_arg == NULL ) return Py_BuildValue("");
+    if ( output_state_arg == NULL ) return Py_BuildValue("");
+
+    // establish memory contiguous arrays for C calculations
+    if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+        matrix = matrix_arg;
+        Py_INCREF(matrix);
+    }
+    else {
+        matrix = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+    }
+
+    if ( PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
+        input_state = input_state_arg;
+        Py_INCREF(input_state);
+    }
+    else {
+        input_state = PyArray_FROM_OTF(input_state_arg, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+    }
+
+    if ( PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
+        output_state = output_state_arg;
+        Py_INCREF(output_state);
+    }
+    else {
+        output_state = PyArray_FROM_OTF(output_state_arg, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+    }
+
+  
+
+    // create instance of class GlynnPermanentCalculatorRepeated
+    pic::GlynnPermanentCalculatorRepeated* calcRepeated = new pic::GlynnPermanentCalculatorRepeated();
+
+    // create PIC version of the input matrices
+    pic::matrix matrix_mtx = numpy2matrix(matrix);
+    pic::PicState_int64 input_state_mtx = numpy2PicState_int64(input_state);
+    pic::PicState_int64 output_state_mtx = numpy2PicState_int64(output_state);
+
+    // start the calculation of the permanent
+    pic::Complex16 ret = calcRepeated->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+    delete calcRepeated;
+
+    return Py_BuildValue("D", &ret);
+}
 
 
 /**
@@ -224,6 +301,9 @@ static PyMethodDef GlynnPermanentCalculator_wrapper_Methods[] = {
     },
     {"calculateDFE", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculateDFE, METH_VARARGS | METH_KEYWORDS,
      "Method to calculate the permanent on dual DFE."
+    },
+    {"calculate_repeated", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculate_repeated, METH_VARARGS | METH_KEYWORDS,
+     "Method to calculate the permanent."
     },
     {NULL}  /* Sentinel */
 };
