@@ -136,8 +136,8 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         colsums[colIdx*2] = inputMtx[colIdx*2];
         colsums[colIdx*2+1] = inputMtx[colIdx*2+1];
         for (int rowIdx=1; rowIdx < rows; rowIdx++) {
-          colsums[colIdx*2] += (gcode & (1 << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2] : inputMtx[(rowIdx*cols+colIdx)*2];
-          colsums[colIdx*2+1] += (gcode & (1 << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2+1] : inputMtx[(rowIdx*cols+colIdx)*2+1];
+          colsums[colIdx*2] += (gcode & (1L << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2] : inputMtx[(rowIdx*cols+colIdx)*2];
+          colsums[colIdx*2+1] += (gcode & (1L << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2+1] : inputMtx[(rowIdx*cols+colIdx)*2+1];
         }
       }
       gcodeidx += ticksmax;
