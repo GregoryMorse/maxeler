@@ -69,6 +69,8 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
     Py_TYPE(self)->tp_free((PyObject *) self);
 }
 
+#define DFE_PATH "~/workspace/PermanentGlynnCPU/dist/release/lib/"
+
 /**
 @brief Method called when a python instance of the class GlynnPermanentCalculator_wrapper is allocated
 @param type A pointer pointing to a structure describing the type of the class GlynnPermanentCalculator_wrapper.
@@ -79,7 +81,7 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    self->handle = dlopen(getenv("SLIC_CONF") ? "/home/morse/workspace/PermanentGlynnCPU/dist/release/lib/libPermanentGlynnSIM.so" : "/home/morse/workspace/PermanentGlynnCPU/dist/release/lib/libPermanentGlynnDFE.so", RTLD_NOW); //"MAXELEROSDIR
+    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH "libPermanentGlynnSIM.so" : DFE_PATH "libPermanentGlynnDFE.so", RTLD_NOW); //"MAXELEROSDIR
 
     calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(self->handle, "calcPermanentGlynnDFE");
     initialize_DFE = (INITPERMGLYNNDFE)dlsym(self->handle, "initialize_DFE");
