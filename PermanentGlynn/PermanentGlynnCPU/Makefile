@@ -153,7 +153,7 @@ run_sim: start_sim
 	@ MAXELEROSDIR="$(MAXCOMPILERDIR)/lib/maxeleros-sim" \
 		LD_PRELOAD="$(MAXCOMPILERDIR)/lib/maxeleros-sim/lib/libmaxeleros.so:$(LD_PRELOAD)" \
 		SLIC_CONF="$(SLIC_CONF);use_simulation=$(SIM_NAME)" \
-		python "/home/morse/piquassoboost/permanent_benchmark.py"
+		python "~/piquassoboost/permanent_benchmark.py"
 	@ echo
 	@ echo "$(BIN_DIR)/$(TARGET) Terminated successfully."
 	@ echo
