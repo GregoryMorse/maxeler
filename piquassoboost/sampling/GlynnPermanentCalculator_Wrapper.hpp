@@ -61,7 +61,7 @@ static void
 GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 {
     // unload DFE
-    releive_DFE();
+    if (releive_DFE) releive_DFE();
     dlclose(self->handle);
     // deallocate the instance of class N_Qubit_Decomposition
     release_GlynnPermanentCalculator( self->calculator );
@@ -69,7 +69,9 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
     Py_TYPE(self)->tp_free((PyObject *) self);
 }
 
-#define DFE_PATH "~/workspace/PermanentGlynnCPU/dist/release/lib/"
+#define DFE_PATH_SIM "./dist/release/lib/"
+#define DFE_PATH "../workspace/PermanentGlynnCPU/dist/release/lib/"
+#define DFE_LIB "libPermanentGlynnSIM.so"
 
 /**
 @brief Method called when a python instance of the class GlynnPermanentCalculator_wrapper is allocated
@@ -81,7 +83,12 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH "libPermanentGlynnSIM.so" : DFE_PATH "libPermanentGlynnDFE.so", RTLD_NOW); //"MAXELEROSDIR
+    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB : DFE_PATH DFE_LIB, RTLD_NOW); //"MAXELEROSDIR
+    if (self->handle == NULL) {
+        char* pwd = getcwd(NULL, 0);
+        fprintf(stderr, "'%s' (in %s mode) failed to load from working directory '%s'\n", getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB : DFE_PATH DFE_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
+        free(pwd);
+    }
 
     calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(self->handle, "calcPermanentGlynnDFE");
     initialize_DFE = (INITPERMGLYNNDFE)dlsym(self->handle, "initialize_DFE");
@@ -273,10 +280,12 @@ GlynnPermanentCalculator_Wrapper_calculateDFE(GlynnPermanentCalculator_wrapper *
     // create PIC version of the input matrices
     pic::matrix matrix_mtx = numpy2matrix(matrix_arg);
 
-    initialize_DFE(useDual);
+    if (initialize_DFE) initialize_DFE(useDual);
 
     pic::Complex16 perm;
-    GlynnPermanentCalculator_DFE( matrix_mtx, perm, useDual);
+    
+    if (calcPermanentGlynnDFE) GlynnPermanentCalculator_DFE( matrix_mtx, perm, useDual);
+    else perm = self->calculator->calculate(matrix_mtx);
 
 
     // release numpy arrays
