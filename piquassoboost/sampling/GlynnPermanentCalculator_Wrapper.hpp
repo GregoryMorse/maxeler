@@ -71,7 +71,8 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 
 #define DFE_PATH_SIM "./dist/release/lib/"
 #define DFE_PATH "../workspace/PermanentGlynnCPU/dist/release/lib/"
-#define DFE_LIB "libPermanentGlynnSIM.so"
+#define DFE_LIB_SIM "libPermanentGlynnSIM.so"
+#define DFE_LIB "libPermanentGlynnDFE.so"
 
 /**
 @brief Method called when a python instance of the class GlynnPermanentCalculator_wrapper is allocated
@@ -83,10 +84,10 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB : DFE_PATH DFE_LIB, RTLD_NOW); //"MAXELEROSDIR
+    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, RTLD_NOW); //"MAXELEROSDIR
     if (self->handle == NULL) {
         char* pwd = getcwd(NULL, 0);
-        fprintf(stderr, "'%s' (in %s mode) failed to load from working directory '%s'\n", getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB : DFE_PATH DFE_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
+        fprintf(stderr, "'%s' (in %s mode) failed to load from working directory '%s'\n", getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
         free(pwd);
     }
 
