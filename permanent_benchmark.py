@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 16 if hasSim else 32
+DEPTH = 16 if hasSim else 40
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -215,46 +215,99 @@ print(' ')
 
 """
 
+def load_test_data():
+  nmax = 40
+  randfuncs = (unitary_group.rvs, )#generate_random_unitary):
+  import os, pickle
+  if os.path.isfile("matrices.bin"):
+    with open("matrices.bin", "rb") as f: 
+      gen_test_data = pickle.load(f)
+  else:
+    # generate the random matrix
+    gen_test_data = {rf.__name__:{dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else rf(dim) for dim in range(nmax+1)} for rf in randfuncs}
+    with open("matrices.bin", "wb") as f:
+      pickle.dump(gen_test_data, f)
+  return gen_test_data
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
-  # generate the random matrix
-  for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
-    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    res = [[] for _ in largePermFuncs]
-    for i, func in enumerate(largePermFuncs):
-      #print("Verifying", func.__name__)
+  gen_test_data = load_test_data()
+  import os, pickle
+  if os.path.isfile("verifydata.bin"):
+    with open("verifydata.bin", "rb") as f:
+      res = pickle.load(f)
+  else: res = {}
+  for key in gen_test_data:
+    A = gen_test_data[key]
+    if not key in res: res[key] = {}
+    for func in largePermFuncs:
+      if not func.__name__ in res[key]: res[key][func.__name__] = []
+      print("Verifying", func.__name__)
       for dim in range(nmax+1):
-        res[i].append(func(A[dim]))
-        print(dim, func.__name__, func(A[dim]))
-    for i in range(len(res[0])):
-      assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
+        if len(res[key][func.__name__]) <= dim:
+          res[key][func.__name__].append(func(A[dim]))
+          with open("verifydata.bin", "wb") as f:
+            pickle.dump(res, f)
+        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim])
+    with open("verifydata.csv", "w") as f:
+      import csv
+      writer = csv.writer(f, delimiter='\t')
+      writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in range(len(res[key][largePermFuncs[0].__name__]))])
+      writer.writerow(["Permanent Computation Raw Results"])
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+      writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in range(len(res[key][largePermFuncs[0].__name__]))])
+      for dim in range(nmax+1):
+        writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
+        if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
+        for i in range(dim):
+          writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
+    for i in range(len(res[key][largePermFuncs[0].__name__])):
+      assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
+  
 def timing():
   import timeit
   nmax = DEPTH
   xaxis = list(range(nmax+1))
   results = [[] for _ in largePermFuncs]
-  for gen_test_data in (unitary_group.rvs, ):
-    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    for i, func in enumerate(largePermFuncs):
+  gen_test_data = load_test_data()
+  import os, pickle
+  if os.path.isfile("resultdata.bin"):
+    with open("resultdata.bin", "rb") as f:
+      results = pickle.load(f)
+  else: results = {}  
+  for key in gen_test_data:
+    A = gen_test_data[key]
+    if not key in results: results[key] = {}
+    for func in largePermFuncs:
+      if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Testing", func.__name__)
       for dim in xaxis:
-        mplier = 5 if dim < 24 else 1
-        results[i].append(timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier)
-  print(results)
-  import matplotlib.pyplot as plt
-  from matplotlib.ticker import MaxNLocator
-  fig = plt.figure()
-  ax1 = fig.add_subplot(111)
-  for i, resset in enumerate(results):
-    ax1.plot(xaxis, resset, label=largePermFuncs[i].__name__)
-  ax1.set_xlabel("Size")  
-  ax1.set_yscale('log', base=10)
-  ax1.set_ylabel("Time (log10 s)")
-  ax1.legend()
-  ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-  ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
-  fig.savefig("glynnpermtime.svg", format="svg")
+        if len(results[key][func.__name__]) <= dim:
+          mplier = 5 if dim < 24 else 1
+          results[key][func.__name__].append(timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier)
+          if dim >= 24: print(dim, func.__name__, results[key][func.__name__][dim])
+          with open("resultdata.bin", "wb") as f:
+            pickle.dump(results, f)        
+    with open("resultdata.csv", "w") as f:
+      import csv
+      writer = csv.writer(f, delimiter='\t')
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in range(len(results[key][largePermFuncs[0].__name__]))])
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+    fig = plt.figure()
+    ax1 = fig.add_subplot(111)
+    for f in largePermFuncs:
+      ax1.plot(xaxis, results[key][f.__name__], label=f.__name__)
+    ax1.set_xlabel("Size")  
+    ax1.set_yscale('log', base=10)
+    ax1.set_ylabel("Time (log10 s)")
+    ax1.legend()
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
+    fig.savefig("glynnpermtime.svg", format="svg")
         
 verify()
 timing()
