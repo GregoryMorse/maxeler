@@ -99,7 +99,8 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^4*Glynn_Cpp, 2^5*wa
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
-largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+dfePermFuncs = ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
 permFuncs = (permanent_glynn, permanent_glynn_gray, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator) + largePermFuncs
 
 #np.save("mtx", A )
@@ -244,7 +245,7 @@ def verify():
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       print("Verifying", func.__name__)
       for dim in range(nmax+1):
-        if len(res[key][func.__name__]) <= dim:
+        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs:
           res[key][func.__name__].append(func(A[dim]))
           with open("verifydata.bin", "wb") as f:
             pickle.dump(res, f)
@@ -284,7 +285,7 @@ def timing():
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Testing", func.__name__)
       for dim in xaxis:
-        if len(results[key][func.__name__]) <= dim:
+        if len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
           mplier = 5 if dim < 24 else 1
           results[key][func.__name__].append(timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier)
           if dim >= 24: print(dim, func.__name__, results[key][func.__name__][dim])
