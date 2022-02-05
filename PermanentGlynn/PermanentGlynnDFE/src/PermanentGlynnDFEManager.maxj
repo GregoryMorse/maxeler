@@ -16,23 +16,18 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnectio
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
   //40x40 is a large enough limit in all cases
-  int dim = 40;
-  //int singlemultiplier = 10/2;
-  //int dualmultiplier = 5/2+1;  
-
 	default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
  
     int numarrays = dual && !isSim ? 2 : 1;
-    int basekernpow2 = dual && isSim ? 2 : 2;
-    int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
-	  //int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
+    int basekernpow2 = dual ? 3 : 2;
+    int numkernels = (1 << basekernpow2) / numarrays;
+	  int dim = isSim ? 24 : 40; //must be multiple of kernel count
   	int rows = dim;
     int cols = rows;
-    //KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
+    //KernelBlock initColSumKernel = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel"), rows, cols, dual));
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
     for (int i = 0; i < numkernels; i++) {
 		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols));
-      //initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols, dual));
       //colSumKernels[i].getInput("colSums") <== initColSumKernels[i].getOutput("colSums");
     }
 
@@ -81,15 +76,15 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
 	static EngineInterface interfaceDefault (boolean dual, boolean isSim) {
     int numarrays = dual && !isSim ? 2 : 1;
-    int basekernpow2 = dual && isSim ? 2 : 2;
-    int numkernels = (1 << (dual ? basekernpow2+1 : basekernpow2)) / numarrays;
-	  //int dim = (dual ? dualmultiplier : singlemultiplier) * numkernels * numarrays; //must be multiple of kernel count
+    int basekernpow2 = dual ? 3 : 2;
+    int numkernels = (1 << basekernpow2) / numarrays;
+	  int dim = isSim ? 24 : 40; //must be multiple of kernel count
   	int rows = dim;
     int cols = rows;
 
 		EngineInterface ei = new EngineInterface();
     InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
-    InterfaceParam ticksmax = 1 << (dual ? origRows-1-1-basekernpow2 : (origRows-1-basekernpow2));
+    InterfaceParam ticksmax = 1 << (origRows-1-basekernpow2);
     if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
     if (dual && isSim) ei.setTicks("ProdColsDFEKernel2", ticksmax);
     InterfaceParam adjticks;
@@ -125,17 +120,25 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 			ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax);
       //ei.setTicks("InitializeColSumDFEKernel_" + kernel_n, 1);
 		}
-
-		// setting mapped memories
 		InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.INT64, "fixed point array containing the input matrix times 2");
+    InterfaceParam[] basesums = new InterfaceParam[cols*2];
+    for (int colIdx = 0; colIdx < cols; colIdx++) {
+        basesums[colIdx*2] = inputMtx[colIdx*2];
+        basesums[colIdx*2+1] = inputMtx[colIdx*2+1];
+        for (int rowIdx=1; rowIdx < rows-basekernpow2; rowIdx++) {
+          basesums[colIdx*2] += inputMtx[(rowIdx*cols+colIdx)*2];
+          basesums[colIdx*2+1] += inputMtx[(rowIdx*cols+colIdx)*2+1];
+        }
+    }
+		// setting mapped memories
     InterfaceParam gcodeidx = adjticks;
     for(int kernel_n = 0; kernel_n < numkernels; kernel_n++){
       InterfaceParam[] colsums = new InterfaceParam[cols*2];
       InterfaceParam gcode = gcodeidx ^ (gcodeidx >> 1);
       for (int colIdx=0; colIdx < cols; colIdx++) {
-        colsums[colIdx*2] = inputMtx[colIdx*2];
-        colsums[colIdx*2+1] = inputMtx[colIdx*2+1];
-        for (int rowIdx=1; rowIdx < rows; rowIdx++) {
+        colsums[colIdx*2] = basesums[colIdx*2];
+        colsums[colIdx*2+1] = basesums[colIdx*2+1];
+        for (int rowIdx=rows-basekernpow2; rowIdx < rows; rowIdx++) {
           colsums[colIdx*2] += (gcode & (1L << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2] : inputMtx[(rowIdx*cols+colIdx)*2];
           colsums[colIdx*2+1] += (gcode & (1L << (rowIdx-1))) ? -inputMtx[(rowIdx*cols+colIdx)*2+1] : inputMtx[(rowIdx*cols+colIdx)*2+1];
         }
