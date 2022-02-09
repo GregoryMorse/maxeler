@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 10 if hasSim else 40
+DEPTH = 16 if hasSim else 40
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
