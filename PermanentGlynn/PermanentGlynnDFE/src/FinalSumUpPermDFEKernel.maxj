@@ -33,11 +33,10 @@ public class FinalSumUpPermDFEKernel extends Kernel {
 
 
 		// tick count
-		DFEVar tickCount = control.count.simpleCounter(3, 4);
-		DFEVar InputCount = control.count.simpleCounter(2, 2);
+		DFEVar tickCount = control.count.simpleCounter(2, 4);
 
 
-		DFEComplex sum = io.input( "partialSum", cplxFix128Type, InputCount===0);
+		DFEComplex sum = io.input( "partialSum", cplxFix128Type, tickCount.get(0).cast(dfeBool())===0);
 
 
 		DFEComplex sumCarried = cplxFix128Type.newInstance(this);
