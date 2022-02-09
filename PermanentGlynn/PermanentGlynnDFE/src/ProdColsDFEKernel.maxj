@@ -61,11 +61,11 @@ static long power_of_2(long n) {
 
     if (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE) {
   		// scalar input variable to control the output
-  		DFEVar localOutput = io.scalarInput("localOutput", UIntType );
+  		DFEVar localOutput = io.scalarInput("localOutput", UIntType ).cast(dfeBool());
 		  // controlled maxfile-local output 
-		  io.output("colProd", colProdVals[0], cplxFix128Type, localOutput === 1 );
+		  io.output("colProd", colProdVals[0], cplxFix128Type, localOutput);
 		  // controlled inter-maxfile output 
-		  io.output("colProdRemote", colProdVals[0], cplxFix128Type, localOutput === 0 );
+		  io.output("colProdRemote", colProdVals[0], cplxFix128Type, ~localOutput );
     } else {
   		// for simulation
 	  	io.output("colProd", colProdVals[0], cplxFix128Type );
