@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 16 if hasSim else 40
+DEPTH = 10 if hasSim else 40
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -246,7 +246,10 @@ def verify():
       print("Verifying", func.__name__)
       for dim in range(nmax+1):
         if len(res[key][func.__name__]) <= dim or func in dfePermFuncs:
-          res[key][func.__name__].append(func(A[dim]))
+          r = func(A[dim])
+          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(r)
+          else: res[key][func.__name__][dim] = r
+          print(r)
           with open("verifydata.bin", "wb") as f:
             pickle.dump(res, f)
         if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim])
@@ -269,6 +272,7 @@ def verify():
           writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
     for i in range(len(res[key][largePermFuncs[0].__name__])):
       assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
+      assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / res[key][largePermFuncs[0].__name__][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
   
 def timing():
   import timeit
@@ -290,7 +294,9 @@ def timing():
       for dim in xaxis:
         if len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
           mplier = 5 if dim < 24 else 1
-          results[key][func.__name__].append(timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier)
+          r = timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier
+          if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
+          else: results[key][func.__name__][dim] = r
           if dim >= 24: print(dim, func.__name__, results[key][func.__name__][dim])
           with open("resultdata.bin", "wb") as f:
             pickle.dump(results, f)        
