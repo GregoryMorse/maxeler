@@ -77,6 +77,12 @@ public class InitializeColSumDFEKernel extends Kernel {
       initColSums.add(colSumType.newInstance(this));
       allColSums.add(colSumType.newInstance(this));
     }
+    DFEVar msize = Bitops.onehotDecode(ticksMax) + 1 + basekernpow2 + (dual ? 1 : 0);
+    DFEVectorType<DFEVar> bitVectorType = new DFEVectorType<DFEVar>(dfeBool(), cols*2);
+    
+    //DFEVar mmask = (ticksMax << (1 + basekernpow2 + (dual ? 1 : 0))) - 1;
+    DFEVector<DFEVar> mmask = ((constant.var(dfeUInt(cols*2), 1) << (msize << 1)) - 1).reinterpret(bitVectorType);
+    
     int sumsleft = rows-basekernpow2-1; //the initial sums share rows-basekernpow2-1 bits in common based on gcodeidx ^ (gcodeidx >> 1) when all the low bits are 0 
     List<DFEVector<DFEVar>> colsums = new ArrayList<>();
     for (int rowIdx=0; rowIdx < sumsleft; rowIdx++) {
@@ -107,8 +113,9 @@ public class InitializeColSumDFEKernel extends Kernel {
           remcolsums.add(gbit ? -allRows[rows-1-rowIdx] : allRows[rows-1-rowIdx]);
         } else {
           remcolsums.add((gcode & (1 << (rowIdx - (rows-basekernpow2-1)))) != 0 ? -allRows[rows-1-rowIdx] : allRows[rows-1-rowIdx]);
-        } 
+        }
       }
+      remcolsums.set(sumsleft-1, (mmask & remcolsums[sumsleft-1].slice(63)).cat(remcolsums[sumsleft-1].slice(0, 63)).cast(oneRowType)); 
       while (sumsleft > 1) { //sums processed in binary tree
         for (int row_idx = 0; row_idx < sumsleft / 2; row_idx++) {
           remcolsums.set(row_idx, remcolsums[row_idx*2] + remcolsums[row_idx*2+1]);
@@ -121,7 +128,12 @@ public class InitializeColSumDFEKernel extends Kernel {
       }
       initColSums[i] <== remcolsums[0].slice(63).cat(remcolsums[0].slice(0, 64)).reinterpret(colSumType);
     }
-    //debug.simPrintf(tickCount===0, "%KObj%\n%KObj%\n%KObj%\n%KObj%\n", initColSums[0], initColSums[1], initColSums[2], initColSums[3]); 
+    //if (!dual) debug.simPrintf(tickCount===0 & ticksMax===4, "%KObj%\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n",
+    //  allRows[0].slice(63).cat(allRows[0].slice(0, 64)).reinterpret(colSumType),
+    //  allRows[1].slice(63).cat(allRows[1].slice(0, 64)).reinterpret(colSumType),
+    //  allRows[2].slice(63).cat(allRows[2].slice(0, 64)).reinterpret(colSumType),
+    //  allRows[3].slice(63).cat(allRows[3].slice(0, 64)).reinterpret(colSumType),
+    // allRows[4].slice(63).cat(allRows[4].slice(0, 64)).reinterpret(colSumType));    
     GrayCounter grayCounter = new GrayCounter(tickCount, this);
 		//read row from input matrix
     //DFEVar changePos = Bitops.onehotDecode(ticksMax) - 1 - grayCounter.changePosition;
@@ -138,7 +150,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         curRowToAdd = (isLocal & changePosIsZero) ^ grayCounter.changeValue ? negRowToAdd : rowToAdd;
       } else {
         curRowToAdd = (constant.var(dfeBool(), kern & 1) & changePosIsZero) ^ grayCounter.changeValue ? negRowToAdd : rowToAdd;
-      } 
+      }
       //debug.simPrintf("%KObj%\n", initColSums[kern]);
       DFEVector<DFEComplex> toAdd = firstTick ? constant.zero(colSumType) : curRowToAdd;
  	    optimization.pushNoPipelining();
@@ -147,8 +159,9 @@ public class InitializeColSumDFEKernel extends Kernel {
       allColSums[kern] <== prevColmnSumVector + toAdd;
       
     }    
-      
+    //if (!dual) debug.simPrintf(ticksMax===4, "%KObj%\n%KObj%\n%KObj%\n%KObj%\n", allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
     for (int i = 0; i < kerns; i++) {
+      //io.output("colSums" + i, allColSums[i], colSumType);
       io.output("colSums" + i, allColSums[i], colSumType);
     }
 	}
