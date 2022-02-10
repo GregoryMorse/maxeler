@@ -1,152 +1,175 @@
-package permanentglynn;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import maxpower.utils.CollectionUtils;
+package permanentzone;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
-import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-//import com.maxeler.maxcompiler.v2.utils.MathUtils;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import java.math.BigInteger;
 
+public class PermanentZOneDFEKernel extends Kernel {
 
-
-
-public class PermanentGlynnDFEKernel extends Kernel {
-
-/**
-@brief Calculates the n-th power of 2.
-@param n An natural number
-@return Returns with the n-th power of 2.
-*/
-static long power_of_2(long n) {
-  if (n == 0) return 1;
-  if (n == 1) return 2;
-
-  return 2 * power_of_2(n-1);
-}
-
-	public static enum ReduceOperations{
-		ADD, MUL
-	}
-
-	public static class TreeReducer{
-		public static DFEComplex reduce(ReduceOperations op, List<DFEComplex> toReduce, int treeFactor){
-			while(true){
-				List<DFEComplex> reduced = new ArrayList<>();
-				for (List<DFEComplex> group : CollectionUtils.grouped(toReduce, treeFactor)) {
-					reduced.add(reduceSingle(op, group));
-				}
-				toReduce = reduced;
-				if (toReduce.size() == 1){
-					break;
-				}
-			}
-			return toReduce[0];
-		}
-		
-		private static DFEComplex reduceSingle(ReduceOperations op, List<DFEComplex> toReduce){
-			DFEComplex result = toReduce.get(0);
-			for(int i = 1; i < toReduce.size(); i++){
-				switch(op){
-					case ADD: {
-						result = result + toReduce[i];	
-					}
-					case MUL: {
-						result = result * toReduce[i];
-					}
-				}
-			}
-			return result;
-		}
-	}
- 
-  DFEComplex doMult(DFEComplex n1, DFEComplex n2, KernelBase<?> owner)
+  static int numberOfSetBits(long i)
   {
-    //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
-    //vs. 3 multiplications 5 additions 3M+5A
-    //if M=3A then 4M+2A=12A+2A=14A, 3M+5A=9A+5A=14A
-    DFEVar a = n1.getReal();
-    DFEVar c = n2.getReal();
-    DFEVar ac = a * c;
-    DFEVar b = n1.getImaginary();
-    DFEVar d = n2.getImaginary();
-    DFEVar bd = b * d;
-    return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
+      i = i - ((i >> 1) & 0x5555555555555555L);
+      i = (i & 0x3333333333333333L) + ((i >> 2) & 0x3333333333333333L);
+      return (int)((((i + (i >> 4)) & 0xF0F0F0F0F0F0F0FL) * 0x101010101010101L) >> 56);
   }
-	
-	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols) {
+
+  static int bitlength(long i)
+  {
+    int r = 0;
+    while ((i >>= 1) != 0) r++;
+    return r+1;
+  }
+  static int ceilBitLength(long i)
+  {
+    return bitlength(i) + ((i != 0 && (i & (i-1)) == 0) ? 0 : 1);
+  }
+
+
+	public PermanentZOneDFEKernel(final KernelParameters parameters, int rows, int cols, boolean use_gray, boolean divide_rows, boolean implementsign, int rowoffset, boolean glynn, boolean dual) {
 		super(parameters);
-
-		DFEType UIntType          = dfeUInt(64);  
-		//DFEType doubleType         = dfeFloat(11,53);
-		//DFEType dataTypeFix32     = dfeInt(32);//dfeFixOffset(32, -28, SignMode.TWOSCOMPLEMENT);
-		//DFEType dataTypeFix64     = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-    DFEType dataTypeFixCommonAdd     = dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
-		DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
-
-		DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
-		//DFEComplexType cplxFix64Type    = new DFEComplexType(dataTypeFix64);
-    DFEComplexType cplxFixCommonAddType    = new DFEComplexType(dataTypeFixCommonAdd);
-		//DFEComplexType cplxFix32Type    = new DFEComplexType(dataTypeFix32);
-		
-		DFEVectorType<DFEComplex> colSumType = new DFEVectorType<DFEComplex>(cplxFixCommonAddType, cols); 
-
-
-		// tick count
+    //if (parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE)
+		DFEType UIntType          = dfeUInt(64);
+    int colbits = bitlength(cols);
+    int rowbits = BigInteger.valueOf(cols).pow(rows).bitLength();
+    int membits = bitlength(rows-1);
+    DFEType MaxRowIdx = dfeUInt(membits);
+    DFEType MaxColSum = glynn ? dfeInt(colbits+1) : dfeUInt(colbits); //e.g. ceil(log2 cols)==log2 64==((1 << 6)-1).bit_length()==6
+    //DFEType MaxRowProd = dfeUInt(rowbits);
+    DFEType MaxRowProdSigned = dfeInt(rowbits+1);
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
+    int kernpow2 = dual ? 3 : 2;
+    DFEVar ticksAdj = divide_rows ? ticksMax : ticksMax<<kernpow2;
+    DFEVar initialCount = io.scalarInput("InitialCount", UIntType );
 		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
-		
-		// multiply the elements in colSum over a tree reduction
-		DFEComplex[] colSumFix = new DFEComplex[cols];
-    int limit = cols;
-    
-    DFEVector<DFEComplex> colmnSumVector = colSumType.newInstance(this);
-    colmnSumVector <== io.input("colSums", colSumType);
-    //debug.simPrintf("%KObj%\n", colmnSumVector);
-    
-		for (int idx=0; idx<limit; idx++) {
-			colSumFix[idx] = colmnSumVector[idx];
-		}
-
-    int extraprec = 2; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
-		while (limit > 1) {
-      DFEType dataTypeFixCur     = dfeFixOffset(64+extraprec, -62-extraprec, SignMode.TWOSCOMPLEMENT);
-      DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
-
-			int limitNew = limit/2;
-
-			for (int idx=0; idx<limitNew; idx++) {
-				DFEComplex colSumFix1 = colSumFix[2*idx].cast(cplxFixCurType);
-				DFEComplex colSumFix2 = colSumFix[2*idx+1].cast(cplxFixCurType);
-				colSumFix[idx] = colSumFix1 * colSumFix2; //doMult(colSumFix1, colSumFix2, this);
-			}
-
- 			if ( 2*limitNew < limit ) {
-        limitNew++;
-				colSumFix[limitNew-1] = colSumFix[limit-1];
-			}
-
-			limit = limitNew;
-      extraprec *= 2;
-      if (extraprec > cols) extraprec = cols;
-
-		}
-    DFEVar sign = tickCount.get(0).cast(dfeBool());
-    DFEComplex colProdVal = sign === 0 ? colSumFix[0] : -colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
-   
-   
-		io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type );
+    DFEVar gcodeidx = tickCount+initialCount;
+    DFEVar gcode;
+    Memory<DFEVar> mappedInputMtx = mem.alloc(UIntType, rows);
+		mappedInputMtx.mapToCPU("mappedInputMtx_Row");
+    DFEVar[] rowsums = new DFEVar[rows];
+    int bitsize = 1;
+    if (use_gray) {
+      //https://en.wikipedia.org/wiki/Gray_code
+      gcodeidx = (gcodeidx.get(0)!==0 ? ticksAdj : constant.zero(UIntType)) | (gcodeidx >> 1);
+      gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
+      gcode = ~(ticksAdj-1) | gcode;
+      //https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightParallel
+      DFEVar gcodelowbit = gcodeidx & (~gcodeidx + 1); //isolate the lowest 1 bit
+      //off is on and vice-versa, since to have early termination, we must go through the Gray codes in bit reversed order
+      DFEVar isOn = (gcode & gcodelowbit) !== 0;
+      if (glynn) isOn = ~isOn;
+      //DFEVar isOn = ((gcode & gcodelowbit) !== 0).cast(dfeUInt(2)) + ((tickCount === 0).cast(dfeUInt(2)) << 1);
+      //bitsize = glynn ? colbits+1 : colbits;
+      DFEVar[] oldrowsums = new DFEVar[rows];
+      DFEVectorType<DFEVar> vectorType = new DFEVectorType<DFEVar>(MaxColSum, rows);
+      DFEVector<DFEVar> initrowsums = null;
+      DFEVar arrayRowOffset = null;
+      if (glynn) {
+        initrowsums = io.input( "rowSums", vectorType, tickCount<2);
+        //debug.simPrintf(tickCount < 2, "%KObj%\n", initrowsums);
+      } else if (dual && divide_rows && parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE) {
+        arrayRowOffset = io.scalarInput("arrayRowOffset", dfeUInt(7)); //maximum shift amount for 64 bits is log2 64=7 bits 
+      }
+      for (int row_idx=0; row_idx<rows; ++row_idx) {
+        DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
+        //maxcompiler is using 2 sequential muxes for 3 or more selections via e.g. ? : (? :) while control.mux with a 2 bit input has 4 selections with one mux and thereby one less tick
+        DFEVar inits;
+        if (glynn) {
+          inits = initrowsums.get(row_idx);
+        } else if (divide_rows) {
+          if (dual && parameters.getManager().getEngineParameters().getTarget() == EngineParameters.Target.DFE)
+            inits = ((constant.var(UIntType, new Bits(64, 1)) << (arrayRowOffset+rowoffset+row_idx)) >= ticksMax ? (fullrow >> (arrayRowOffset+rowoffset+row_idx)).get(0).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum));
+          else inits = ((constant.var(UIntType, new Bits(64, 1)) << (rowoffset+row_idx)) >= ticksMax ? fullrow.get(rowoffset+row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum));
+          inits += (tickCount === 0 ? constant.zero(MaxColSum) : ((fullrow & (gcodelowbit>>1)) !== 0).cast(MaxColSum));
+        } else {
+          inits = (constant.var(UIntType, new Bits(64, 1)) << row_idx) >= ticksMax ? fullrow.get(row_idx).cast(dfeBool()).cast(MaxColSum) : constant.zero(MaxColSum);
+          if (dual) inits = inits + ((fullrow & gcode & (ticksMax << 2)) !== 0).cast(MaxColSum);
+          inits = inits + (((fullrow & gcode & ticksMax) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 1)) !== 0).cast(MaxColSum)) + (((fullrow & gcode & (ticksMax << 1)) !== 0).cast(MaxColSum) + ((fullrow & gcode & (ticksMax >> 2)) !== 0).cast(MaxColSum));
+        }          
+        DFEVar colval = ((fullrow & gcodelowbit) !== 0).cast(MaxColSum);
+        if (glynn) colval <<= 1;
+        //DFEVar adjust = control.mux(isOn, colval,  ~colval+1, constant.zero(MaxColSum), constant.zero(MaxColSum));
+        oldrowsums[row_idx] = MaxColSum.newInstance(this);
+        rowsums[row_idx] = tickCount < 2 ? inits : (isOn ? oldrowsums[row_idx] + colval : oldrowsums[row_idx] - colval);
+        oldrowsums[row_idx] <== stream.offset(rowsums[row_idx], -2);
+      }
+      //for (int row_idx=0; row_idx<rows; ++row_idx) debug.simPrintf("%X ", rowsums[row_idx]); debug.simPrintf("\n");
+    } else {
+      DFEVar[] bits = new DFEVar[cols];
+      gcode = gcodeidx ^ (gcodeidx >> 1); //nth Gray code
+      gcode = ~(ticksAdj-1) | gcode;
+      //debug.simPrintf("%d %d %d\n", ticksMax, initialCount, tickCount);
+      for (int col_idx=0; col_idx<cols; ++col_idx) {
+          if (glynn && col_idx==cols-1) bits[col_idx] = constant.zero(dfeBool());
+          else bits[col_idx] = gcode.get(col_idx).cast(dfeBool());
+      }
+      bitsize = 1;
+      for (int row_idx=0; row_idx<rows; ++row_idx) {
+        int sumsleft = cols;
+        DFEVar[] colsums = new DFEVar[sumsleft];
+        if (sumsleft != 0) {
+          DFEVar fullrow = mappedInputMtx.read(constant.var(MaxRowIdx, new Bits(membits, row_idx))).cast(UIntType);
+          for (int col_idx = 0; col_idx < cols; col_idx++) {
+            bits[col_idx] = optimization.pipeline(bits[col_idx]);            
+            if (glynn) colsums[col_idx] = bits[col_idx].cat(constant.var(dfeBool(), 1)).cast(dfeInt(2)) & fullrow.get(col_idx).cat(fullrow.get(col_idx)).cast(dfeInt(2));
+            else colsums[col_idx] = bits[col_idx] & fullrow.get(col_idx).cast(dfeBool());
+          }
+        }
+        bitsize = 1;
+        while (sumsleft > 1) { //sums processed in binary tree
+          if (bitsize != colbits) bitsize++;
+          DFEType SumType = glynn ? dfeInt(bitsize+1) : dfeUInt(bitsize);
+          for (int col_idx = 0; col_idx < sumsleft / 2; col_idx++) {
+            colsums[col_idx] = colsums[col_idx*2].cast(SumType) + colsums[col_idx*2+1].cast(SumType);
+          }
+          if ((sumsleft & 1) != 0) { colsums[sumsleft/2] = colsums[sumsleft-1].cast(SumType); sumsleft = sumsleft / 2 + 1; }
+          else sumsleft /= 2;
+        }
+        rowsums[row_idx] = sumsleft == 1 ? colsums[0] : constant.zero(glynn ? dfeInt(bitsize+1) : dfeUInt(bitsize));
+      }
+    }
+    int prodleft = rows;
+    int prodcount = 1;
+    while (prodleft > 1) { //products processed in binary tree
+      prodcount <<= 1; //bitsize <<= 1; if (bitsize > rowbits) bitsize = rowbits;
+      if (prodcount > rows) prodcount = rows;
+      bitsize = BigInteger.valueOf(cols).pow(prodcount).bitLength();
+      DFEType ProdType = glynn ? dfeInt(bitsize+1) : dfeUInt(bitsize);
+      for (int row_idx = 0; row_idx < prodleft / 2; row_idx++) {
+        rowsums[row_idx] = rowsums[row_idx*2].cast(ProdType) * rowsums[row_idx*2+1].cast(ProdType);
+      }
+      if ((prodleft & 1) != 0) { rowsums[prodleft/2] = rowsums[prodleft-1].cast(ProdType); prodleft = prodleft / 2 + 1; }
+      else prodleft /= 2;
+    }
+    DFEVar prod = prodleft == 1 ? rowsums[0] : constant.var(glynn ? dfeInt(bitsize+1) : dfeUInt(bitsize), new Bits(1, 1));
+    DFEVar signprod = prod.cast(MaxRowProdSigned);
+    if (implementsign) {
+      DFEVar sign; 
+      if (glynn) {
+        sign = constant.var(true);
+        for (int col_idx=0; col_idx<cols; ++col_idx) {
+            sign = sign ^ gcode.get(col_idx).cast(dfeBool());
+        }
+      } else {
+      sign = gcodeidx[0];
+      if (use_gray) sign ^= (ticksAdj & gcodeidx) !== 0;
+      }
+      if (dual && divide_rows) {
+        DFEVar canSign = io.scalarInput("canSign", dfeUInt(8));
+        signprod = ((sign !== 0) & (canSign !== 0)) ? -signprod : signprod; //numberOfSetBits(set_idx)
+      } else signprod = (sign !== 0) ? -signprod : signprod; //numberOfSetBits(set_idx)
+    }
+    //debug.simPrintf("%X %X %X %X\n", gcodeidx, gcode, prod, signprod);
+    io.output("colProd", signprod, MaxRowProdSigned );
 
 	}
 
