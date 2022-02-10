@@ -176,19 +176,19 @@ void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const long double* reno
 
     // simulation
     if (!useDual) {
-      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res;
+      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res; actions.glynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data;
 #ifdef MAXELER_SIM
-      actions.glynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.glynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.glynnRowsGray.routing_string = "split -> split0, split -> split1, split -> split2, split -> split3"; 
+      //actions.glynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.glynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.glynnRowsGray.routing_string = "split -> split0, split -> split1, split -> split2, split -> split3"; 
 #endif
     } else {
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
-      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res;
-      actions.dualGlynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.dualGlynnRowsGray.routing_string = "split0 -> split, split1 -> split, split2 -> split, split3 -> split, split4 -> split, split5 -> split, split6 -> split, split7 -> split"; 
-      actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx2 = sizeof(__int64_t)*2*40*40; 
+      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res; actions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data;
+      //actions.dualGlynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.dualGlynnRowsGray.routing_string = "split0 -> split, split1 -> split, split2 -> split, split3 -> split, split4 -> split, split5 -> split, split6 -> split, split7 -> split"; 
+      //actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx2 = sizeof(__int64_t)*2*40*40; 
 #else
-      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
-      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
+      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
+      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
 #endif
     }
 
