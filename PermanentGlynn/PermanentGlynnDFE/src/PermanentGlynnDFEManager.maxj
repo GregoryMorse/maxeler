@@ -5,7 +5,7 @@ package permanentglynn;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
 import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
-//import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParamArray;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 //import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
@@ -29,12 +29,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     KernelBlock initColSumKernel = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel"), rows, cols, dual, basekernpow2-(dual ? 1 : 0)));
     KernelBlock initColSumKernel2 = null;
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
-    DFELink mtx = addStreamFromCPU("InputMtx");
-    initColSumKernel.getInput("mappedInputMtx_Rows") <== mtx; 
+    //DFELink mtx = addStreamFromCPU("InputMtx");
+    //initColSumKernel.getInput("mappedInputMtx_Rows") <== mtx; 
     if (dual && isSim) {
       initColSumKernel2 = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel2"), rows, cols, dual, basekernpow2-1));
-      DFELink mtx2 = addStreamFromCPU("InputMtx2");
-      initColSumKernel2.getInput("mappedInputMtx_Rows") <== mtx2;
+      //DFELink mtx2 = addStreamFromCPU("InputMtx2");
+      //initColSumKernel2.getInput("mappedInputMtx_Rows") <== mtx2;
     }
     for (int i = 0; i < numkernels; i++) {
 		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols));
@@ -91,6 +91,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     int numarrays = dual && !isSim ? 2 : 1;
     int basekernpow2 = dual ? 3 : 2;
     int numkernels = (1 << basekernpow2) / numarrays;
+	  int dim = isSim ? 40 : 40; //must be multiple of kernel count
+  	int rows = dim;
+    int cols = rows;
 
 		EngineInterface ei = new EngineInterface();
     InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
@@ -125,6 +128,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 			ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax);
 		}
    
+    InterfaceParamArray inputMtx = ei.addParamArray("InputMtx", CPUTypes.UINT64, "fixed point array containing the input matrix times 2");
+    ei.setMem( "InitializeColSumDFEKernel", "mappedInputMtx_Rows", 0, 2*rows*cols, inputMtx);
+    if (dual && isSim) ei.setMem( "InitializeColSumDFEKernel2", "mappedInputMtx_Rows", 0, 2*rows*cols, inputMtx);
 
 		// stream to CPU containing the result
     if (!dual || isSim)
