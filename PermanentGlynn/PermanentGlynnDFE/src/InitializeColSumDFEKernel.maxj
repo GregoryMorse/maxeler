@@ -15,7 +15,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
@@ -119,12 +119,13 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVectorType<DFEComplex> colSumType = new DFEVectorType<DFEComplex>(cplxFixCommonAddType, cols);
     DFEVectorType<DFEComplex> colTransferType = new DFEVectorType<DFEComplex>(cplxFix64Type, cols);
     int bitsToAddressSum = MathUtils.bitsToAddress(rows-(basekernpow2+(dual ? 1 : 0)));
+    int bitsToAddressMtx = MathUtils.bitsToAddress(rows*cols*2);
     
     DFEVectorType<DFEVar> oneRowType = new DFEVectorType<DFEVar>(IntType, 2*cols);
     DFEVectorType<DFEVar> oneRowFixType = new DFEVectorType<DFEVar>(dfeInt(64+1), 2*cols);
     DFEVectorType<DFEVector<DFEVar>> allRowsType = new DFEVectorType<DFEVector<DFEVar>>(oneRowType, rows);
-    //Memory<DFEVar> mappedInputMtx = mem.alloc(doubleType, rows*cols*2);
-		//mappedInputMtx.mapToCPU("mappedInputMtx_Rows");
+    Memory<DFEVar> mappedInputMtx = mem.alloc(IntType, rows*cols*2);
+		mappedInputMtx.mapToCPU("mappedInputMtx_Rows");
     int kerns = 1 << basekernpow2;
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
     DFEVar isLocal = null;
@@ -132,7 +133,15 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
     DFEVar firstTick = tickCount===0;
     DFEVector<DFEVector<DFEVar>> allRows = allRowsType.newInstance(this);
-    allRows <== io.input("mappedInputMtx_Rows", allRowsType, firstTick);
+    for (int i = 0; i < rows; i++) {
+      DFEVector<DFEVar> newRow = oneRowType.newInstance(this);
+      for (int j = 0; j < cols; j++) {
+        newRow[j*2] <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), (i*cols+j)*2));
+        newRow[j*2+1] <== mappedInputMtx.read(constant.var(dfeUInt(bitsToAddressMtx), (i*cols+j)*2+1));
+      }
+      allRows[i] <== newRow;
+    }
+    //allRows <== io.input("mappedInputMtx_Rows", allRowsType, firstTick);
     List<DFEVector<DFEComplex>> initColSums = new ArrayList<>();
     List<DFEVector<DFEComplex>> allColSums = new ArrayList<>();    
     for (int i = 0; i < kerns; i++) {
