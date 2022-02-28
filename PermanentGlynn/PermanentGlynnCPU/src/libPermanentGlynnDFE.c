@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <MaxSLiCInterface.h>
 
 #ifdef MAXELER_SIM
@@ -174,21 +175,43 @@ void calcPermanentGlynnDFE(const ComplexFix16* mtx_data, const long double* reno
     void *arractions[2] = {&actions, &dualactions};
 #endif
 
+    ComplexFix16 mtx_data0[40*10], mtx_data1[40*10], mtx_data2[40*10], mtx_data3[40*10];
+    for (int i = 0; i < 40; i++) {
+      memcpy(&mtx_data0[10*i], &mtx_data[40*i+0], sizeof(ComplexFix16)*10);
+      memcpy(&mtx_data1[10*i], &mtx_data[40*i+10], sizeof(ComplexFix16)*10);
+      memcpy(&mtx_data2[10*i], &mtx_data[40*i+20], sizeof(ComplexFix16)*10);
+      memcpy(&mtx_data3[10*i], &mtx_data[40*i+30], sizeof(ComplexFix16)*10);
+    }
     // simulation
     if (!useDual) {
-      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res; actions.glynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data;
+      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res;
 #ifdef MAXELER_SIM
-      //actions.glynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.glynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.glynnRowsGray.routing_string = "split -> split0, split -> split1, split -> split2, split -> split3"; 
+      //actions.glynnRowsGray.param_InputMtx0 = (__uint64_t*)mtx_data0; actions.glynnRowsGray.param_InputMtx1 = (__uint64_t*)mtx_data1;
+      //actions.glynnRowsGray.param_InputMtx2 = (__uint64_t*)mtx_data2; actions.glynnRowsGray.param_InputMtx3 = (__uint64_t*)mtx_data3;
+      //actions.glynnRowsGray.routing_string = "split -> split0, split -> split1, split -> split2, split -> split3";
+      actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data0; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
+      actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data1; actions.glynnRowsGray.instream_size_InputMtx1 = sizeof(ComplexFix16)*10*rows;
+      actions.glynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data2; actions.glynnRowsGray.instream_size_InputMtx2 = sizeof(ComplexFix16)*10*rows;
+      actions.glynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data3; actions.glynnRowsGray.instream_size_InputMtx3 = sizeof(ComplexFix16)*10*rows;
+#else
+      actions.glynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data; 
 #endif
     } else {
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
-      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res; actions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data;
-      //actions.dualGlynnRowsGray.instream_InputMtx = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx = sizeof(__int64_t)*2*40*40; //actions.dualGlynnRowsGray.routing_string = "split0 -> split, split1 -> split, split2 -> split, split3 -> split, split4 -> split, split5 -> split, split6 -> split, split7 -> split"; 
-      //actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data; actions.dualGlynnRowsGray.instream_size_InputMtx2 = sizeof(__int64_t)*2*40*40; 
+      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res; //actions.dualGlynnRowsGray.param_InputMtx0 = (__uint64_t*)mtx_data0;
+      //actions.dualGlynnRowsGray.param_InputMtx1 = (__uint64_t*)mtx_data1; actions.dualGlynnRowsGray.param_InputMtx2 = (__uint64_t*)mtx_data2; actions.dualGlynnRowsGray.param_InputMtx3 = (__uint64_t*)mtx_data3;
+      actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data0; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data1; actions.dualGlynnRowsGray.instream_size_InputMtx1 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data2; actions.dualGlynnRowsGray.instream_size_InputMtx2 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data3; actions.dualGlynnRowsGray.instream_size_InputMtx3 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx4 = (__int64_t*)mtx_data0; actions.dualGlynnRowsGray.instream_size_InputMtx4 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx5 = (__int64_t*)mtx_data1; actions.dualGlynnRowsGray.instream_size_InputMtx5 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx6 = (__int64_t*)mtx_data2; actions.dualGlynnRowsGray.instream_size_InputMtx6 = sizeof(ComplexFix16)*10*rows;
+      actions.dualGlynnRowsGray.instream_InputMtx7 = (__int64_t*)mtx_data3; actions.dualGlynnRowsGray.instream_size_InputMtx7 = sizeof(ComplexFix16)*10*rows;
 #else
-      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
-      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (__uint64_t*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
+      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
+      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_InputMtx = (__int64_t*)mtx_data, dualactions.dualGlynnRowsGray.outstream_res = NULL, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
 #endif
     }
 
