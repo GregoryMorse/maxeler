@@ -9,9 +9,17 @@ CALCPERMGLYNNDFE calcPermanentGlynnDFE = NULL;
 INITPERMGLYNNDFE initialize_DFE = NULL;
 FREEPERMGLYNNDFE releive_DFE = NULL;
 
-#define ROWCOL(m, r, c) m[ r*m.stride + c]
+#define ROWCOL(m, r, c) ToComplex32(m[ r*m.stride + c])
 
 namespace pic {
+
+inline Complex16 ToComplex16(Complex32 v) {
+  return Complex16((double)v.real(), (double)v.imag());
+}
+
+inline Complex32 ToComplex32(Complex16 v) {
+  return Complex32((long double)v.real(), (long double)v.imag());
+}
 
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
@@ -21,17 +29,17 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 {
     if (matrix_mtx.rows < 5 || (matrix_mtx.rows < 6 && useDual)) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
-      else if (matrix_mtx.rows == 1) perm = ROWCOL(matrix_mtx, 0, 0);
-      else if (matrix_mtx.rows == 2) perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0);
+      else if (matrix_mtx.rows == 1) perm = matrix_mtx[0];
+      else if (matrix_mtx.rows == 2) perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0));
       else if (matrix_mtx.rows == 3)
-        perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) +
+        perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) +
                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) +
                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 1) +
                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) +
                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) +
-               ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1);
+               ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1));
       else if (matrix_mtx.rows == 4)
-        perm = ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 3) +
+        perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 3) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 2) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 3) +
                 ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 1) +
@@ -54,7 +62,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 2) +
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 0) +
                 ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0);
+                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0));
       else {
         GlynnPermanentCalculator gpc;
         perm = gpc.calculate(matrix_mtx);
@@ -79,62 +87,41 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 
     }
 
-
-
-
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
         renormalize_data[jdx] = std::abs(colSumMax[jdx]);
     }
 
-    // renormalize the input matrix
-    for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
-        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-            matrix_mtx[ idx*matrix_mtx.stride + jdx] = matrix_mtx[ idx*matrix_mtx.stride + jdx]/renormalize_data[jdx];
-        }
-
-    }    
-
-
+    // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
-    size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
-    size_t max_fpga_rows =  max_dim;
-    size_t max_fpga_cols =  max_dim;
-
-    size_t rows = matrix_mtx.rows;
-
-    matrix mtx = matrix(max_fpga_rows, max_fpga_cols);
-    Complex16* mtx_data = mtx.get_data();
-
-    Complex16 padding_element(1.0,0.0);
-    for (size_t idx=0; idx<rows; idx++) {
-        size_t offset = idx*matrix_mtx.stride;
-        size_t offset_small = idx*mtx.stride;
-        for (size_t jdx=0; jdx<rows; jdx++) {
-            mtx_data[offset_small+jdx] = matrix_mtx[offset+jdx];
+    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t rows = matrix_mtx.rows;
+    const size_t numinits = 1 << BASEKERNPOW2;
+    const size_t max_fpga_cols =  max_dim >> BASEKERNPOW2;
+    matrix_base<ComplexFix16> mtxfix[numinits];
+    const long double fixpow = 1L << 62;
+    for (size_t i = 0; i < numinits; i++) {
+      mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
+      size_t basecol = max_fpga_cols * i;
+      size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
+      for (size_t idx=0; idx < rows; idx++) {
+        size_t offset = idx * matrix_mtx.stride + basecol;
+        size_t offset_small = idx*mtxfix[i].stride;
+        for (size_t jdx = 0; jdx < lastcol; jdx++) {
+          mtxfix[i][offset_small+jdx].real = llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].imag = llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
         }
-
-        for (size_t jdx=rows; jdx<max_fpga_cols; jdx++) {
-            mtx_data[offset_small+jdx] = padding_element;
-        }
-        padding_element.real(0.0);
+        memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
+      }
+      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = 1L << 62; 
     }
 
-    memset( mtx_data + rows*mtx.stride, 0.0, (max_fpga_rows-rows)*max_fpga_cols*sizeof(Complex16));
-    matrix_base<ComplexFix16> mtxfix = matrix_base<ComplexFix16>(max_fpga_rows, max_fpga_cols);
-    ComplexFix16* mtx_fix_data = mtxfix.get_data();
-    for (size_t idx = 0; idx < max_fpga_rows; idx++) {
-        size_t offset = idx*mtx.stride;
-        size_t offset_small = idx*mtxfix.stride;
-        for (size_t jdx = 0; jdx < max_fpga_cols; jdx++) {
-            mtx_fix_data[offset_small+jdx].real = __int64_t(round(mtx_data[offset+jdx].real() * (1L<<62)));
-            mtx_fix_data[offset_small+jdx].imag = __int64_t(round(mtx_data[offset+jdx].imag() * (1L<<62)));
-        }
-    }
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
-    assert(mtxfix.stride == mtxfix.cols);
-    calcPermanentGlynnDFE( mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
+    ComplexFix16* mtx_fix_data[numinits];
+    //assert(mtxfix[i].stride == mtxfix[i].cols);
+    for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
+    calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
 
 
     return;
