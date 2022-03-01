@@ -11,6 +11,7 @@
 // the maximal dimension of matrix to be ported to FPGA for permanent calculation
 #define MAX_FPGA_DIM 8*5
 #define MAX_SINGLE_FPGA_DIM 4*10
+#define BASEKERNPOW2 2
 
 namespace pic {
 
@@ -29,7 +30,7 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 
 }
 
-typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16*, const long double*, const uint64_t, const uint64_t, pic::Complex16*);
+typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, pic::Complex16*);
 typedef void(*INITPERMGLYNNDFE)(int);
 typedef void(*FREEPERMGLYNNDFE)(void);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE; 
