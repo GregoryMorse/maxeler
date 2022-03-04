@@ -65,7 +65,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     
     DFEVectorType<DFEVar> oneRowType = new DFEVectorType<DFEVar>(IntType, 2*cols);
     DFEVectorType<DFEVar> oneRowFixType = new DFEVectorType<DFEVar>(dfeInt(64+1), 2*cols);
-    DFEVectorType<DFEVector<DFEVar>> allRowsType = new DFEVectorType<DFEVector<DFEVar>>(oneRowType, rows-(basekernpow2+(dual ? 1 : 0)));
+    DFEVectorType<DFEVector<DFEVar>> allRowsType = new DFEVectorType<DFEVector<DFEVar>>(oneRowType, rows-1-(basekernpow2+(dual ? 1 : 0)));
     //Memory<DFEVar> mappedInputMtx = mem.alloc(IntType, rows*cols*2);
     //VectorMemory<DFEVar> mappedInputMtx = mem.allocVector(oneRowType, rows); //Cannot map memories of DFEVector type from CPU.
 		//mappedInputMtx.mapToCPU("mappedInputMtx_Rows");
@@ -88,11 +88,11 @@ public class InitializeColSumDFEKernel extends Kernel {
     //  mappedInputMtx.write(rowidx + i * 2 + 1, oneRow[i * 2 + 1], isInit);
     //}
     DFEVector<DFEVector<DFEVar>> allRows = allRowsType.newInstance(this);
-    for (int i = basekernpow2+(dual ? 1 : 0); i < rows; i++) {
+    for (int i = basekernpow2+(dual ? 1 : 0); i < rows-1; i++) {
       allRows[i-(basekernpow2+(dual ? 1 : 0))] <== i === tickCount ? oneRow : stream.offset(allRows[i-(basekernpow2+(dual ? 1 : 0))], -1);
     }
     DFEVectorType<DFEVector<DFEComplex>> allKernsType = new DFEVectorType<DFEVector<DFEComplex>>(colSumType, kerns);
-    DFEVector<DFEVector<DFEComplex>> allColSums = allKernsType.newInstance(this);        
+    DFEVector<DFEVector<DFEComplex>> allColSums = allKernsType.newInstance(this);
     //rowidx = grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum));
     DFEVector<DFEComplex> rowToAdd = control.mux(grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum)), allRows.getElementsAsList())
       .cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
