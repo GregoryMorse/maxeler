@@ -19,6 +19,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 
 
@@ -125,21 +126,33 @@ static long power_of_2(long n) {
 			  colSumFix[j*(cols / initKerns)+idx] = colmnSumVector[idx];
 		  }
     }
-
+    //System.out.println("Graph Pipelining: " + optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
+    //System.out.println("Node Pipelining: " + optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
+    //System.out.println("DSP Factor: " + optimization.peekDSPFactor(MathOps.ALL)); //default 0.5
+    //System.out.println("Enable Growth: " + optimization.getEnableBitGrowth()); //default false
+    //System.out.println("Enable Saturating Arithmetic: " + optimization.peekEnableSaturatingArithmetic()); //default false
+    //System.out.println("Fanout Limit: " + optimization.peekFanoutLimit()); //default 32
+    //System.out.println("Fanout Limit Type: " + optimization.peekFanoutLimitType()); //default CHAIN
+    //System.out.println("Rounding Mode: " + optimization.getRoundingMode()); //default TONEAREVEN
+    //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
+    //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
+    //optimization.pushDSPFactor(0.0, MathOps.MUL);
     int extraprec = 2; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
 		while (limit > 1) {
       //extra leading bit needed with Gauss or Karatsuba as the addition/subtraction of real/imaginary components maybe be between -2 and 2
-      DFEType dataTypeFixCur     = dfeFixOffset(1+64+20+extraprec, -62-20-extraprec, SignMode.TWOSCOMPLEMENT);
+      DFEType dataTypeFixCur     = dfeFixOffset(64+10+extraprec, -62-10-extraprec, SignMode.TWOSCOMPLEMENT);
       DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
 
 			int limitNew = limit/2;
-
+      //if (limit <= 5) optimization.pushDSPFactor(0.0, MathOps.ALL);
 			for (int idx=0; idx<limitNew; idx++) {
+      
         //optimization.pushFixOpMode(Optimization.bitSizeExact(64+64), Optimization.offsetExact(-62-62), MathOps.MUL);
-				//colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
-        colSumFix[idx] = doMult(colSumFix[2*idx].cast(cplxFixCurType), colSumFix[2*idx+1].cast(cplxFixCurType), this);
+				colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
+        //colSumFix[idx] = doMult(colSumFix[2*idx].cast(cplxFixCurType), colSumFix[2*idx+1].cast(cplxFixCurType), this);
         //optimization.popFixOpMode(MathOps.MUL);
 			}
+      //if (limit <= 5) optimization.popDSPFactor();
 
  			if ( 2*limitNew < limit ) {
         limitNew++;
@@ -151,6 +164,8 @@ static long power_of_2(long n) {
       if (extraprec > cols) extraprec = cols;
 
 		}
+    //optimization.popDSPFactor();
+    //optimization.popDSPFactor();
     DFEVar sign = tickCount.get(0).cast(dfeBool()); // ^ ~Bitops.onehotDecode(ticksMax).get(0).cast(dfeBool());    
     DFEComplex colProdVal = sign === 0 ? colSumFix[0] : -colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
    
