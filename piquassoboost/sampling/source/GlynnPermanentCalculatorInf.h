@@ -33,6 +33,7 @@ public:
     }
     return *this;
   }
+  void uninit() { if (init) mpfr_clear(this->f); init = 0; }
   operator double() { return mpfr_get_d(this->f, MPFR_RNDN); }
   //https://github.com/BrianGladman/MPC/blob/master/src/fma.c
   static mpfr_prec_t
@@ -66,6 +67,8 @@ public:
   FloatInf& operator+=(const FloatInf& f) {
     mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
     mpfr_add(this->f, this->f, f.f, MPFR_RNDN);
+    //mpfr_prec_t minprec = mpfr_min_prec(this->f);
+    //if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
     return *this;
   }
   FloatInf& operator-=(double d) { //subtracting only values added before, no precision change
@@ -189,7 +192,7 @@ Complex16 calculate(matrix &mtx);
 @param sign The current product \f$ \prod\delta_i $\f
 @param index_min \f$ \delta_j a_{ij} $\f with \f$ 0<i<index_min $\f are kept contstant, while the signs of \f$ \delta_i \f$  with \f$ i>=idx_min $\f are changed.
 */
-void IterateOverDeltas( matrix_base<pic::ComplexInf>& colSum, int sign, int index_min );
+void IterateOverDeltas( pic::ComplexInf* colSum_data, int sign, int index_min );
 
 
 }; // partial permanent_Task
