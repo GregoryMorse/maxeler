@@ -67,16 +67,13 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 
 
     // calulate the initial sum of the columns
-    matrix_base<ComplexInf> colSum( mtx.rows, 1);
-    ComplexInf* colSum_data = colSum.get_data();
-    memset( colSum_data, 0, colSum.size()*sizeof(ComplexInf));
+    ComplexInf* colSum_data = new ComplexInf[mtx.rows];
 
 
 
     tbb::parallel_for( tbb::blocked_range<size_t>(0, mtx.rows), [&](tbb::blocked_range<size_t> r) {
         for (size_t col_idx=r.begin(); col_idx<r.end(); ++col_idx){
             size_t row_offset = 0;
-            colSum_data[col_idx].real(0.0); colSum_data[col_idx].imag(0.0);
             for (size_t row_idx=0; row_idx<mtx.rows; ++row_idx) {
                 colSum_data[col_idx] += mtx_data[ row_offset + col_idx ];
                 row_offset += mtx.stride;
@@ -90,8 +87,7 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 
 
     // start the iterations over vectors of deltas
-    IterateOverDeltas( colSum, 1, 1 );
-
+    IterateOverDeltas( colSum_data, 1, 1 );
 
     // sum up partial permanents
     ComplexInf permanent( 0.0, 0.0 );
@@ -102,7 +98,7 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 
     permanent = permanent / (long double)power_of_2( (unsigned long long) (mtx.rows-1) );
 
-  
+    delete [] colSum_data;
 
 
     return Complex16(permanent.real(), permanent.imag());
@@ -119,13 +115,13 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 @param sign The current product \f$ \prod\delta_i $\f
 */
 void 
-GlynnPermanentCalculatorInfTask::IterateOverDeltas( matrix_base<pic::ComplexInf>& colSum, int sign, int index_min ) {
+GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data, int sign, int index_min ) {
 
-    pic::ComplexInf* colSum_data = colSum.get_data();
+    //pic::ComplexInf* colSum_data = colSum.get_data();
 
     // Calculate the partial permanent
     pic::ComplexInf colSumProd(1.0,0.0);
-    for (int idx=0; idx<colSum.rows; idx++) {
+    for (int idx=0; idx<mtx2.cols; idx++) {
         colSumProd *= colSum_data[idx];
     }
 
@@ -134,25 +130,24 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( matrix_base<pic::ComplexInf>
     permanent_priv += sign * colSumProd;
 
 
-    tbb::parallel_for( tbb::blocked_range<int>(index_min,colSum.rows), [&](tbb::blocked_range<int> r) {
-        for (int idx=r.begin(); idx<r.end(); ++idx){
+    tbb::parallel_for( tbb::blocked_range<int>(index_min,mtx2.rows), [&](tbb::blocked_range<int> r) {
+        for (size_t idx=r.begin(); idx<r.end(); ++idx){
 
             // create an altered vector from the current delta
-            matrix_base<pic::ComplexInf> colSum_new(mtx2.cols, 1);
+            pic::ComplexInf* colSum_new_data = new pic::ComplexInf[mtx2.cols];
 
             pic::Complex32* mtx2_data = mtx2.get_data();
-            pic::ComplexInf* colSum_new_data = colSum_new.get_data();
-            memset( colSum_new_data, 0, colSum_new.size()*sizeof(ComplexInf));
             
             size_t row_offset = idx*mtx2.stride;
 
-            for (int jdx=0; jdx<mtx2.cols; jdx++) {
-                colSum_new_data[jdx].real(colSum[jdx].real()); colSum_new_data[jdx].imag(colSum[jdx].imag());
+            for (size_t jdx=0; jdx<mtx2.cols; jdx++) {
+                colSum_new_data[jdx].real(colSum_data[jdx].real()); colSum_new_data[jdx].imag(colSum_data[jdx].imag());
                 colSum_new_data[jdx] -= mtx2_data[row_offset+jdx];
             }
 
             // spawn new iteration            
-            IterateOverDeltas( colSum_new, -sign, idx+1 );
+            IterateOverDeltas( colSum_new_data, -sign, idx+1 );
+            delete [] colSum_new_data;
         }
     });
 
