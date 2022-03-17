@@ -1,0 +1,31 @@
+Copy repository files from source GitHub -> destination as:
+Optional: permanent_benchmark.py -> ~/piquassoboost/permanent_benchmark.py
+PermanentGlynn/PermanentGlynnDFE/* -> ~/workspace/PermanentGlynnDFE/*
+PermanentGlynn/PermanentGlynnCPU/* -> ~/workspace/PermanentGlynnCPU/*
+PermanentGlynn/Makefile -> ~/workspace/Makefile
+piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp -> ~/piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp
+piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp
+piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h
+
+1) Build piquassoboost
+cd piquassoboost
+cd ..
+
+2) Build FPGA SIM and DFE:
+cd workspace
+make SIM
+make DFE
+cd ..
+
+3) Run simulator (must run from workspace):
+cd workspace
+make CPU
+#make CPUSIM - only run simulator without compiling CPU
+cd ..
+
+4) Run DFE (must run from piquassoboost):
+cd piquassoboost
+python3 permanent_benchmark.py
+cd ..
+
+5) Future: export LD_LIBRARY_PATH should be used so simulator and DFE can be run from any folder, currently uses relative paths
