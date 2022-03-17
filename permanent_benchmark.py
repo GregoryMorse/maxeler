@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 16 if hasSim else 40
+DEPTH = 12 if hasSim else 40
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -58,6 +58,9 @@ def permanent_glynn(mat):
   if n == 0: return 1
   #return sum(dosign((sum(x < 0 for x in delta) & 1) != 0, multiprod((sum(delta[i] * mat[i][j] for i in range(n)) for j in range(n)))) for delta in [[1] + x for x in getDeltas(n-1)]) >> (n-1)
   return sum(dosign((sum(delta) & 1) != 0, multiprod((mat[n-1][j] + sum(dosign(delta[i]!=0, mat[i][j]) for i in range(n-1)) for j in range(n)))) for delta in getDeltas(n-1)) / (1 << (n-1))
+"""
+  (64, -62) * (64, -62) = (128, -124)
+"""
 def permanent_glynn_gray_fixpt(mat): #optimal row-major order
   mat = np.copy(mat).transpose()
   n = len(mat)
@@ -91,30 +94,16 @@ def permanent_glynn_gray_fixpt(mat): #optimal row-major order
   def pairScalarDiv(x, y): return (x[0] / y, x[1] / y)
   def pairPlusMinus(parity, base, x): return pairSub(base, x) if parity else pairAdd(base, x)
   def pairToCplxFloat(x): return float(x[0]) + float(x[1]) * 1j
-  def pairLongDouble128to80(x):
-    return (longDouble128to80(x[0]), longDouble128to80(x[1]))
-  def clongDouble128to80(x):
-    return longDouble128to80(x.real) + longDouble128to80(x.imag) * 1j
-  def longDouble128to80(x):
-    return x
-    b = x.tobytes()
-    b = int.from_bytes(b, byteorder='big', signed=False)
-    b += (1 << 47) #round to nearest
-    b &= ~((1 << 48) - 1)
-    #b //= 2 ** 48; b *= 2 ** 48
-    b = b.to_bytes(16, 'big', signed=False)
-    return np.frombuffer(b, np.longdouble)[0]
-  #clongdouble is 128-bits and has an extra 48-bits of precision over C 80-bit long double
+  #longdouble is just a padded 80-bit hardware long double
   renormalize = [np.clongdouble(0) for _ in range(n)]
   for i in range(n):
     for j in range(n):
-      value1, value2 = renormalize[i]+mat[i][j], renormalize[i]-mat[i][j]
-      renormalize[i] = clongDouble128to80(value1.real) if abs(value1) > abs(value2) else clongDouble128to80(value2)
-  renormalize = [longDouble128to80(abs(x)) for x in renormalize]
-  for i in range(n):
-    for j in range(n):
-      mat[i][j] = mat[i][j] / renormalize[i]
-  mat = [[(round(mat[i][j].real*2**62), round(mat[i][j].imag*2**62)) for i in range(n)] for j in range(n)]  
+      value1, value2 = renormalize[i]+np.clongdouble(mat[i][j]), renormalize[i]-np.clongdouble(mat[i][j])
+      renormalize[i] = value1 if abs(value1) > abs(value2) else value2
+  renormalize = [np.abs(x) for x in renormalize] #np.sqrt(x.real*x.real+x.imag*x.imag)
+  #print([x.tobytes().hex() for x in renormalize])
+  mat = [[(round(np.longdouble(mat[i][j].real)*np.longdouble(2**62) / renormalize[i]), round(np.longdouble(mat[i][j].imag)*np.longdouble(2**62) / renormalize[i])) for i in range(n)] for j in range(n)]
+  #print([[(hex(mat[i][j][0]), hex(mat[i][j][1])) for i in range(n)] for j in range(n)])  
   delta, rowsums = [1 for _ in range(n)], [reduc(mat[i], pairAdd) for i in range(n)] #[0 for _ in range(n)]
   #print(mat, rowsums)
   tot = pairProdTree(rowsums)
@@ -125,11 +114,11 @@ def permanent_glynn_gray_fixpt(mat): #optimal row-major order
     else:
       for j in range(n): rowsums[j] = pairSub(rowsums[j], pairScalarMul(mat[j][idx], 2)) #mat[j][idx]
     tot = pairPlusMinus((i & 1) != 0, tot, pairProdTree(rowsums))
-  tot = pairLongDouble128to80((np.longdouble(tot[0]), np.longdouble(tot[1])))
-  tot = pairScalarDiv(pairScalarDiv(tot, 2**62), 2**62)
+  tot = (np.longdouble(tot[0]), np.longdouble(tot[1]))
+  tot = pairScalarDiv(pairScalarDiv(tot, np.longdouble(2**62)), np.longdouble(2**62))
   tot = pairScalarDiv(tot, (1 << (n-1)))
   for x in renormalize:
-    tot = pairLongDouble128to80(pairScalarMul(tot, x))
+    tot = pairScalarMul(tot, x)
   return pairToCplxFloat(tot) #tot
 def reduc(l, f):
   import functools
@@ -163,22 +152,23 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
 
 permanent_Glynn_calculator = GlynnPermanent( )
 #https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
-def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #fastest
-def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep) #ChinHuh, 2^4*Glynn_Cpp, 2^5*walrus_quad_Ryser
-def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep) #2*walrus_quad_Ryser
+def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #2*permanent_Glynn_Cpp
+def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep) #ChinHuh, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
+def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep)
+def permanent_Glynn_Cpp_Inf(Arep): return permanent_Glynn_calculator.calculateInf(Arep)
 def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
 def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
-def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^4*Glynn_Cpp, 2^5*walrus_quad_Ryser
+def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
   if len(Arep) == 0: return 1+0j
   input_state = np.ones(Arep.shape[0], np.int64)
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = () + dfePermFuncs + (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser)# + dfePermFuncs
-testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
 
 #np.save("mtx", A )
@@ -326,7 +316,7 @@ def verify():
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       print("Verifying", func.__name__)
       for dim in xaxis:
-        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs:
+        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_Glynn_Cpp_Inf:
           r = func(A[dim])
           if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(r)
           else: res[key][func.__name__][dim] = r
@@ -339,19 +329,19 @@ def verify():
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in range(len(res[key][largePermFuncs[0].__name__]))])
+      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in xaxis])
       writer.writerow(["Relative Error compared to " + largePermFuncs[0].__name__]) 
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for x in largePermFuncs] for i in range(len(res[key][largePermFuncs[0].__name__]))])
+      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for x in largePermFuncs] for i in xaxis])
       writer.writerow(["Permanent Computation Raw Results"])
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in range(len(res[key][largePermFuncs[0].__name__]))])
+      writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
       for dim in range(nmax+1):
         writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
         if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
         for i in range(dim):
           writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
-    #for i in range(len(res[key][largePermFuncs[0].__name__])):
+    #for i in xaxis:
     #  assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
     #  assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
     import matplotlib.pyplot as plt
@@ -359,7 +349,7 @@ def verify():
     fig = plt.figure()
     ax1 = fig.add_subplot(111)
     for f in largePermFuncs[1:]:
-      ax1.plot(xaxis, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in range(len(res[key][largePermFuncs[0].__name__]))], label=f.__name__)
+      ax1.plot(xaxis, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis], label=f.__name__)
     ax1.set_xlabel("Size")  
     ax1.set_yscale('log', base=10)
     ax1.set_ylabel("Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
@@ -392,7 +382,7 @@ def timing():
         if dim <= 1 or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
           if func in dfePermFuncs and dim == 0:
             print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-          elif dim == 1: print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
+          elif dim == 1 and not func in dfePermFuncs: print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
           #if func in dfePermFuncs: print(check_power())
           mplier = 5 if dim < 24 else 1
           r = timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier
@@ -406,13 +396,13 @@ def timing():
       import csv
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in range(len(results[key][largePermFuncs[0].__name__]))])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
     fig = plt.figure()
     ax1 = fig.add_subplot(111)
     for f in largePermFuncs:
-      ax1.plot(xaxis, results[key][f.__name__], label=f.__name__)
+      ax1.plot(xaxis, [results[key][f.__name__][i] for i in xaxis], label=f.__name__)
     ax1.set_xlabel("Size")  
     ax1.set_yscale('log', base=10)
     ax1.set_ylabel("Time (log10 s)")
