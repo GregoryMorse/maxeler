@@ -55,7 +55,7 @@ def test_complex_sampling(print_histogram):
 
 #test_complex_sampling(print_histogram())
 
-DEPTH = 6
+DEPTH = 8
 
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
@@ -87,29 +87,35 @@ def mathcomb(n, k): #binomial coefficients
   return math.factorial(n) // (math.factorial(k) * math.factorial(n-k)) 
 def mat_mul_rows(matzones, mat, inpidx, mplicity):
   return np.array([[x[k] + sum(mat[y][k] * mplicity[j] for j, y in enumerate(inpidx)) for k in range(len(mat[0]))] if i == 0 else x for i, x in enumerate(matzones)])
+def binomial_gcode(bc, parity, n, k):
+  return bc*k//(n-k+1) if parity else bc*(n-k)/(k+1)
 def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repeated-Chin Huh method without proper Gray code, but one multiplicities using normal permanent
+  #the Gray code anchor must be on the first row of the rectangular computation or this algorithm will be incorrect!
   matoutp = np.repeat(mat, outp, axis=0).transpose()
   matzones = [matoutp[i] for i in range(len(inp)) if inp[i] == 1]
   inpidx = [i for i, x in enumerate(inp) if x > 1]
-  gcode = [inp[x] for x in inpidx]
-  if len(gcode) == 0: return permanent_rectangular(matoutp) #all 0-1 multiplicities
+  curmp = [inp[x] for x in inpidx]
+  if len(curmp) == 0: return 1 if len(matoutp) == 0 else permanent_rectangular(multiplicities_to_mat(matoutp, [1]*len(matoutp[0]), inp)) #all 0-1 multiplicities
   if len(matzones) == 0:
-    idx = np.argmin(gcode); gcode[idx] -= 1 #anchor to lowest multiplicity row for greatest reduction
+    idx = np.argmin(curmp); curmp[idx] -= 1 #anchor to lowest multiplicity row for greatest reduction
     matzones = [matoutp[inpidx[idx]]]
-  inp = [x for x in gcode]
-  tot, parity = 0, False
+  inp = [x for x in curmp]
+  tot, parity, gcodeidx = 0, False, 0
+  #a=n!/(k!(n-k)!) and b=n!/((k-1)!(n-k+1)!) b/a=k/(n-k+1)
+  #a=n!/(k!(n-k)!) and b=n!/((k+1)!(n-k-1)!) b/a=(n-k)/(k+1)
+  cur_multiplicity = 1
   while True:
-    cur_multiplicity = multiprod(mathcomb(inp[i], (gcode[i] + inp[i]) // 2) if inp[i] != 0 else 1 for i in range(len(gcode)))
-    tot = plusminus(parity, tot, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, gcode)))
-    for i in range(len(gcode)-1, -1, -1):
-      if gcode[i] == -inp[i]:
-        gcode[i] = inp[i]
-        if (inp[i] & 1) != 0: parity = not parity #flipping sign of odd numbers will flip the parity e.g. -1*-1*-1 to 1*1*1
-      else:
-        gcode[i] -= 2
-        parity = not parity #crossing zero with odd numbers will flip parity bit e.g. -1*-1*1 to 1*1*-1
+    tot = plusminus(parity, tot, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, curmp)))
+    parity = not parity
+    for i in range(len(curmp)-1, -1, -1):
+      curdir = (gcodeidx & (1 << i)) == 0
+      if not curdir and curmp[i] != inp[i] or curdir and curmp[i] != -inp[i]: 
+        cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) // 2)
+        curmp[i] = plusminus(curdir, curmp[i], 2)
+        #for j in range(i+1, len(curmp)): gcodeidx ^= (1 << j)
+        gcodeidx ^= ((1 << len(curmp)) - (1 << (i+1)))
         break
-    if gcode == inp: break
+    else: break 
   return tot / 2**(sum(inp)) #2**(sum(inp))==sum of all cur_multiplicity values
 
 def permanent_glynn_repeated(mat): pass
@@ -124,7 +130,7 @@ def permanent_glynn_rectangular(mat):
   n = len(mat); m = len(mat[0])
   if n == 0: return 1
   #return sum(dosign((sum(x < 0 for x in delta) & 1) != 0, multiprod((sum(delta[i] * mat[i][j] for i in range(n)) for j in range(n)))) for delta in [[1] + x for x in getDeltas(n-1)]) >> (n-1)
-  return sum(dosign((sum(delta) & 1) != 0, multiprod((mat[n-1][j] + sum(dosign(delta[i]!=0, mat[i][j]) for i in range(n-1)) for j in range(m)))) for delta in getDeltas(n-1)) / (1 << (n-1))
+  return sum(dosign((sum(delta) & 1) != 0, multiprod((mat[0][j] + sum(dosign(delta[i-1]!=0, mat[i][j]) for i in range(1, n)) for j in range(m)))) for delta in getDeltas(n-1)) / (1 << (n-1))
 def permanent_glynn_gray(mat): #optimal row-major order
   mat = np.copy(mat).transpose()
   n = len(mat)
@@ -160,7 +166,7 @@ def permanent_Glynn_Cpp(Arep, input_state, output_state): return permanent_Glynn
 def permanent_ChinHuh_calculator(Arep, input_state, output_state):
   if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
-largePermFuncs = (permanent_square_repeated, permanent_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator)
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
