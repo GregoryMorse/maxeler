@@ -10,6 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
@@ -18,9 +19,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
+import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
+import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 
 
 
@@ -72,8 +73,50 @@ static long power_of_2(long n) {
 			return result;
 		}
 	}
- 
-  DFEComplex doMult(DFEComplex n1, DFEComplex n2, KernelBase<?> owner)
+  DFEVar mulFrac(DFEVar a, DFEVar b) //a is between -1 and 1, b is between -2 and 2
+  {
+    DFEType t = a.getType();
+    int fracBits = t.getTotalBits()-3;
+    DFEVar asign = a.get(fracBits + 2);
+    DFEVar bsign = b.get(fracBits + 2);
+    a = asign ? -a : a;
+    b = bsign ? -b : b;
+    DFEVar aIntPart = a.get(fracBits);
+    DFEVar bIntPart = b.slice(fracBits, 2);
+    DFEType mulType = dfeFixOffset(fracBits, -fracBits, SignMode.UNSIGNED);
+    a = a.slice(0, fracBits).reinterpret(mulType);
+    b = b.slice(0, fracBits).reinterpret(mulType);
+    //(a+b)(c+d)=ac+ad+bc+bd
+    DFEVar at = a.cast(t);
+    DFEVar bt = b.cast(t);
+    DFEVar oneat = constant.var(dfeUInt(3), 1).cat(a).reinterpret(t);
+    DFEVar twobt = bt << 1;
+    DFEVar zt = constant.zero(t);
+    DFEVar result = control.mux(bIntPart.cat(aIntPart), zt, bt, at, oneat + bt, twobt, oneat + twobt, zt, zt) + (a * b).cast(t);
+    return (asign ^ bsign) ? -result : result;
+  }
+  DFEVar getSignBit(DFEVar x) { return x.get(x.getType().getTotalBits()-1); }
+  DFEVar getIsOneSet(DFEVar x) { return getSignBit(x) ^ x.get(x.getType().getTotalBits()-2); }
+  DFEVar addExact(DFEVar a, DFEVar b, boolean isSub)
+  {
+    DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType();
+    optimization.pushFixOpMode(Optimization.bitSizeExact(1 + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
+              Math.max(aType.getFractionBits(), bType.getFractionBits())),
+        Optimization.offsetExact(-Math.max(aType.getFractionBits(), bType.getFractionBits())), MathOps.ADD_SUB);
+    DFEVar result = isSub ? (a - b) : (a + b);
+    optimization.popFixOpMode(MathOps.ADD_SUB);
+    return result;
+  }
+  DFEVar mulExact(DFEVar a, DFEVar b)
+  {
+    DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType();
+    optimization.pushFixOpMode(Optimization.bitSizeExact(aType.getTotalBits() + bType.getTotalBits()),
+        Optimization.offsetExact(-aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits()), MathOps.MUL);
+    DFEVar result = a * b;
+    optimization.popFixOpMode(MathOps.MUL);
+    return result;
+  }
+  DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, KernelBase<?> owner)
   {
     //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
     //vs. 3 multiplications 5 additions 3M+5A
@@ -87,8 +130,16 @@ static long power_of_2(long n) {
     //DFEVar ac = a * c;
     //DFEVar bd = b * d;
     //return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
-    DFEVar cab = c * (a + b);
-    return DFEComplexType.newInstance(owner, cab-b*(c+d), cab+a*(d-c));
+    //DFEVar cab = mulFrac(c, a + b);
+    //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
+    DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits+2, SignMode.TWOSCOMPLEMENT);
+    DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits+2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
+    DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
+    int newBits = bits * 2 + (bits == 64 ? 1 : 0);
+    DFEType resultType = dfeFixOffset(newBits-3, -newBits+2+3, SignMode.TWOSCOMPLEMENT);
+    DFEComplex ret = DFEComplexType.newInstance(owner, (cab-mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
+          (cab+mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
+    return ret;
   }
 	
 	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, int initKerns) {
@@ -137,20 +188,36 @@ static long power_of_2(long n) {
     //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
     //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
     //optimization.pushDSPFactor(0.0, MathOps.MUL);
-    int extraprec = 2; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
-		while (limit > 1) {
+    int extraprec = 0; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
+    //DSP usage from maxeler optimization manual: "On MAX5 a DSP has input port widths of 18 and 27 bit." therefore a bits*b bits requires ceil(a/18)*ceil(b/27)
+    //however it is unclear if an approximation algorithm is used for example with dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT)
+    //multiplying 2 64-bit numbers should give a 128-bit result, which is then rounded truncating most of the bits
+    //in a CPU, multiplying 32-bit integers yields a 64-bit result, but on the hardware using Optimization.bitSizeExact(64+64) and Optimization.offsetExact(-62-62) to capture an exact result caused a large DSP increase indicating approximation
+    //perhaps the sign bit is causing the issue and the result should be using Optimization.offsetExact(-62-64) - should likely investigate this
+    //but given the result requires the high-bits of multiplication, all the carries of the low bits must be computed
+    //likely the FPGA multiplier reliably multiplies numbers only if doubling their size properly 
+    //but many papers on hardware multipliers give more efficient approximation algorithms 
+    //also dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT) multiplications seem to have a much higher DSP usage which should not be the case - needed for the Gaussian/Karatsuba complex multiplication formulas intermediate addtions/subtractions
+    //Gaussian and Karatsuba formulas use 75% of the DSPs of the normal complex multiplication however, and can allow increased resource usage
+    //import math; bd={x:math.ceil(x/18)*math.ceil(x/27) for x in range(64, 128+1)}
+    //{64: 12, 65: 12, 66: 12, 67: 12, 68: 12, 69: 12, 70: 12, 71: 12, 72: 12, 73: 15, 74: 15, 75: 15, 76: 15, 77: 15, 78: 15, 79: 15, 80: 15, 81: 15, 82: 20, 83: 20, 84: 20, 85: 20, 86: 20, 87: 20, 88: 20, 89: 20, 90: 20, 91: 24, 92: 24, 93: 24, 94: 24, 95: 24, 96: 24, 97: 24, 98: 24, 99: 24, 100: 24, 101: 24, 102: 24, 103: 24, 104: 24, 105: 24, 106: 24, 107: 24, 108: 24, 109: 35, 110: 35, 111: 35, 112: 35, 113: 35, 114: 35, 115: 35, 116: 35, 117: 35, 118: 35, 119: 35, 120: 35, 121: 35, 122: 35, 123: 35, 124: 35, 125: 35, 126: 35, 127: 40, 128: 40}
+    //[bd[64+x+2]*20*4*3+bd[64+x+4]*10*4*3+bd[64+x+8]*5*4*3+bd[64+x+16]*2*4*3+bd[64+x+32]*1*4*3+bd[64+x+40]*1*4*3 for x in range(21)]
+    //[5976, 6156, 6276, 6276, 6276, 6768, 6768, 7488, 7488, 7488, 7788, 7884, 7884, 8016, 8616, 8616, 9816, 9816, 9816, 10056, 10056]
+		while (limit > 1) { //20 at 64x65, 10 at 80x81, 5 at 107x108, 2 at 125x126, 1 at 125x126, 1 at 125x126  
       //extra leading bit needed with Gauss or Karatsuba as the addition/subtraction of real/imaginary components maybe be between -2 and 2
-      DFEType dataTypeFixCur     = dfeFixOffset(64+6+extraprec, -62-6-extraprec, SignMode.TWOSCOMPLEMENT);
-      DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
+      int totalprec = 64+extraprec;
+      if (extraprec != 0) totalprec += Math.min(totalprec%18==0 ? 0 : 18-(totalprec%18), totalprec%27==0 ? 0 : (27-totalprec%27)); //round up to the smaller distance to next multiple of 18 or 27 to maximize DSP usage!!!
+      //DFEType dataTypeFixCur     = dfeFixOffset(totalprec, -totalprec+2, SignMode.TWOSCOMPLEMENT);
+      //DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
 
 			int limitNew = limit/2;
       //if (limit <= 5) optimization.pushDSPFactor(0.0, MathOps.ALL);
 			for (int idx=0; idx<limitNew; idx++) {
-      
-        //optimization.pushFixOpMode(Optimization.bitSizeExact(64+64), Optimization.offsetExact(-62-62), MathOps.MUL);
-				colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
-        //colSumFix[idx] = doMult(colSumFix[2*idx].cast(cplxFixCurType), colSumFix[2*idx+1].cast(cplxFixCurType), this);
+        //int curBits = colSumFix[2*idx].getReal().getType().getTotalBits() + colSumFix[2*idx+1].getReal().getType().getTotalBits();
+        //optimization.pushFixOpMode(Optimization.bitSizeExact(curBits), Optimization.offsetExact(-curBits + 4), MathOps.MUL);
+				//colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
         //optimization.popFixOpMode(MathOps.MUL);
+        colSumFix[idx] = doMult(colSumFix[2*idx], colSumFix[2*idx+1], totalprec, this);
 			}
       //if (limit <= 5) optimization.popDSPFactor();
 
@@ -160,8 +227,8 @@ static long power_of_2(long n) {
 			}
 
 			limit = limitNew;
-      extraprec *= 2;
-      if (extraprec > cols) extraprec = cols;
+      extraprec = extraprec == 0 ? 16 : extraprec*2;
+      if (extraprec > 62) extraprec = 62;
 
 		}
     //optimization.popDSPFactor();
