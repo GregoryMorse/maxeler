@@ -27,7 +27,7 @@ inline Complex32 ToComplex32(Complex16 v) {
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
 {
-    if (matrix_mtx.rows < 5 || (matrix_mtx.rows < 6 && useDual)) { //compute with other method
+    if (matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
       else if (matrix_mtx.rows == 1) perm = matrix_mtx[0];
       else if (matrix_mtx.rows == 2) perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0));
@@ -90,7 +90,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        renormalize_data[jdx] = std::abs(colSumMax[jdx]);
+        renormalize_data[jdx] = std::abs(colSumMax[jdx]); 
+        //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
 
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -111,10 +112,11 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
           mtxfix[i][offset_small+jdx].real = llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
           mtxfix[i][offset_small+jdx].imag = llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+          //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
       }
-      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = 1L << 62; 
+      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = fixpow; 
     }
 
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
