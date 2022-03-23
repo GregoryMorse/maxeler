@@ -73,6 +73,62 @@ static long power_of_2(long n) {
 			return result;
 		}
 	}
+  DFEVar signedMulKaratsuba(DFEVar a, DFEVar b)
+  {
+    DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType();
+    DFEVar aSign = getSignBit(a), bSign = getSignBit(b);
+    DFEVar result = uToSigned(mulKaratsuba(sToUnsigned(aSign ? -a : a), sToUnsigned(bSign ? -b : b))).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits()-1, -(aType.getTotalBits() + bType.getTotalBits()-1) + aType.getIntegerBits() + bType.getIntegerBits(), SignMode.TWOSCOMPLEMENT));
+    return (aSign ^ bSign) ? -result : result; 
+  }
+  DFEVar mulKaratsuba(DFEVar a, DFEVar b)
+  {
+    DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType();
+    if ((aType.getTotalBits() % 27 == 0 ? 0 : (27 - aType.getTotalBits() % 27)) + (bType.getTotalBits() % 18 == 0 ? 0 : (18 - aType.getTotalBits() % 18)) <
+        (aType.getTotalBits() % 18 == 0 ? 0 : (18 - aType.getTotalBits() % 18)) + (bType.getTotalBits() % 27 == 0 ? 0 : (27 - aType.getTotalBits() % 27)))
+        return mulKaratsuba(b, a);
+    if (aType.getTotalBits() <= 36 || bType.getTotalBits() <= 54) {
+      return mulExact(a, b);
+    }
+    int aDiv = aType.getTotalBits() / 2, bDiv = bType.getTotalBits() / 2;
+    aDiv -= aDiv % 18;
+    bDiv -= bDiv % 27;
+    //System.out.println(aType.getTotalBits() + " " + bType.getTotalBits() + " " + aDiv + " " + bDiv);
+    DFEVar high1 = a.slice(aDiv, aType.getTotalBits() - aDiv).reinterpret(dfeUInt(aType.getTotalBits() - aDiv)), low1 = a.slice(0, aDiv).reinterpret(dfeUInt(aDiv));
+    DFEVar high2 = b.slice(bDiv, bType.getTotalBits() - bDiv).reinterpret(dfeUInt(bType.getTotalBits() - bDiv)), low2 = b.slice(0, bDiv).reinterpret(dfeUInt(bDiv));
+    DFEVar z0 = mulKaratsuba(low1, low2), z1;
+    //z0 = x0y0
+    //z1 = x1y0*2^a + x0y1*2^b = 2^a(x1y0 + x0y1*2^(b-a)) if b>a
+    //z2 = x1y1
+    //result = z2*2^(a+b)+ z1 + z0
+    //z1 = 2^a(z2*2^(b-a) + z0 - (x1-x0)(y1*2^(b-a)-y0))
+    int mn = Math.min(aDiv, bDiv);
+    if (aDiv == bDiv)
+      z1 = signedMulKaratsuba(addExact(high1, low1, true), addExact(high2, low2, true));
+    else if (aDiv < bDiv)
+      z1 = signedMulKaratsuba(addExact(high1, low1, true), addExact(shiftLeftFix(high2, bDiv-aDiv), low2, true));
+    else
+      z1 = signedMulKaratsuba(addExact(shiftLeftFix(high1, aDiv-bDiv), low1, true), addExact(high2, low2, true));
+    DFEVar z2 = mulKaratsuba(high1, high2);
+    return triAddExact(shiftLeftFix(z2, aDiv+bDiv-mn), triAddExact(z0, shiftLeftFix(z2, bDiv > aDiv ? bDiv-aDiv : aDiv-bDiv), z1, true), z0.slice(mn, z0.getType().getTotalBits() - mn).reinterpret(dfeUInt(z0.getType().getTotalBits() - mn)), false)
+      .cat(z0.slice(0, mn)).slice(0, aType.getTotalBits() + bType.getTotalBits()).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits(), -aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits(), SignMode.UNSIGNED)); 
+  }
+  DFEVar uToSigned(DFEVar a) { return constant.zero(dfeBool()).cat(a).reinterpret(dfeInt(a.getType().getTotalBits()+1)); }
+  DFEVar sToUnsigned(DFEVar a) { return a.slice(0, a.getType().getTotalBits()-1).reinterpret(dfeUInt(a.getType().getTotalBits()-1)); }
+  DFEVar shiftLeftFix(DFEVar a, int bits)
+  {
+    if (bits == 0) return a;
+    return a.cat(constant.zero(dfeUInt(bits))).reinterpret(dfeUInt(a.getType().getTotalBits() + bits));
+  }
+  DFEVar triAddExact(DFEVar a, DFEVar b, DFEVar c, boolean isCSub)
+  {
+    DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType(), cType = (DFEFix)c.getType();
+    optimization.pushFixOpMode(Optimization.bitSizeExact(1 + Math.max(Math.max(aType.getIntegerBits(), bType.getIntegerBits()), cType.getIntegerBits()) +
+              Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits())),
+        Optimization.offsetExact(-Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits())), MathOps.ADD_SUB);
+    DFEVar result = isCSub ? (a + b - c) : (a + b + c);
+    optimization.popFixOpMode(MathOps.ADD_SUB);
+    return result;
+  }
   DFEVar mulFrac(DFEVar a, DFEVar b) //a is between -1 and 1, b is between -2 and 2
   {
     DFEType t = a.getType();
@@ -142,7 +198,7 @@ static long power_of_2(long n) {
     return ret;
   }
 	
-	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, int initKerns) {
+	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int initKerns, int kernNum) {
 		super(parameters);
 
 		DFEType UIntType          = dfeUInt(64);  
@@ -163,6 +219,8 @@ static long power_of_2(long n) {
 		// tick count
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
 		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
+    DFEVar isLocal = null;
+    if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8) ).cast(dfeBool());
 		
 		// multiply the elements in colSum over a tree reduction
 		DFEComplex[] colSumFix = new DFEComplex[cols];
@@ -233,8 +291,8 @@ static long power_of_2(long n) {
 		}
     //optimization.popDSPFactor();
     //optimization.popDSPFactor();
-    DFEVar sign = tickCount.get(0).cast(dfeBool()); // ^ ~Bitops.onehotDecode(ticksMax).get(0).cast(dfeBool());    
-    DFEComplex colProdVal = sign === 0 ? colSumFix[0] : -colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
+    DFEVar sign = tickCount.get(0) | ((dual ? (ticksMax === 1) & isLocal : (ticksMax === 1) & ((kernNum & 1) != 0)));
+    DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
    
    
 		io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type );
