@@ -52,76 +52,58 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEType IntType          = dfeInt(64);
 		DFEType dataTypeFix64     = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
     DFEType dataTypeFixCommonAdd     = dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
-    //DFEType doubleType         = dfeFloat(11,53);
-		//DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
-
-		//DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
 		DFEComplexType cplxFix64Type    = new DFEComplexType(dataTypeFix64);
     DFEComplexType cplxFixCommonAddType    = new DFEComplexType(dataTypeFixCommonAdd);
     DFEVectorType<DFEComplex> colSumType = new DFEVectorType<DFEComplex>(cplxFixCommonAddType, cols);
     DFEVectorType<DFEComplex> colTransferType = new DFEVectorType<DFEComplex>(cplxFix64Type, cols);
     int bitsToAddressSum = MathUtils.bitsToAddress(rows-(basekernpow2+(dual ? 1 : 0))-1);
-    //int bitsToAddressMtx = MathUtils.bitsToAddress(rows*cols*2);
     
     DFEVectorType<DFEVar> oneRowType = new DFEVectorType<DFEVar>(IntType, 2*cols);
     DFEVectorType<DFEVar> oneRowFixType = new DFEVectorType<DFEVar>(dfeInt(64+1), 2*cols);
     DFEVectorType<DFEVector<DFEVar>> allRowsType = new DFEVectorType<DFEVector<DFEVar>>(oneRowType, rows-1-(basekernpow2+(dual ? 1 : 0)));
-    //Memory<DFEVar> mappedInputMtx = mem.alloc(IntType, rows*cols*2);
-    //VectorMemory<DFEVar> mappedInputMtx = mem.allocVector(oneRowType, rows); //Cannot map memories of DFEVector type from CPU.
-		//mappedInputMtx.mapToCPU("mappedInputMtx_Rows");
     int kerns = 1 << basekernpow2;
 		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
     DFEVar rowpow2 = Bitops.onehotDecode(ticksMax);
-    DFEVar msizemkernpow1 = (rowpow2 + (dual ? 1 : 0)).cast(UIntType);
-    DFEVar msizem1 = (rowpow2 + (basekernpow2 + (dual ? 1 : 0))).cast(UIntType);
-    DFEVar msize = (rowpow2 + (1 + basekernpow2 + (dual ? 1 : 0))).cast(UIntType);
+    
+    DFEVar msizemkernpow1 = (rowpow2 + (dual ? 1 : 0));
+    DFEVar msizem1 = (rowpow2 + (basekernpow2 + (dual ? 1 : 0)));
     DFEVar isLocal = null;
-    if (dual) isLocal = io.scalarInput("isLocal", UIntType ).cast(dfeBool());
-    DFEVar tickCount = control.count.simpleCounter(64, ticksMax + msizem1);
-    DFEVar firstTick = tickCount===0;
-    DFEVar adjTickCount = tickCount-msizem1;
-    GrayCounter grayCounter = new GrayCounter(adjTickCount, this); //-msize-1
+    if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8) ).cast(dfeBool());
+
+    DFEVar initCount = control.count.simpleCounter(6, msizem1+1);
+    DFEVar isInit = control.count.pulse(1, initCount === msizem1);
+    DFEVar isCalc = control.count.pulse(1, false, initCount === msizem1-1);
+    DFEVar tickCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksMax).withReset(isInit & (initCount === msizem1))).getCount();
+
+    DFEVar firstTick = isInit & (initCount === 0);
+    GrayCounter grayCounter = new GrayCounter(tickCount, this);
     DFEVector<DFEVar> oneRow = oneRowType.newInstance(this);
-    DFEVar isStream = tickCount>=msizem1;
-    DFEVar isInit = tickCount < msize;
     oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit);
-    //DFEVar rowidx = tickCount.cast(dfeUInt(bitsToAddressMtx)) * cols * 2;
-    //for (int i = 0; i < cols; i++) {
-    //  mappedInputMtx.write(rowidx + i * 2, oneRow[i * 2], isInit);
-    //  mappedInputMtx.write(rowidx + i * 2 + 1, oneRow[i * 2 + 1], isInit);
-    //}
     DFEVector<DFEVector<DFEVar>> allRows = allRowsType.newInstance(this);
     for (int i = 1; i < rows-(basekernpow2+(dual ? 1 : 0)); i++) {
-      allRows[i-1] <== i === tickCount ? oneRow : stream.offset(allRows[i-1], -1);
+      allRows[i-1] <== (isInit & (i === initCount)) ? oneRow : stream.offset(allRows[i-1], -1);
     }
     DFEVectorType<DFEVector<DFEComplex>> allKernsType = new DFEVectorType<DFEVector<DFEComplex>>(colSumType, kerns);
     DFEVector<DFEVector<DFEComplex>> allColSums = allKernsType.newInstance(this);
-    //rowidx = grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum));
     DFEVector<DFEComplex> rowToAdd = control.mux(grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum)), allRows.getElementsAsList())
       .cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
-    //for (int i = 0; i < cols; i++) {
-      //rowToAdd[i].getReal() <== firstTick ? constant.zero(dataTypeFixCommonAdd) : mappedInputMtx.read(rowidx + i * 2).cat(constant.var(dfeBool(), 0)).cast(dataTypeFixCommonAdd);
-      //rowToAdd[i].getImaginary() <== firstTick ? constant.zero(dataTypeFixCommonAdd) : mappedInputMtx.read(rowidx + i * 2).cat(constant.var(dfeBool(), 0)).cast(dataTypeFixCommonAdd);
-    //}
-    //DFEVectorType<DFEVar> bitVectorType = new DFEVectorType<DFEVar>(dfeBool(), cols*2);
     
     DFEVector<DFEComplex> oneRowCplx = oneRow.cast(oneRowFixType).reinterpret(colSumType);
     DFEVector<DFEComplex> oneRowNeg = (-oneRow).cast(oneRowFixType).reinterpret(colSumType);
     
 		//read row from input matrix
-    //DFEVar changePos = Bitops.onehotDecode(ticksMax) - 1 - grayCounter.changePosition;
     DFEVar changePosIsZero = grayCounter.changePosition === (rowpow2-1); //changePos === 0;
     DFEVar isNeg = ((dual ? (isLocal & changePosIsZero) : changePosIsZero) ^ grayCounter.changeValue) & ~isInit;
     DFEVar isNegEven = dual ? null : (grayCounter.changeValue & ~isInit);
     DFEVector<DFEComplex> negRowToAdd = -rowToAdd;
-    DFEVar bitGcode = (tickCount-msizemkernpow1).cast(dfeUInt(basekernpow2));
-    DFEVar isGcodeBits = dual ? (tickCount > msizemkernpow1) : (tickCount >= rowpow2.cast(UIntType));
-    DFEVar dualPreInit = dual ? ((tickCount === rowpow2.cast(UIntType)) & isLocal) : null;
-    DFEVar dualInit = dual ? (tickCount === msizemkernpow1) : null;
+    DFEVar bitGcode = (initCount-msizemkernpow1).cast(dfeUInt(basekernpow2));
+    DFEVar isGcodeBits = dual ? (initCount > msizemkernpow1) : (initCount >= rowpow2) & ((rowpow2 !== 0) | ~firstTick);
+    DFEVar dualPreInit = dual ? (isInit & (initCount === rowpow2) & isLocal) & (rowpow2 !== 0) : null;
+    DFEVar dualInit = dual ? isInit & (initCount === msizemkernpow1) : null;
 		//update sum vector
     DFEVector<DFEVector<DFEComplex>> toAdd = allKernsType.newInstance(this);
     for(int kern = 0; kern < kerns; kern++) {
-      int gcode = (kern << 1) ^ kern;
+      int gcode = (kern << 1) ^ kern; //000, 011, 110, 101, 00isLocal, 01~isLocal, 11isLocal, 10~isLocal 
       DFEVar isInitNeg = isInit & isGcodeBits & (constant.var(dfeUInt(basekernpow2+1), gcode) >> bitGcode).get(0).cast(dfeBool());
       if (dual) isInitNeg = isInitNeg | (dualInit & (((gcode & 1) == 0) ^ ~isLocal)) | dualPreInit;
       List<DFEVector<DFEComplex>> choices = new ArrayList<>();
@@ -133,10 +115,9 @@ public class InitializeColSumDFEKernel extends Kernel {
  	  optimization.popNoPipelining();
     allColSums <== prevColmnSumVector + toAdd;
 
-    //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, adjTickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
+    //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
     for (int i = 0; i < kerns; i++) {
-      //io.output("colSums" + i, allColSums[i], colSumType);
-      io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isStream);
+      io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
     }
 	}
 
