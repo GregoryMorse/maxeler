@@ -47,7 +47,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     }
 
 		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels));
-		KernelBlock FinalSumUpPermKernel  = addKernel(new FinalSumUpPermDFEKernel(makeKernelParameters("FinalSumUpPermDFEKernel")));
     //for (int i = 0; i < initKerns; i++)
 		//  assignKernelToSLR(initColSumKernels[i], i % 4);
     //for (int i = 0; i < numkernels; i++)
@@ -80,8 +79,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 		    SumUpPermKernel.getInput("colProd" + i) <== colProds[i];
     }
 
-		FinalSumUpPermKernel.getInput("partialSum") <== SumUpPermKernel.getOutput("partialSum");
-		DFELink toCPU = FinalSumUpPermKernel.getOutput("res");
+		DFELink toCPU = SumUpPermKernel.getOutput("res");
 		addStreamToCPU("res") <== toCPU;
     addMaxFileConstant("MTXSIZE", dim);
     addMaxFileConstant("BASEKERNPOW2", basekernpow2);
@@ -112,12 +110,10 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
       ei.setScalar("ProdColsDFEKernel", "localOutput", isLocal);
       ei.setScalar("SumUpPermDFEKernel", "ticksMax", isLocal ? ticksmax : 0);
       ei.setTicks("SumUpPermDFEKernel", isLocal ? ticksmax : 0);
-      ei.setTicks("FinalSumUpPermDFEKernel", isLocal ? 4 : 0);
     } else {
   		ei.setScalar("SumUpPermDFEKernel", "ticksMax", ticksmax);
   
   		ei.setTicks("SumUpPermDFEKernel", ticksmax);
-  		ei.setTicks("FinalSumUpPermDFEKernel", 4);
     }
 	  for (int i = 0; i < initKerns; i++) {
       ei.setScalar("InitializeColSumDFEKernel_" + i, "ticksMax", ticksmax);
@@ -156,8 +152,3 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 	}
 
 }
-
-
-
-
-
