@@ -98,11 +98,12 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
     const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
     const size_t rows = matrix_mtx.rows;
+    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
     const size_t numinits = 1 << BASEKERNPOW2;
-    const size_t max_fpga_cols =  max_dim >> BASEKERNPOW2;
-    matrix_base<ComplexFix16> mtxfix[numinits];
+    const size_t actualinits = (matrix_mtx.cols + 9) / 10;
+    matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1L << 62;
-    for (size_t i = 0; i < numinits; i++) {
+    for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
       size_t basecol = max_fpga_cols * i;
       size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
@@ -122,6 +123,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
     ComplexFix16* mtx_fix_data[numinits];
     //assert(mtxfix[i].stride == mtxfix[i].cols);
+    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
 
