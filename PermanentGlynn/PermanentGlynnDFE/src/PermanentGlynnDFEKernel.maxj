@@ -201,7 +201,6 @@ static long power_of_2(long n) {
 	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int initKerns, int kernNum) {
 		super(parameters);
 
-		DFEType UIntType          = dfeUInt(64);  
 		//DFEType doubleType         = dfeFloat(11,53);
 		//DFEType dataTypeFix32     = dfeInt(32);//dfeFixOffset(32, -28, SignMode.TWOSCOMPLEMENT);
 		DFEType dataTypeFix64     = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
@@ -217,8 +216,8 @@ static long power_of_2(long n) {
 
 
 		// tick count
-		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
-		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
+		DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8) ).cast(dfeUInt(6));
+		DFEVar tickCount = control.count.simpleCounter(dual ? 37 : 38, constant.var(dfeUInt(dual ? 37 : 38), 1) << msizeadj);
     DFEVar isLocal = null;
     if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8) ).cast(dfeBool());
 		
@@ -291,7 +290,7 @@ static long power_of_2(long n) {
 		}
     //optimization.popDSPFactor();
     //optimization.popDSPFactor();
-    DFEVar sign = tickCount.get(0) | ((dual ? (ticksMax === 1) & isLocal : (ticksMax === 1) & ((kernNum & 1) != 0)));
+    DFEVar sign = tickCount.get(0) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
     DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
    
    
