@@ -348,8 +348,9 @@ def verify():
     from matplotlib.ticker import MaxNLocator
     fig = plt.figure()
     ax1 = fig.add_subplot(111)
-    for f in largePermFuncs[1:]:
-      ax1.plot(xaxis, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis], label=f.__name__)
+    markers = ['o', '*', 'x', '+', 's']
+    for i, f in enumerate(largePermFuncs[1:]):
+      ax1.plot(xaxis, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis], label=f.__name__, marker=markers[i], linestyle=' ')
     ax1.set_xlabel("Size")  
     ax1.set_yscale('log', base=10)
     ax1.set_ylabel("Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
@@ -401,8 +402,9 @@ def timing():
     from matplotlib.ticker import MaxNLocator
     fig = plt.figure()
     ax1 = fig.add_subplot(111)
-    for f in largePermFuncs:
-      ax1.plot(xaxis, [results[key][f.__name__][i] for i in xaxis], label=f.__name__)
+    markers = ['o', '*', 'x', '+', 's']
+    for i, f in enumerate(largePermFuncs):
+      ax1.plot(xaxis, [results[key][f.__name__][i] for i in xaxis], label=f.__name__, marker=markers[i], linestyle=' ')
     ax1.set_xlabel("Size")  
     ax1.set_yscale('log', base=10)
     ax1.set_ylabel("Time (log10 s)")
