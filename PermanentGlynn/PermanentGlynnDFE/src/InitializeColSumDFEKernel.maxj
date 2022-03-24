@@ -2,7 +2,6 @@ package permanentglynn;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Arrays;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
@@ -76,34 +75,17 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar firstTick = isInit & (initCount === 0);
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
-        DFEVar needData = msizem1 >= (kernNum * 10);
+        DFEVar needData = msizem1 >= (kernNum * maxdim / initKerns);
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit & needData);
         DFEVar c0 = constant.zero(IntType), c1 = constant.var(IntType, 1L << 62);
 
         List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
         initChoices.add(constant.zero(oneRowType));
-        initChoices.add(oneRowType.newInstance(this, Arrays.asList(new DFEVar[] {
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0,
-            c1,
-            c0
-        })));
+        List<DFEVar> allOnes = new ArrayList<>(); 
+        for (int i = 0; i < maxdim / initKerns; i++) {
+            allOnes.add(c1); allOnes.add(c0);
+        }
+        initChoices.add(oneRowType.newInstance(this, allOnes));
         initChoices.add(oneRow);
         initChoices.add(oneRow);
         oneRow = control.mux(needData.cat(firstTick), initChoices);
