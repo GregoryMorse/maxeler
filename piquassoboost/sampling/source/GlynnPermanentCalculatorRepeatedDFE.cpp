@@ -35,7 +35,7 @@ void input_to_bincoeff_indices(PicState_int64& input_state, int useDual, std::ve
     else if (input_state[i] > 1) mrows.push_back(i);
   }
   sort(mrows.begin(), mrows.end(), [&input_state](size_t i, size_t j) { return input_state[i] < input_state[j]; }); 
-  while (rowchange_indices.size() < 1+2+(useDual ? 1 : 0)+1) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel plus one more for the sum up kernel to tick
+  while (rowchange_indices.size() < 1+2+(useDual ? 1 : 0)) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel plus one more for the sum up kernel to tick
     rowchange_indices.push_back(mrows[0]);
     input_state[mrows[0]]--;
     if (mrows[0] == 1) {
@@ -78,7 +78,11 @@ void
 GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_mtx, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
-    if (matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+    int64_t photons = 0;
+    for (size_t i = 0; i < input_state.size(); i++) {
+        photons += input_state[i];
+    }
+    if (photons < 1+BASEKERNPOW2 || (photons < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_mtx, input_state, output_state);
       return;
@@ -112,11 +116,12 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_mtx, PicState_int64& input_s
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
     const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
     const size_t rows = matrix_mtx.rows;
+    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
     const size_t numinits = 1 << BASEKERNPOW2;
-    const size_t max_fpga_cols =  max_dim >> BASEKERNPOW2;
-    matrix_base<ComplexFix16> mtxfix[numinits];
+    const size_t actualinits = (matrix_mtx.cols + 9) / 10;
+    matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1L << 62;
-    for (size_t i = 0; i < numinits; i++) {
+    for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
       size_t basecol = max_fpga_cols * i;
       size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
