@@ -32,7 +32,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         public DFEVar changeValue;
         public DFEVar changePosition;
 
-        GrayCounter(DFEVar inCounter, KernelBase << ? > owner) {
+        GrayCounter(DFEVar inCounter, KernelBase<?> owner) {
             //grayCount = dfeUInt(64).newInstance(owner);
             //changeValue = dfeBool().newInstance(owner);
             //changePosition = dfeUInt(MathUtils.ceilLog2(64)).newInstance(owner);
@@ -77,8 +77,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
         DFEVar needData = msizem1 >= (kernNum * 10);
-        oneRow <= = io.input("mappedInputMtx_Rows", oneRowType, isInit & needData);
-        DFEVar c0 = constant.zero(IntType), c1 = constant.var(IntType, 1 L << 62);
+        oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit & needData);
+        DFEVar c0 = constant.zero(IntType), c1 = constant.var(IntType, 1L << 62);
 
         List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
         initChoices.add(constant.zero(oneRowType));
@@ -110,7 +110,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         //debug.simPrintf(initCount < 2, "%d %d %KObj%\n", kernNum, needData, oneRow);
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
         for (int i = 1; i < rows - (basekernpow2 + (dual ? 1 : 0)); i++) {
-            allRows[i - 1] <= = (isInit & (i === initCount)) ? oneRow : stream.offset(allRows[i - 1], -1);
+            allRows[i - 1] <== (isInit & (i === initCount)) ? oneRow : stream.offset(allRows[i - 1], -1);
         }
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
@@ -140,12 +140,12 @@ public class InitializeColSumDFEKernel extends Kernel {
             choices.add(negRowToAdd);
             choices.add(oneRowCplx);
             choices.add(oneRowNeg);
-            toAdd[kern] <= = control.mux(isInit.cat((dual || ((kern & 1) != 0) ? isNeg : isNegEven) | isInitNeg), choices);
+            toAdd[kern] <== control.mux(isInit.cat((dual || ((kern & 1) != 0) ? isNeg : isNegEven) | isInitNeg), choices);
         }
         optimization.pushNoPipelining();
         DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = firstTick ? constant.zero(allKernsType) : stream.offset(allColSums, -1);
         optimization.popNoPipelining();
-        allColSums <= = prevColmnSumVector + toAdd;
+        allColSums <== prevColmnSumVector + toAdd;
 
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
