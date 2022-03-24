@@ -15,17 +15,16 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 
 public class SumUpPermDFEKernel extends Kernel {
 
-	public SumUpPermDFEKernel(final KernelParameters parameters, int n) {
+	public SumUpPermDFEKernel(final KernelParameters parameters, int n, boolean dual) {
 		super(parameters);
 
-		DFEType UIntType          = dfeUInt(64);  
 		DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
 		DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
 
 		// tick count
-		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
-		DFEVar tickCount = control.count.simpleCounter(64, ticksMax);
+		DFEVar ticksmax = constant.var(dfeUInt(dual ? 37 : 38), 1) << io.scalarInput("msizeadj", dfeUInt(8) ).cast(dfeUInt(6));
+		DFEVar tickCount = control.count.simpleCounter(dual ? 37 : 38, ticksmax);
 
     DFEComplex colProdVals[] = new DFEComplex[n];
     for (int i = 0; i < n; i++)
@@ -46,7 +45,7 @@ public class SumUpPermDFEKernel extends Kernel {
     DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
     optimization.popNoPipelining();
     sum <== cursum + colProdVals[0];
-    io.output("res", sum, cplxFix128Type, tickCount === ticksMax-1 );
+    io.output("res", sum, cplxFix128Type, tickCount === ticksmax-1 );
 
 	}
 
