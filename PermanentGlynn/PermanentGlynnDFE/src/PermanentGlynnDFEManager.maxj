@@ -32,7 +32,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
             initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim));
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
-            initColSumKernels[i].getInput("mappedInputMtx_Rows") <= = mtx;
+            initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
         }
         for (int i = 0; i < numkernels; i++) {
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i));
@@ -42,7 +42,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
                 curOutput.setAdditionalRegisters(cols / initKerns);
-                colSumKernels[i].getInput("colSums" + j) <= = curOutput;
+                colSumKernels[i].getInput("colSums" + j) <== curOutput;
             }
         }
 
@@ -61,26 +61,26 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
             int singlekerns = numkernels * numarrays / 2;
             KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), singlekerns));
             for (int i = 0; i < singlekerns; i++)
-                ProdColsKernel.getInput("colProd" + i) <= = colProds[i];
-            SumUpPermKernel.getInput("colProd0") <= = ProdColsKernel.getOutput("colProd");
+                ProdColsKernel.getInput("colProd" + i) <== colProds[i];
+            SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
             if (!isSim) {
                 //MaxRingConnection.MAXRING_QSFP0.getNativeWidth() == 256 && MaxRingConnection.MAXRING_QSFP1.getNativeWidth() == 256
                 MaxRingBidirectionalStream maxRingStream0 = parent.addMaxRingBidirectionalStream("maxRingStream", MaxRingConnection.MAXRING_QSFP0);
-                maxRingStream0.getLinkToRemoteDFE() <= = ProdColsKernel.getOutput("colProdRemote");
-                SumUpPermKernel.getInput("colProd1") <= = maxRingStream0.getLinkFromRemoteDFE();
+                maxRingStream0.getLinkToRemoteDFE() <== ProdColsKernel.getOutput("colProdRemote");
+                SumUpPermKernel.getInput("colProd1") <== maxRingStream0.getLinkFromRemoteDFE();
             } else {
                 KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), singlekerns));
                 for (int i = singlekerns; i < numkernels; i++)
-                    ProdColsKernel2.getInput("colProd" + (i - singlekerns)) <= = colProds[i];
-                SumUpPermKernel.getInput("colProd1") <= = ProdColsKernel2.getOutput("colProd");
+                    ProdColsKernel2.getInput("colProd" + (i - singlekerns)) <== colProds[i];
+                SumUpPermKernel.getInput("colProd1") <== ProdColsKernel2.getOutput("colProd");
             }
         } else {
             for (int i = 0; i < numkernels; i++)
-                SumUpPermKernel.getInput("colProd" + i) <= = colProds[i];
+                SumUpPermKernel.getInput("colProd" + i) <== colProds[i];
         }
 
         DFELink toCPU = SumUpPermKernel.getOutput("res");
-        addStreamToCPU("res") <= = toCPU;
+        addStreamToCPU("res") <== toCPU;
         addMaxFileConstant("MTXSIZE", dim);
         addMaxFileConstant("BASEKERNPOW2", basekernpow2);
 
