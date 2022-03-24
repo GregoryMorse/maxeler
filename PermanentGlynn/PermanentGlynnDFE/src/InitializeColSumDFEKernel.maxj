@@ -2,6 +2,7 @@ package permanentglynn;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
@@ -48,7 +49,6 @@ public class InitializeColSumDFEKernel extends Kernel {
 
 	public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum) {
 		super(parameters);
-    DFEType UIntType          = dfeUInt(64);
     DFEType IntType          = dfeInt(64);
 		DFEType dataTypeFix64     = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
     DFEType dataTypeFixCommonAdd     = dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
@@ -62,8 +62,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVectorType<DFEVar> oneRowFixType = new DFEVectorType<DFEVar>(dfeInt(64+1), 2*cols);
     DFEVectorType<DFEVector<DFEVar>> allRowsType = new DFEVectorType<DFEVector<DFEVar>>(oneRowType, rows-1-(basekernpow2+(dual ? 1 : 0)));
     int kerns = 1 << basekernpow2;
-		DFEVar ticksMax = io.scalarInput("ticksMax", UIntType );
-    DFEVar rowpow2 = Bitops.onehotDecode(ticksMax);
+		DFEVar rowpow2 = io.scalarInput("msizeadj", dfeUInt(8) ).cast(dfeUInt(6));
     
     DFEVar msizemkernpow1 = (rowpow2 + (dual ? 1 : 0));
     DFEVar msizem1 = (rowpow2 + (basekernpow2 + (dual ? 1 : 0)));
@@ -73,12 +72,21 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVar initCount = control.count.simpleCounter(6, msizem1+1);
     DFEVar isInit = control.count.pulse(1, initCount === msizem1);
     DFEVar isCalc = control.count.pulse(1, false, initCount === msizem1-1);
-    DFEVar tickCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksMax).withReset(isInit & (initCount === msizem1))).getCount();
+    DFEVar tickCount = control.count.makeCounter(control.count.makeParams(dual ? 37 : 38).withMax(constant.var(dfeUInt(dual ? 37 : 38), 1) << rowpow2).withReset(isInit & (initCount === msizem1))).getCount();
 
     DFEVar firstTick = isInit & (initCount === 0);
     GrayCounter grayCounter = new GrayCounter(tickCount, this);
     DFEVector<DFEVar> oneRow = oneRowType.newInstance(this);
-    oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit);
+    DFEVar needData = msizem1 >= (kernNum*10);
+    oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit & needData);
+    DFEVar c0 = constant.zero(IntType), c1 = constant.var(IntType, 1L << 62);
+    
+    List<DFEVector<DFEVar>> initChoices = new ArrayList<>();
+    initChoices.add(constant.zero(oneRowType));
+    initChoices.add(oneRowType.newInstance(this, Arrays.asList(new DFEVar[]{c1,c0,c1,c0,c1,c0,c1,c0,c1,c0,c1,c0,c1,c0,c1,c0,c1,c0,c1,c0})));
+    initChoices.add(oneRow); initChoices.add(oneRow);
+    oneRow = control.mux(needData.cat(firstTick), initChoices);
+    //debug.simPrintf(initCount < 2, "%d %d %KObj%\n", kernNum, needData, oneRow);
     DFEVector<DFEVector<DFEVar>> allRows = allRowsType.newInstance(this);
     for (int i = 1; i < rows-(basekernpow2+(dual ? 1 : 0)); i++) {
       allRows[i-1] <== (isInit & (i === initCount)) ? oneRow : stream.offset(allRows[i-1], -1);
