@@ -46,7 +46,7 @@ public class SumUpPermDFEKernel extends Kernel {
         optimization.pushNoPipelining();
         DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
         optimization.popNoPipelining();
-        sum <= = cursum + colProdVals[0];
+        sum <== cursum + colProdVals[0];
         io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
 
     }
