@@ -47,7 +47,7 @@ public class InitializeColSumDFEKernel extends Kernel {
 		}
 	}
 
-	public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum) {
+	public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim) {
 		super(parameters);
     DFEType IntType          = dfeInt(64);
 		DFEType dataTypeFix64     = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
@@ -72,7 +72,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     DFEVar initCount = control.count.simpleCounter(6, msizem1+1);
     DFEVar isInit = control.count.pulse(1, initCount === msizem1);
     DFEVar isCalc = control.count.pulse(1, false, initCount === msizem1-1);
-    DFEVar tickCount = control.count.makeCounter(control.count.makeParams(dual ? 37 : 38).withMax(constant.var(dfeUInt(dual ? 37 : 38), 1) << rowpow2).withReset(isInit & (initCount === msizem1))).getCount();
+    DFEVar tickCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2).withReset(isInit & (initCount === msizem1))).getCount();
 
     DFEVar firstTick = isInit & (initCount === 0);
     GrayCounter grayCounter = new GrayCounter(tickCount, this);
