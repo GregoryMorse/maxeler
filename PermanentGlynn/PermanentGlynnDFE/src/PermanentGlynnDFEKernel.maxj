@@ -179,7 +179,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
-    DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, KernelBase << ? > owner) {
+    DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, KernelBase <?> owner) {
         //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
         //vs. 3 multiplications 5 additions 3M+5A
         //Gauss: (c*(a+b)-b*(c+d))+(c*(a+b)+a*(d-c))i
@@ -233,7 +233,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
         for (int j = 0; j < initKerns; j++) {
             DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-            colmnSumVector <= = io.input("colSums" + j, colSumType);
+            colmnSumVector <== io.input("colSums" + j, colSumType);
             //debug.simPrintf("%KObj%\n", colmnSumVector);
 
             for (int idx = 0; idx < cols / initKerns; idx++) {
