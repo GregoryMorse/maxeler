@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 12 if hasSim else 40
+DEPTH = 12 if hasSim else 34
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -316,7 +316,7 @@ def verify():
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       print("Verifying", func.__name__)
       for dim in xaxis:
-        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_Glynn_Cpp_Inf:
+        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs:
           r = func(A[dim])
           if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(r)
           else: res[key][func.__name__][dim] = r
