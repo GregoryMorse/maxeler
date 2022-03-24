@@ -200,7 +200,7 @@ static long power_of_2(long n) {
     return ret;
   }
 	
-	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int initKerns, int kernNum) {
+	public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum) {
 		super(parameters);
 
 		//DFEType doubleType         = dfeFloat(11,53);
@@ -219,7 +219,7 @@ static long power_of_2(long n) {
 
 		// tick count
 		DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8) ).cast(dfeUInt(6));
-		DFEVar tickCount = control.count.simpleCounter(dual ? 37 : 38, constant.var(dfeUInt(dual ? 37 : 38), 1) << msizeadj);
+		DFEVar tickCount = control.count.simpleCounter(maxtickbits, constant.var(dfeUInt(maxtickbits), 1) << msizeadj);
     DFEVar isLocal = null;
     if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8) ).cast(dfeBool());
 		
