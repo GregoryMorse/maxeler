@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 12 if hasSim else 34
+DEPTH = 12 if hasSim else 36
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -167,8 +167,8 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*wa
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
 
 #np.save("mtx", A )
@@ -372,11 +372,12 @@ def timing():
   if os.path.isfile("resultdata.bin"):
     with open("resultdata.bin", "rb") as f:
       results = pickle.load(f)
-  else: results = {}  
+  else: results = {}
   for key in gen_test_data:
     A = gen_test_data[key]
     if not key in results: results[key] = {}
     for func in largePermFuncs:
+      if func == permanent_Glynn_Cpp_Inf: continue
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Testing", func.__name__)
       for dim in xaxis:
@@ -396,14 +397,15 @@ def timing():
     with open("resultdata.csv", "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs if f != permanent_Glynn_Cpp_Inf])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs if x != permanent_Glynn_Cpp_Inf] for i in xaxis])
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
     fig = plt.figure()
     ax1 = fig.add_subplot(111)
     markers = ['o', '*', 'x', '+', 's']
     for i, f in enumerate(largePermFuncs):
+      if f == permanent_Glynn_Cpp_Inf: continue
       ax1.plot(xaxis, [results[key][f.__name__][i] for i in xaxis], label=f.__name__, marker=markers[i], linestyle=' ')
     ax1.set_xlabel("Size")  
     ax1.set_yscale('log', base=10)
