@@ -30,12 +30,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
     KernelBlock[] colSumKernels = new KernelBlock[numkernels];
     int initKerns = 4;
     for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
-      initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2-(dual ? 1 : 0), initKerns, i % initKerns));
+      initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2-(dual ? 1 : 0), initKerns, i % initKerns, dim));
       DFELink mtx = addStreamFromCPU("InputMtx" + i);
       initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
     }
     for (int i = 0; i < numkernels; i++) {
-		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, initKerns, i));
+		  colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i));
       for (int j = 0; j < initKerns; j++) {
         DFELink curOutput;
         if (dual && isSim && i >= numkernels * numarrays / 2)
@@ -46,7 +46,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
       }
     }
 
-		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels, dual));
+		KernelBlock SumUpPermKernel  = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels, dim - basekernpow2));
     //for (int i = 0; i < initKerns; i++)
 		//  assignKernelToSLR(initColSumKernels[i], i % 4);
     //for (int i = 0; i < numkernels; i++)
