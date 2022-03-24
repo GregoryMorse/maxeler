@@ -109,7 +109,7 @@ def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repea
     parity = not parity
     for i in range(len(curmp)-1, -1, -1):
       curdir = (gcodeidx & (1 << i)) == 0
-      if not curdir and curmp[i] != inp[i] or curdir and curmp[i] != -inp[i]: 
+      if not curdir and curmp[i] != inp[i] or curdir and curmp[i] != -inp[i]:
         cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) // 2)
         curmp[i] = plusminus(curdir, curmp[i], 2)
         #for j in range(i+1, len(curmp)): gcodeidx ^= (1 << j)
@@ -163,18 +163,22 @@ from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalc
 permanent_Glynn_calculator = GlynnPermanent( )
 
 def permanent_Glynn_Cpp(Arep, input_state, output_state): return permanent_Glynn_calculator.calculate_repeated(Arep, input_state, output_state)
+def permanent_Glynn_DFE(Arep, input_state, output_state): return permanent_Glynn_calculator.calculate_repeatedDFE(Arep, input_state, output_state, False)
+def permanent_Glynn_DFEDual(Arep, input_state, output_state): return permanent_Glynn_calculator.calculate_repeatedDFE(Arep, input_state, output_state, True)
 def permanent_ChinHuh_calculator(Arep, input_state, output_state):
   if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
-largePermFuncs = (permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE)
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    input_states = {dim:np.random.randint(5, size=dim) for dim in range(nmax+1)}
-    output_states = {dim:np.array(input_states[dim]) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
+    input_states = {dim:np.array([]) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
+    print(input_states)
+    #output_states = {dim:np.array([]) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
+    output_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
     for x in output_states: np.random.shuffle(output_states[x])
     res = [[] for _ in largePermFuncs]
     for i, func in enumerate(largePermFuncs):
