@@ -192,11 +192,11 @@ static long power_of_2(long n) {
     //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
     DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits+2, SignMode.TWOSCOMPLEMENT);
     DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits+2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
-    DFEVar cab = signedMulKaratsuba(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
+    DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
     int newBits = bits * 2 + (bits == 64 ? 1 : 0);
     DFEType resultType = dfeFixOffset(newBits-3, -newBits+2+3, SignMode.TWOSCOMPLEMENT);
-    DFEComplex ret = DFEComplexType.newInstance(owner, (cab-signedMulKaratsuba(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
-          (cab+signedMulKaratsuba(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
+    DFEComplex ret = DFEComplexType.newInstance(owner, (cab-mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
+          (cab+mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
     return ret;
   }
 	
