@@ -15,38 +15,40 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 
 public class SumUpPermDFEKernel extends Kernel {
 
-	public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits) {
-		super(parameters);
+    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits) {
+        super(parameters);
 
-		DFEType dataTypeFix128    = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
-		DFEComplexType cplxFix128Type    = new DFEComplexType(dataTypeFix128);
+        DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
-		// tick count
-		DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8) ).cast(dfeUInt(6));
-		DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
+        // tick count
+        DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
 
-    DFEComplex colProdVals[] = new DFEComplex[n];
-    for (int i = 0; i < n; i++)
-      colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
-      
-    int sumsleft = n;
-    while (sumsleft > 1) { //sums processed in binary tree
-      for (int i = 0; i < sumsleft / 2; i++) {
-        colProdVals[i] = colProdVals[i*2] + colProdVals[i*2+1];
-      }
-      if ((sumsleft & 1) != 0) { colProdVals[sumsleft/2] = colProdVals[sumsleft-1]; sumsleft = sumsleft / 2 + 1; }
-      else sumsleft /= 2;
+        DFEComplex colProdVals[] = new DFEComplex[n];
+        for (int i = 0; i < n; i++)
+            colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
+
+        int sumsleft = n;
+        while (sumsleft > 1) { //sums processed in binary tree
+            for (int i = 0; i < sumsleft / 2; i++) {
+                colProdVals[i] = colProdVals[i * 2] + colProdVals[i * 2 + 1];
+            }
+            if ((sumsleft & 1) != 0) {
+                colProdVals[sumsleft / 2] = colProdVals[sumsleft - 1];
+                sumsleft = sumsleft / 2 + 1;
+            } else sumsleft /= 2;
+        }
+
+        // sum up permanents
+        DFEComplex sum = cplxFix128Type.newInstance(this);
+        optimization.pushNoPipelining();
+        DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
+        optimization.popNoPipelining();
+        sum <= = cursum + colProdVals[0];
+        io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
+
     }
-
-		// sum up permanents
-    DFEComplex sum = cplxFix128Type.newInstance(this);
-    optimization.pushNoPipelining();
-    DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
-    optimization.popNoPipelining();
-    sum <== cursum + colProdVals[0];
-    io.output("res", sum, cplxFix128Type, tickCount === ticksmax-1 );
-
-	}
 
 }
