@@ -6,53 +6,54 @@ import com.maxeler.platform.max5.manager.ImplementationStrategy;
 import com.maxeler.platform.max5.manager.BuildConfig;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 
-class PermanentGlynnEngineParameters extends EngineParameters
-{
-  public PermanentGlynnEngineParameters(String[] args)
-  {
-    super(args);
-  }
-  protected void declarations()
-  {
-    declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
-  }
-  public boolean dual() { return getParam("dual"); }
-  public boolean isSim() { return getTarget() != EngineParameters.Target.DFE; }
+class PermanentGlynnEngineParameters extends EngineParameters {
+    public PermanentGlynnEngineParameters(String[] args) {
+        super(args);
+    }
+    protected void declarations() {
+        declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
+    }
+    public boolean dual() {
+        return getParam("dual");
+    }
+    public boolean isSim() {
+        return getTarget() != EngineParameters.Target.DFE;
+    }
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
 
 
-	public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
-		super(params);
-		setup(this, params.dual(), params.isSim());	
-	}
+    public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
+        super(params);
+        setup(this, params.dual(), params.isSim());
+    }
 
-	public void assignKernelToSLR(KernelBlock kernel, int slr_index) {
-		NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
-		if(slr_index < 0 || slr_index >= availableRegions.length){
-			//error
-		}
-		assignToNamedRegion(kernel, availableRegions[slr_index]);
-	}
+    public void assignKernelToSLR(KernelBlock kernel, int slr_index) {
+        NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
+        if (slr_index < 0 || slr_index >= availableRegions.length) {
+            //error
+        }
+        assignToNamedRegion(kernel, availableRegions[slr_index]);
+    }
 
-	public static void main(final String[] argv) {
-		final PermanentGlynnEngineParameters params = new PermanentGlynnEngineParameters(argv);
+    public static void main(final String[] argv) {
+        final PermanentGlynnEngineParameters params = new PermanentGlynnEngineParameters(argv);
 
-		final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
+        final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
 
-		BuildConfig conf = manager.getBuildConfig();
+        BuildConfig conf = manager.getBuildConfig();
 
-		conf.setImplementationStrategies(  	ImplementationStrategy.MAXELER3 );
-		conf.setParallelism( 64 );
+        conf.setImplementationStrategies(ImplementationStrategy.MAXELER3);
+        conf.setParallelism(64);
 
-		manager.setDefaultStreamClockFrequency(190);
+        manager.setDefaultStreamClockFrequency(190);
 
-		manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
-		
+        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
-		manager.build();
-	}
+
+        manager.build();
+    }
 
 
 
