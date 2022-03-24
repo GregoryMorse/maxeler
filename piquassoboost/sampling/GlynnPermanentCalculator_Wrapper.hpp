@@ -6,8 +6,10 @@
 #include <numpy/arrayobject.h>
 #include "structmember.h"
 #include "GlynnPermanentCalculator.h"
+#include "GlynnPermanentCalculatorInf.h"
 #include "GlynnPermanentCalculatorRepeated.h"
 #include "GlynnPermanentCalculatorDFE.h"
+#include "GlynnPermanentCalculatorRepeatedDFE.h"
 #include "numpy_interface.h"
 #include <dlfcn.h>
 
@@ -18,6 +20,7 @@
 typedef struct GlynnPermanentCalculator_wrapper {
     PyObject_HEAD
     void *handle = NULL;
+    void *rephandle = NULL;
     /// The C++ variant of class CGlynnPermanentCalculator
     pic::GlynnPermanentCalculator* calculator;
 } GlynnPermanentCalculator_wrapper;
@@ -62,7 +65,9 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 {
     // unload DFE
     if (releive_DFE) releive_DFE();
-    dlclose(self->handle);
+    if (releiveRep_DFE) releiveRep_DFE();
+    if (self->handle) dlclose(self->handle);
+    if (self->rephandle) dlclose(self->rephandle);
     // deallocate the instance of class N_Qubit_Decomposition
     release_GlynnPermanentCalculator( self->calculator );
    
@@ -71,8 +76,11 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 
 #define DFE_PATH_SIM "./dist/release/lib/"
 #define DFE_PATH "../workspace/PermanentGlynnCPU/dist/release/lib/"
+#define DFE_REP_PATH "../workspace/PermRepGlynnCPU/dist/release/lib/"
 #define DFE_LIB_SIM "libPermanentGlynnSIM.so"
 #define DFE_LIB "libPermanentGlynnDFE.so"
+#define DFE_REP_LIB_SIM "libPermRepGlynnSIM.so"
+#define DFE_REP_LIB "libPermRepGlynnDFE.so"
 
 /**
 @brief Method called when a python instance of the class GlynnPermanentCalculator_wrapper is allocated
@@ -84,16 +92,27 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, RTLD_NOW); //"MAXELEROSDIR
+    self->handle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, RTLD_NOW); //"MAXELEROSDIR"
     if (self->handle == NULL) {
         char* pwd = getcwd(NULL, 0);
-        fprintf(stderr, "'%s' (in %s mode) failed to load from working directory '%s'\n", getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
+        fprintf(stderr, "%s\n'%s' (in %s mode) failed to load from working directory '%s'\n", dlerror(), getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_LIB_SIM : DFE_PATH DFE_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
         free(pwd);
+    } else {
+      calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(self->handle, "calcPermanentGlynnDFE");
+      initialize_DFE = (INITPERMGLYNNDFE)dlsym(self->handle, "initialize_DFE");
+      releive_DFE = (FREEPERMGLYNNDFE)dlsym(self->handle, "releive_DFE");
     }
 
-    calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(self->handle, "calcPermanentGlynnDFE");
-    initialize_DFE = (INITPERMGLYNNDFE)dlsym(self->handle, "initialize_DFE");
-    releive_DFE = (FREEPERMGLYNNDFE)dlsym(self->handle, "releive_DFE");
+    self->rephandle = dlopen(getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_REP_LIB_SIM : DFE_REP_PATH DFE_REP_LIB, RTLD_NOW); //"MAXELEROSDIR"
+    if (self->rephandle == NULL) {
+        char* pwd = getcwd(NULL, 0);
+        fprintf(stderr, "%s\n'%s' (in %s mode) failed to load from working directory '%s'\n", dlerror(), getenv("SLIC_CONF") ? DFE_PATH_SIM DFE_REP_LIB_SIM : DFE_REP_PATH DFE_REP_LIB, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
+        free(pwd);
+    } else {
+      calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(self->rephandle, "calcPermanentGlynnRepDFE");
+      initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(self->rephandle, "initializeRep_DFE");
+      releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(self->rephandle, "releiveRep_DFE");
+    }
     
     return (PyObject *) self;
 }
@@ -159,6 +178,53 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
 
     // start the calculation of the permanent
     pic::Complex16 ret = self->calculator->calculate(matrix_mtx);
+
+    // release numpy arrays
+    Py_DECREF(matrix_arg);
+
+    return Py_BuildValue("D", &ret);
+}
+
+
+/**
+@brief Wrapper function to call the calculate method of C++ class CGlynnPermanentCalculator
+@param self A pointer pointing to an instance of the class GlynnPermanentCalculator_Wrapper.
+@param args A tuple of the input arguments: ??????????????
+@param kwds A tuple of keywords
+*/
+static PyObject *
+GlynnPermanentCalculator_Wrapper_calculateInf(GlynnPermanentCalculator_wrapper *self, PyObject *args, PyObject *kwds)
+{
+
+    // The tuple of expected keywords
+    static char *kwlist[] = {(char*)"matrix", NULL};
+
+
+    // initiate variables for input arguments
+    PyObject *matrix_arg = NULL;
+
+    // parsing input arguments
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist,
+                                     &matrix_arg))
+        return Py_BuildValue("");
+
+    // convert python object array to numpy C API array
+    if ( matrix_arg == NULL ) return Py_BuildValue("");
+
+    // establish memory contiguous arrays for C calculations
+    if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+        Py_INCREF(matrix_arg);
+    }
+    else {
+        matrix_arg = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+    }
+
+    // create PIC version of the input matrices
+    pic::matrix matrix_mtx = numpy2matrix(matrix_arg);
+
+    // start the calculation of the permanent
+    pic::GlynnPermanentCalculatorInf* calcInf = new pic::GlynnPermanentCalculatorInf();
+    pic::Complex16 ret = calcInf->calculate(matrix_mtx);
 
     // release numpy arrays
     Py_DECREF(matrix_arg);
@@ -295,6 +361,90 @@ GlynnPermanentCalculator_Wrapper_calculateDFE(GlynnPermanentCalculator_wrapper *
     return Py_BuildValue("D", &perm);
 }
 
+/**
+@brief Wrapper function to call the calculate method of C++ class CGlynnPermanentCalculator
+@param self A pointer pointing to an instance of the class GlynnPermanentCalculator_Wrapper.
+@param args A tuple of the input arguments: ??????????????
+@param kwds A tuple of keywords
+*/
+static PyObject *
+GlynnPermanentCalculator_Wrapper_calculate_repeatedDFE(GlynnPermanentCalculator_wrapper *self, PyObject *args, PyObject *kwds)
+{
+
+    // The tuple of expected keywords
+    static char *kwlist[] = {(char*)"matrix", (char*)"input_state", (char*)"output_state", (char*)"dual", NULL};
+
+    // initiate variables for input arguments
+    PyObject *matrix_arg = NULL;
+    PyObject *input_state_arg = NULL;
+    PyObject *output_state_arg = NULL;
+    int useDual = 0;
+    /// pointer to numpy matrix to keep it alive
+    PyObject *matrix = NULL;
+    /// pointer to numpy matrix of input states to keep it alive
+    PyObject *input_state = NULL;
+    /// pointer to numpy matrix of output states to keep it alive
+    PyObject *output_state = NULL;
+
+
+    // parsing input arguments
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOOp", kwlist,
+                                     &matrix_arg, &input_state_arg, &output_state_arg, &useDual))
+        return Py_BuildValue("");
+
+    // convert python object array to numpy C API array
+    if ( matrix_arg == NULL ) return Py_BuildValue("");
+    if ( input_state_arg == NULL ) return Py_BuildValue("");
+    if ( output_state_arg == NULL ) return Py_BuildValue("");
+
+    // establish memory contiguous arrays for C calculations
+    if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+        matrix = matrix_arg;
+        Py_INCREF(matrix);
+    }
+    else {
+        matrix = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+    }
+
+    if ( PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
+        input_state = input_state_arg;
+        Py_INCREF(input_state);
+    }
+    else {
+        input_state = PyArray_FROM_OTF(input_state_arg, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+    }
+
+    if ( PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
+        output_state = output_state_arg;
+        Py_INCREF(output_state);
+    }
+    else {
+        output_state = PyArray_FROM_OTF(output_state_arg, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+    }
+
+  
+
+
+    // create PIC version of the input matrices
+    pic::matrix matrix_mtx = numpy2matrix(matrix);
+    pic::PicState_int64 input_state_mtx = numpy2PicState_int64(input_state);
+    pic::PicState_int64 output_state_mtx = numpy2PicState_int64(output_state);
+
+    if (initializeRep_DFE) initializeRep_DFE(useDual);
+    
+    // start the calculation of the permanent
+    pic::Complex16 ret;
+    if (calcPermanentGlynnRepDFE) GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, useDual);
+    else {
+      // create instance of class GlynnPermanentCalculatorRepeated
+      pic::GlynnPermanentCalculatorRepeated* calcRepeated = new pic::GlynnPermanentCalculatorRepeated();
+      ret = calcRepeated->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+      delete calcRepeated;
+    }
+
+    return Py_BuildValue("D", &ret);
+}
+
 static PyGetSetDef GlynnPermanentCalculator_wrapper_getsetters[] = {
     {NULL}  /* Sentinel */
 };
@@ -311,11 +461,17 @@ static PyMethodDef GlynnPermanentCalculator_wrapper_Methods[] = {
     {"calculate", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculate, METH_VARARGS | METH_KEYWORDS,
      "Method to calculate the permanent."
     },
+    {"calculateInf", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculateInf, METH_VARARGS | METH_KEYWORDS,
+     "Method to calculate the permanent with GMP MPFR for infinite precision."
+    },
     {"calculateDFE", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculateDFE, METH_VARARGS | METH_KEYWORDS,
-     "Method to calculate the permanent on dual DFE."
+     "Method to calculate the permanent on single or dual DFE."
     },
     {"calculate_repeated", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculate_repeated, METH_VARARGS | METH_KEYWORDS,
-     "Method to calculate the permanent."
+     "Method to calculate the permanent with repeated rows and columns."
+    },
+    {"calculate_repeatedDFE", (PyCFunction) GlynnPermanentCalculator_Wrapper_calculate_repeatedDFE, METH_VARARGS | METH_KEYWORDS,
+     "Method to calculate the permanent with repeated rows and columns on single or dual DFE."
     },
     {NULL}  /* Sentinel */
 };
