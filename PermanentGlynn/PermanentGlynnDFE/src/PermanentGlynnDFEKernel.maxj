@@ -77,7 +77,7 @@ static long power_of_2(long n) {
   {
     DFEFix aType = (DFEFix)a.getType(), bType = (DFEFix)b.getType();
     DFEVar aSign = getSignBit(a), bSign = getSignBit(b);
-    DFEVar result = uToSigned(mulKaratsuba(sToUnsigned(aSign ? -a : a), sToUnsigned(bSign ? -b : b))).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits()-1, -(aType.getTotalBits() + bType.getTotalBits()-1) + aType.getIntegerBits() + bType.getIntegerBits(), SignMode.TWOSCOMPLEMENT));
+    DFEVar result = uToSigned(mulKaratsuba(sToUnsigned(aSign ? -a : a), sToUnsigned(bSign ? -b : b))).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits()-1, -(aType.getTotalBits() + bType.getTotalBits()-1) + aType.getIntegerBits() + bType.getIntegerBits()-1, SignMode.TWOSCOMPLEMENT));
     return (aSign ^ bSign) ? -result : result; 
   }
   DFEVar mulKaratsuba(DFEVar a, DFEVar b)
@@ -90,7 +90,7 @@ static long power_of_2(long n) {
       return mulExact(a, b);
     }
     int aDiv = aType.getTotalBits() / 2, bDiv = bType.getTotalBits() / 2;
-    aDiv -= aDiv % 18;
+    aDiv -= aDiv % 18; //ideally we want to round up/down to minimize abs(b-a)
     bDiv -= bDiv % 27;
     //System.out.println(aType.getTotalBits() + " " + bType.getTotalBits() + " " + aDiv + " " + bDiv);
     DFEVar high1 = a.slice(aDiv, aType.getTotalBits() - aDiv).reinterpret(dfeUInt(aType.getTotalBits() - aDiv)), low1 = a.slice(0, aDiv).reinterpret(dfeUInt(aDiv));
@@ -109,8 +109,10 @@ static long power_of_2(long n) {
     else
       z1 = signedMulKaratsuba(addExact(shiftLeftFix(high1, aDiv-bDiv), low1, true), addExact(high2, low2, true));
     DFEVar z2 = mulKaratsuba(high1, high2);
-    return triAddExact(shiftLeftFix(z2, aDiv+bDiv-mn), triAddExact(z0, shiftLeftFix(z2, bDiv > aDiv ? bDiv-aDiv : aDiv-bDiv), z1, true), z0.slice(mn, z0.getType().getTotalBits() - mn).reinterpret(dfeUInt(z0.getType().getTotalBits() - mn)), false)
+    DFEVar result = triAddExact(shiftLeftFix(z2, aDiv+bDiv-mn), triAddExact(z0, shiftLeftFix(z2, bDiv > aDiv ? bDiv-aDiv : aDiv-bDiv), z1, true), z0.slice(mn, z0.getType().getTotalBits() - mn).reinterpret(dfeUInt(z0.getType().getTotalBits() - mn)), false)
       .cat(z0.slice(0, mn)).slice(0, aType.getTotalBits() + bType.getTotalBits()).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits(), -aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits(), SignMode.UNSIGNED)); 
+    //debug.simPrintf("%d %d %d %d %d %d %d %d %d %d %d\n", a, b, result, high1, low1, high2, low2, z0, z1, z2, triAddExact(z0, shiftLeftFix(z2, bDiv > aDiv ? bDiv-aDiv : aDiv-bDiv), z1, true));
+    return result; 
   }
   DFEVar uToSigned(DFEVar a) { return constant.zero(dfeBool()).cat(a).reinterpret(dfeInt(a.getType().getTotalBits()+1)); }
   DFEVar sToUnsigned(DFEVar a) { return a.slice(0, a.getType().getTotalBits()-1).reinterpret(dfeUInt(a.getType().getTotalBits()-1)); }
@@ -190,11 +192,11 @@ static long power_of_2(long n) {
     //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
     DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits+2, SignMode.TWOSCOMPLEMENT);
     DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits+2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
-    DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
+    DFEVar cab = signedMulKaratsuba(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
     int newBits = bits * 2 + (bits == 64 ? 1 : 0);
     DFEType resultType = dfeFixOffset(newBits-3, -newBits+2+3, SignMode.TWOSCOMPLEMENT);
-    DFEComplex ret = DFEComplexType.newInstance(owner, (cab-mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
-          (cab+mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
+    DFEComplex ret = DFEComplexType.newInstance(owner, (cab-signedMulKaratsuba(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
+          (cab+signedMulKaratsuba(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
     return ret;
   }
 	
