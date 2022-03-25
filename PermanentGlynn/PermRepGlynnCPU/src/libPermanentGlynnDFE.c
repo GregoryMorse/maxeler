@@ -158,7 +158,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     //printf("%lld, %d\n", numOfPartialPerms, rows);
 
 	// variable to store the result
-	__int128 res[2];
+	//__int128 res[2];
+    size_t resbytes = sizeof(__int128)*2*(changecount+1);
+    __int128* res = (__int128*)malloc(resbytes);
 
     union {
 #ifdef MAXELER_SIM    
@@ -177,7 +179,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
     // simulation
     if (!useDual) {
-      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = sizeof(res);
+      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
       actions.glynnRowsGray.param_rows = rows, actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
       actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > 10 ? sizeof(ComplexFix16)*10*rows : 0;
@@ -192,7 +194,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     } else {
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
-      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
+      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.param_rows = rows, actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > 10 ? sizeof(ComplexFix16)*10*rows : 0;
@@ -211,7 +213,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
                                                  "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "
                                                  "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout";
 #else
-      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(res);
+      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > 10 ? sizeof(ComplexFix16)*10*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 20 ? sizeof(ComplexFix16)*10*rows : 0;
@@ -242,20 +244,24 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
     long double factor = (long double)(1ULL<<62);
-
-    long double real = ((long double)res[0])/factor/factor;
-    long double imag = ((long double)res[1])/factor/factor;
-
-    real /= numOfPartialPerms;
-    imag /= numOfPartialPerms;
-
-    // renormalize the result according to the normalization of the input matrix
-    for (int jdx=0; jdx<cols; jdx++ ) {
-        real *= renormalize_data[colIndices[jdx]];
-        imag *= renormalize_data[colIndices[jdx]];
+    perm->real = 0, perm->imag = 0;
+    for (uint64_t i = 0; i < changecount+1; i++) {
+        long double real = ((long double)res[i*2])/factor/factor;
+        long double imag = ((long double)res[i*2+1])/factor/factor;
+    
+        real /= numOfPartialPerms;
+        imag /= numOfPartialPerms;
+        real *= mplicity[i];
+        imag *= mplicity[i];
+    
+        // renormalize the result according to the normalization of the input matrix
+        for (int jdx=0; jdx<photons; jdx++ ) {
+            real *= renormalize_data[colIndices[jdx]];
+            imag *= renormalize_data[colIndices[jdx]];
+        }
+        perm->real += real; perm->imag += imag;
     }
-    perm->real = real; perm->imag = imag;
-
+    free(res);
     return;
 }
 
