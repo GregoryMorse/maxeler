@@ -12,7 +12,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 12 if hasSim else 36
+DEPTH = 12 if hasSim else 40
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -167,8 +167,8 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*wa
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
 
 #np.save("mtx", A )
@@ -297,33 +297,51 @@ def load_test_data():
     with open("matrices.bin", "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
-def verify():
+def verify_timing():
   ERRBOUND = 1e-10
   nmax = DEPTH
   xaxis = list(range(nmax+1))
   gen_test_data = load_test_data()
-  import os, pickle
+  import os, pickle, timeit
   if os.path.isfile("verifydata.bin"):
     with open("verifydata.bin", "rb") as f:
       res = pickle.load(f)
   else: res = {}
+  if os.path.isfile("resultdata.bin"):
+    with open("resultdata.bin", "rb") as f:
+      results = pickle.load(f)
+  else: results = {}
   for key in gen_test_data:
     A = gen_test_data[key]
     if not key in res: res[key] = {}
+    if not key in results: results[key] = {}
     for func in testPermFuncs:
       if func.__name__ in res[key]: del res[key][func.__name__]
     for func in largePermFuncs:
       if not func.__name__ in res[key]: res[key][func.__name__] = []
-      print("Verifying", func.__name__)
+      if not func.__name__ in results[key]: results[key][func.__name__] = []
+      print("Verifying and Testing ", func.__name__)
       for dim in xaxis:
-        if len(res[key][func.__name__]) <= dim or func in dfePermFuncs:
-          r = func(A[dim])
-          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(r)
-          else: res[key][func.__name__][dim] = r
-          print(r)
+        if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
+          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
+          mplier = 5 if dim < 24 else 1
+          v = [None]
+          #if func in dfePermFuncs: print(check_power())
+          def save_result():
+              v[0] = func(A[dim])
+          r = timeit.timeit(save_result , number=mplier) / mplier #v[0] = func(A[dim])
+          #if func in dfePermFuncs: print(check_power())
+          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
+          else: res[key][func.__name__][dim] = v[0]
+          if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
+          else: results[key][func.__name__][dim] = r
+          print(v[0], r)
           with open("verifydata.bin", "wb") as f:
             pickle.dump(res, f)
-        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim])
+          with open("resultdata.bin", "wb") as f:
+            pickle.dump(results, f)        
+        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
     with open("verifydata.csv", "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
@@ -341,82 +359,33 @@ def verify():
         if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
         for i in range(dim):
           writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
-    #for i in xaxis:
-    #  assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
-    #  assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
-    fig = plt.figure()
-    ax1 = fig.add_subplot(111)
-    markers = ['o', '*', 'x', '+', 's']
-    for i, f in enumerate(largePermFuncs[1:]):
-      ax1.plot(xaxis, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis], label=f.__name__, marker=markers[i], linestyle=' ')
-    ax1.set_xlabel("Size")  
-    ax1.set_yscale('log', base=10)
-    ax1.set_ylabel("Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
-    ax1.legend()
-    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
-    fig.savefig("glynnpermtimeacc.svg", format="svg")
-    import tikzplotlib #pip install tikzplotlib
-    #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
-    tikzplotlib.save("glynnpermtimeacc.tex")
-
-def timing():
-  import timeit
-  nmax = DEPTH
-  xaxis = list(range(nmax+1))
-  results = [[] for _ in largePermFuncs]
-  gen_test_data = load_test_data()
-  import os, pickle
-  if os.path.isfile("resultdata.bin"):
-    with open("resultdata.bin", "rb") as f:
-      results = pickle.load(f)
-  else: results = {}
-  for key in gen_test_data:
-    A = gen_test_data[key]
-    if not key in results: results[key] = {}
-    for func in largePermFuncs:
-      if func == permanent_Glynn_Cpp_Inf: continue
-      if not func.__name__ in results[key]: results[key][func.__name__] = []
-      print("Testing", func.__name__)
-      for dim in xaxis:
-        if dim <= 1 or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
-          if func in dfePermFuncs and dim == 0:
-            print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-          elif dim == 1 and not func in dfePermFuncs: print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-          #if func in dfePermFuncs: print(check_power())
-          mplier = 5 if dim < 24 else 1
-          r = timeit.timeit(lambda: func(A[dim]), number=mplier) / mplier
-          if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
-          else: results[key][func.__name__][dim] = r
-          if dim >= 24: print(dim, func.__name__, results[key][func.__name__][dim])
-          with open("resultdata.bin", "wb") as f:
-            pickle.dump(results, f)        
-          #if func in dfePermFuncs: print(check_power())
     with open("resultdata.csv", "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs if f != permanent_Glynn_Cpp_Inf])
       writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs if x != permanent_Glynn_Cpp_Inf] for i in xaxis])
+
+    #for i in xaxis:
+    #  assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
+    #  assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    fig = plt.figure()
-    ax1 = fig.add_subplot(111)
-    markers = ['o', '*', 'x', '+', 's']
-    for i, f in enumerate(largePermFuncs):
-      if f == permanent_Glynn_Cpp_Inf: continue
-      ax1.plot(xaxis, [results[key][f.__name__][i] for i in xaxis], label=f.__name__, marker=markers[i], linestyle=' ')
-    ax1.set_xlabel("Size")  
-    ax1.set_yscale('log', base=10)
-    ax1.set_ylabel("Time (log10 s)")
-    ax1.legend()
-    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
-    fig.savefig("glynnpermtime.svg", format="svg")
-    import tikzplotlib #pip install tikzplotlib
-    #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
-    tikzplotlib.save("glynnpermtime.tex")
+    for vals, fname, ylbl in (([(f, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis]) for f in largePermFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)"),
+        ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largePermFuncs], "glynnpermtime", "Time (log10 s)")):
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        markers = ['o', '*', 'x', '+', 's']
+        for i, val in enumerate(vals):
+          ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
+        ax1.set_xlabel("Size")  
+        ax1.set_yscale('log', base=10)
+        ax1.set_ylabel(ylbl)
+        ax1.legend()
+        ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
+        fig.savefig(fname + ".svg", format="svg")
+        import tikzplotlib #pip install tikzplotlib
+        #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
+        tikzplotlib.save(fname + ".tex")
         
-verify()
-timing()
+verify_timing()
