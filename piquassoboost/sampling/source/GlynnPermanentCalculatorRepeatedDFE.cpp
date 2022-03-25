@@ -33,7 +33,7 @@ matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchan
     for (size_t i = 0; i < matrix_mtx.rows; i++) {
         size_t offset = i*matrix_mtx.stride;
         for (size_t j = 0; j < rowchange_indices.size(); j++) {
-            matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];                    
+            matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];
         }
     }
     return matrix_rows;
@@ -56,7 +56,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
     }
   }
   onerows = rowchange_indices.size(), mulsum = 0, changecount = 0;
-  if (mrows.size() == 0) { mplicity.push_back(1); return matrix_mtx; }
+  if (mrows.size() == 0) { mplicity.push_back(1); return transpose_reorder_rows(matrix_mtx, rowchange_indices); }
   std::vector<uint64_t> curmp, inp;
   for (size_t i = 0; i < mrows.size(); i++) {
     rowchange_indices.push_back(mrows[i]);
