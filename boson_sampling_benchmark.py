@@ -53,6 +53,29 @@ def test_complex_sampling(print_histogram):
 
         print_histogram(result.samples)
 
+#Hacker's Delight division via multiplication with magic numbers
+#https://github.com/hcs0/Hackers-Delight/blob/master/magicgu.py.txt
+def magicgu(nmax, d):
+   nc = ((nmax + 1)//d)*d - 1
+   nbits = len(bin(nmax)) - 2
+   for p in range(0, 2*nbits + 1):
+      if 2**p > nc*(d - 1 - (2**p - 1)%d):
+         m = (2**p + d - 1 - (2**p - 1)%d)//d
+         return (m, p)
+def mathcomb(n, k): #binomial coefficients
+  import math #return math.comb(n, k)
+  return math.factorial(n) // (math.factorial(k) * math.factorial(n-k)) 
+def get_bincoeff_magic():
+    import random
+    largestbincoeff = mathcomb(40, 20)
+    assert largestbincoeff.bit_length() == 38 #38 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
+    magicmulshift = [magicgu(largestbincoeff, d) for d in range(1, 41+1)]
+    for _ in range(10000):
+        assert all(random.randint(0, largestbincoeff // (d+1)) * x[0] >> x[1] for d, x in enumerate(magicmulshift))
+    return magicmulshift
+#[(1, 0), (1, 1), (183251937963, 39), (1, 2), (54975581389, 38), (183251937963, 40), (157073089683, 40), (1, 3), (61083979321, 39), (54975581389, 39), (199911205051, 41), (183251937963, 41), (169155635043, 41), (157073089683, 41), (146601550371, 41), (1, 4), (129354309151, 41), (61083979321, 40), (57869033041, 40), (54975581389, 40), (52357696561, 40), (199911205051, 42), (191219413527, 42), (183251937963, 42), (175921860445, 42), (169155635043, 42), (162890611523, 42), (157073089683, 42), (75828388123, 41), (146601550371, 42), (141872468101, 42), (1, 5), (133274136701, 42), (129354309151, 42), (62829235873, 41), (61083979321, 41), (59433060961, 41), (57869033041, 41), (56385211681, 41), (54975581389, 41), (214538854201, 43)]
+#print(get_bincoeff_magic())
+
 #test_complex_sampling(print_histogram())
 
 DEPTH = 8
@@ -82,9 +105,6 @@ def multiplicities_to_mat(mat, inp, outp):
   return mat.transpose() if mat.shape[0] > mat.shape[1] else mat
 def permanent_repeated(mat, inp, outp):
   return permanent_rectangular(multiplicities_to_mat(mat, inp, outp))
-def mathcomb(n, k): #binomial coefficients
-  import math #return math.comb(n, k)
-  return math.factorial(n) // (math.factorial(k) * math.factorial(n-k)) 
 def mat_mul_rows(matzones, mat, inpidx, mplicity):
   return np.array([[x[k] + sum(mat[y][k] * mplicity[j] for j, y in enumerate(inpidx)) for k in range(len(mat[0]))] if i == 0 else x for i, x in enumerate(matzones)])
 def binomial_gcode(bc, parity, n, k):
@@ -175,11 +195,11 @@ def verify():
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    input_states = {dim:np.array([]) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
-    print(input_states)
-    #output_states = {dim:np.array([]) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
-    output_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
+    #input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
+    input_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
+    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)    
     for x in output_states: np.random.shuffle(output_states[x])
+    print(output_states)
     res = [[] for _ in largePermFuncs]
     for i, func in enumerate(largePermFuncs):
       #print("Verifying", func.__name__)
