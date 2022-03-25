@@ -111,6 +111,8 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         InterfaceParam msizeadj = origRows - 1 - basekernpow2;
         InterfaceParam ticksmax = 1 << msizeadj;
         InterfaceParam msize = ei.addParam("msize", CPUTypes.UINT8);
+        InterfaceParam nonZeroRows = ei.addParam("rows", CPUTypes.UINT8);
+        InterfaceParam photons = ei.addParam("photons", CPUTypes.UINT8);
         //InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT8);
         InterfaceParam changeCount = ei.addParam("changeCount", CPUTypes.UINT64);
         if (dual) ei.setTicks("ProdColsDFEKernel", ticksmax);
@@ -127,12 +129,13 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         } else {
             ei.setScalar("SumUpPermDFEKernel", "msizeadj", msizeadj);
 
-            ei.setTicks("SumUpPermDFEKernel", ticksmax);
+            ei.setTicks("SumUpPermDFEKernel", ticksmax * changeCount);
         }
         for (int i = 0; i < initKerns; i++) {
             ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
-            ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + msize - 1);
-            ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
+            ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + nonZeroRows - 1);
+            if (i != 0) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
+            ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
         }
         if (dual && isSim) {
             for (int kernel_n = 0; kernel_n < numkernels * numarrays / 2; kernel_n++)
@@ -144,8 +147,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", 1);
             for (int i = initKerns; i < initKerns * 2; i++) {
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
-                ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + msize - 1);
-                ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
+                ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + nonZeroRows - 1);
+                if (i != initKerns) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
+                ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", 0);
             }
         }
@@ -153,7 +157,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "msizeadj", msizeadj);
             // set the ticks of the computing kernel
             ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax * changeCount + msize - 1);
-            ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "msizem1", msize - 1);
+            ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "photonsm1", photons - 1);
         }
 
         // stream to CPU containing the result
