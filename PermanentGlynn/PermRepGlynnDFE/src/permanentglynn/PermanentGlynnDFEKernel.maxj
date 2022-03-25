@@ -224,11 +224,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
         // tick count
         DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
-        DFEVar msizem1 = io.scalarInput("msizem1", dfeUInt(8)).cast(dfeUInt(6));
-        DFEVar initCount = control.count.simpleCounter(6, msizem1 + 1);
-        DFEVar isInit = control.count.pulse(1, initCount === msizem1);
-        DFEVar isCalc = control.count.pulse(1, false, initCount === msizem1 - 1);
-        DFEVar tickCount = control.count.makeCounter(control.count.makeParams(maxtickbits).withMax(constant.var(dfeUInt(maxtickbits), 1) << msizeadj).withReset(isInit & (initCount === msizem1))).getCount();
+        DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar initCount = control.count.simpleCounter(6, photonsm1 + 1);
+        DFEVar isInit = control.count.pulse(1, initCount === photonsm1);
+        DFEVar isCalc = control.count.pulse(1, false, initCount === photonsm1 - 1);
+        DFEVar tickCount = control.count.makeCounter(control.count.makeParams(maxtickbits).withMax(constant.var(dfeUInt(maxtickbits), 1) << msizeadj).withReset(isInit & (initCount === photonsm1))).getCount();
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
 
@@ -236,8 +236,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar colIndex = io.input("colIndex", dfeUInt(8), isInit).cast(dfeUInt(6));
         DFEVector < DFEVar > colIndices = colIndexType.newInstance(this);
         for (int i = 0; i < cols; i++) {
-            colIndices[i] <== control.mux((i > msizem1).cat(isInit & (initCount === i)), stream.offset(colIndices[i], -1), colIndex, constant.var(dfeUInt(6), i), constant.var(dfeUInt(6), i));
+            colIndices[i] <== control.mux((i > photonsm1).cat(isInit & (initCount === i)), stream.offset(colIndices[i], -1), colIndex, constant.var(dfeUInt(6), i), constant.var(dfeUInt(6), i));
         }
+        debug.simPrintf("%d %d %d %d %d %KObj%\n", isInit, isCalc, initCount, tickCount, colIndex, colIndices);
 
         // multiply the elements in colSum over a tree reduction
         DFEComplex[] colSumPreFix = new DFEComplex[cols];
