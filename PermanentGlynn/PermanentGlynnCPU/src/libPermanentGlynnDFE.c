@@ -4,11 +4,21 @@
 #include <MaxSLiCInterface.h>
 
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+#include "PermanentGlynn_singleSIMF.h"
+#include "PermanentGlynn_dualSIMF.h"
+#else
 #include "PermanentGlynn_singleSIM.h"
 #include "PermanentGlynn_dualSIM.h"
+#endif
+#else
+#ifdef USE_FLOAT
+#include "PermanentGlynn_singleDFEF.h"
+#include "PermanentGlynn_dualDFEF.h"
 #else
 #include "PermanentGlynn_singleDFE.h"
 #include "PermanentGlynn_dualDFE.h"
+#endif
 #endif
 
 #define SIZE 8
@@ -68,30 +78,58 @@ static max_engarray_t* array = NULL;
 static RUNARRAYFUNC runArrayFunc;
 #endif
 
+#ifdef USE_FLOAT
+void releive_DFEF();
+#else
 void releive_DFE();
+#endif
 /**
 @brief Interface function to initialize DFE array
 */
+#ifdef USE_FLOAT
+void initialize_DFEF(int dual)
+#else
 void initialize_DFE(int dual)
+#endif
 {
 
 	if (initialized) {
     if (dual==useDual) return;
+#ifdef USE_FLOAT
+    else releive_DFEF();
+#else
     else releive_DFE();
+#endif
   }
   max_file_t* (*initFunc)(void) = NULL;
   useDual = dual;
   if (!useDual) {
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+    initFunc = PermanentGlynn_singleSIMF_init, runFunc = (RUNFUNC)PermanentGlynn_singleSIMF_run, freeFunc = PermanentGlynn_singleSIMF_free;
+#else
     initFunc = PermanentGlynn_singleSIM_init, runFunc = (RUNFUNC)PermanentGlynn_singleSIM_run, freeFunc = PermanentGlynn_singleSIM_free;
+#endif
+#else
+#ifdef USE_FLOAT
+    initFunc = PermanentGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFEF_run, freeFunc = PermanentGlynn_singleDFEF_free;
 #else
     initFunc = PermanentGlynn_singleDFE_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFE_run, freeFunc = PermanentGlynn_singleDFE_free;
+#endif
 #endif  
   } else {
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+    initFunc = PermanentGlynn_dualSIMF_init, runFunc = (RUNFUNC)PermanentGlynn_dualSIMF_run, freeFunc = PermanentGlynn_dualSIMF_free;
+#else
     initFunc = PermanentGlynn_dualSIM_init, runFunc = (RUNFUNC)PermanentGlynn_dualSIM_run, freeFunc = PermanentGlynn_dualSIM_free;
+#endif
+#else
+#ifdef USE_FLOAT
+    initFunc = PermanentGlynn_dualDFEF_init, runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFEF_run_array, freeFunc = PermanentGlynn_dualDFEF_free;
 #else
     initFunc = PermanentGlynn_dualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFE_run_array, freeFunc = PermanentGlynn_dualDFE_free;
+#endif
 #endif  
   }
 	// initialize the max file
@@ -123,7 +161,11 @@ void initialize_DFE(int dual)
 /**
 @brief Interface function to releive DFE array
 */
+#ifdef USE_FLOAT
+void releive_DFEF()
+#else
 void releive_DFE()
+#endif
 {
 
 	if (!initialized) return;
@@ -147,7 +189,11 @@ void releive_DFE()
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
+#ifdef USE_FLOAT
+void calcPermanentGlynnDFEF(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
+#else
 void calcPermanentGlynnDFE(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, Complex16* perm)
+#endif
 {
     if (!initialized) return;
     
@@ -160,12 +206,22 @@ void calcPermanentGlynnDFE(const ComplexFix16** mtx_data, const long double* ren
 	__int128 res[2];
 
     union {
-#ifdef MAXELER_SIM    
+#ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+      PermanentGlynn_singleSIMF_actions_t glynnRowsGray;
+      PermanentGlynn_dualSIMF_actions_t dualGlynnRowsGray;
+#else    
       PermanentGlynn_singleSIM_actions_t glynnRowsGray;
       PermanentGlynn_dualSIM_actions_t dualGlynnRowsGray;
+#endif
+#else
+#ifdef USE_FLOAT
+      PermanentGlynn_singleDFEF_actions_t glynnRowsGray;
+      PermanentGlynn_dualDFEF_actions_t dualGlynnRowsGray;
 #else
       PermanentGlynn_singleDFE_actions_t glynnRowsGray;
       PermanentGlynn_dualDFE_actions_t dualGlynnRowsGray;
+#endif
 #endif
     } actions
 #ifdef MAXELER_SIM
@@ -223,8 +279,21 @@ void calcPermanentGlynnDFE(const ComplexFix16** mtx_data, const long double* ren
 	printf("Permanent calulation on DFE finished\n");
 #endif
 
-    //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
+#ifdef USE_FLOAT
+    //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383, mantissa stores 63 bits not 64, must adjust manually
+    __int128 temp = res[0] >> 63;
+    temp = ((temp & (1 << 16)) >> 1) | ((temp & 0xFFFF) - 16384); //exponent has overflowed if 0x8000 is set
+    res[0] = ((res[0] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
+    temp = res[1] >> 63;
+    temp = ((temp & (1 << 16)) >> 1) | ((temp & 0xFFFF) - 16384); //exponent has overflowed if 0x8000 is set
+    res[1] = ((res[1] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
+    long double* pld = (long double*)&res[0];
+    perm->real = *pld / numOfPartialPerms;
+    pld = (long double*)&res[1];
+    perm->imag = *pld / numOfPartialPerms;
+#else
+    //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     long double factor = (long double)(1ULL<<62);
 
     long double real = ((long double)res[0])/factor/factor;
@@ -239,7 +308,7 @@ void calcPermanentGlynnDFE(const ComplexFix16** mtx_data, const long double* ren
         imag *= renormalize_data[jdx];
     }
     perm->real = real; perm->imag = imag;
-
+#endif
     return;
 }
 
