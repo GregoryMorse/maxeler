@@ -6,26 +6,42 @@ PermanentGlynn/Makefile -> ~/workspace/Makefile
 piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp -> ~/piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp
 piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp
 piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h
+piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp
+piquassoboost/sampling/source/GlynnPermanentCalculatorInf.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.h
+piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp
+piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.h
 
-1) Build piquassoboost
+1) Adjust CMake files of piquasso boost
+
+Add to CMakeLists.txt of piquassoboost under "list(APPEND piquassoboost_files":
+    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp
+    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp
+    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp
+
+Add to CMakeLists.txt of piquassoboost/ under "target_link_libraries(piquassoboost PRIVATE":
+    "/opt/anaconda3/lib/libgmp.so"
+    "/opt/anaconda3/lib/libmpfr.so"
+    
+Add to CMakeLists.txt of piquassoboost/piquassoboost/sampling under "target_include_directories(Boson_Sampling_Utilities_wrapper PUBLIC":
+                            /opt/anaconda3/include
+
+2) Build piquassoboost
 cd piquassoboost
 cd ..
 
-2) Build FPGA SIM and DFE:
+3) Build FPGA SIM and DFE:
 cd workspace
 make SIM
 make DFE
 cd ..
 
-3) Run simulator (must run from workspace):
+4) Run simulator (must run from workspace):
 cd workspace
 make CPU
-#make CPUSIM - only run simulator without compiling CPU
+#make CPUSIM - only run simulator without compiling CPU (if already compiled)
 cd ..
 
-4) Run DFE (must run from piquassoboost):
+5) Run DFE (must run from piquassoboost):
 cd piquassoboost
-python3 permanent_benchmark.py
+env LD_LIBRARY_PATH=/home/$USER/workspace/PermanentGlynnCPU/dist/release/lib:$LD_LIBRARY_PATH python3 permanent_benchmark.py
 cd ..
-
-5) Future: export LD_LIBRARY_PATH should be used so simulator and DFE can be run from any folder, currently uses relative paths
