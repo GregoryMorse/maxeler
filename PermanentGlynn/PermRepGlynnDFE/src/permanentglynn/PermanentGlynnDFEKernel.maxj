@@ -238,7 +238,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
         for (int i = 0; i < cols; i++) {
             colIndices[i] <== control.mux((i > photonsm1).cat(isInit & (initCount === i)), stream.offset(colIndices[i], -1), colIndex, constant.var(dfeUInt(6), i), constant.var(dfeUInt(6), i));
         }
-        debug.simPrintf("%d %d %d %d %d %KObj%\n", isInit, isCalc, initCount, tickCount, colIndex, colIndices);
 
         // multiply the elements in colSum over a tree reduction
         DFEComplex[] colSumPreFix = new DFEComplex[cols];
