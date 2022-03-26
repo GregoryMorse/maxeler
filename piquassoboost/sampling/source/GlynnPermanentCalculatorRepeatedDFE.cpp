@@ -42,29 +42,34 @@ matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchan
 matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum)
 {
   std::vector<uint8_t> mrows;
+  std::vector<uint8_t> row_indices;
   for (size_t i = 0; i < input_state.size(); i++) {
-    if (input_state[i] == 1) rowchange_indices.push_back(i);
+    if (input_state[i] == 1) row_indices.push_back(i);
     else if (input_state[i] > 1) mrows.push_back(i);
   }
   sort(mrows.begin(), mrows.end(), [&input_state](size_t i, size_t j) { return input_state[i] < input_state[j]; }); 
-  while (rowchange_indices.size() < 1+2+(useDual ? 1 : 0)) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel plus one more for the sum up kernel to tick
-    rowchange_indices.push_back(mrows[0]);
+  while (row_indices.size() < 1+2+(useDual ? 1 : 0)) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel plus one more for the sum up kernel to tick
+    row_indices.push_back(mrows[0]);
     if (--input_state[mrows[0]] == 1) {
-      rowchange_indices.push_back(mrows[0]);
+      row_indices.push_back(mrows[0]);
       mrows.erase(mrows.begin());
     }
   }
-  onerows = rowchange_indices.size(), mulsum = 0, changecount = 0;
-  if (mrows.size() == 0) { mplicity.push_back(1); return transpose_reorder_rows(matrix_mtx, rowchange_indices); }
+  onerows = row_indices.size(), mulsum = 0, changecount = 0;
   std::vector<uint64_t> curmp, inp;
   for (size_t i = 0; i < mrows.size(); i++) {
-    rowchange_indices.push_back(mrows[i]);
+    row_indices.push_back(mrows[i]);
     curmp.push_back(input_state[mrows[i]]);
     inp.push_back(input_state[mrows[i]]);
     mulsum += input_state[mrows[i]];
   }
-  matrix matrix_rows = transpose_reorder_rows(matrix_mtx, rowchange_indices);
-  rowchange_indices.clear();
+  matrix matrix_rows = transpose_reorder_rows(matrix_mtx, row_indices);
+  for (size_t i = 0; i < row_indices.size(); i++) {
+      for (size_t j = input_state[row_indices[i]]; j != 0; j--) {
+        rowchange_indices.push_back(i);
+      }
+  }
+  if (mrows.size() == 0) { mplicity.push_back(1); return matrix_rows; }
   int parity = 0;
   uint64_t gcodeidx = 0, cur_multiplicity = 1;
   while (true) {
@@ -93,6 +98,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
     int64_t photons = 0;
+    input_state = input_state.copy();
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
     }
@@ -109,7 +115,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     // calulate the maximal sum of the columns to normalize the matrix
     matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-    for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+    for (int64_t i=0; i<photons; i++) {
+        size_t idx = rowchange_indices[i];
         for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
             Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
             Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
