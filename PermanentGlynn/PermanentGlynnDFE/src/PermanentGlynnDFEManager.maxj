@@ -18,7 +18,7 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnectio
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
     //40x40 is a large enough limit in all cases
-    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim) {
+    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
 
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
@@ -30,12 +30,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
         int initKerns = 4;
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
-            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim));
+            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat));
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
         }
         for (int i = 0; i < numkernels; i++) {
-            colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i));
+            colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat));
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
@@ -46,7 +46,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
             }
         }
 
-        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels, dim - basekernpow2));
+        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual ? 2 : numkernels, dim - basekernpow2, useFloat));
         //for (int i = 0; i < initKerns; i++)
         //  assignKernelToSLR(initColSumKernels[i], i % 4);
         //for (int i = 0; i < numkernels; i++)
@@ -59,7 +59,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
 
         if (dual) {
             int singlekerns = numkernels * numarrays / 2;
-            KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), singlekerns));
+            KernelBlock ProdColsKernel = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel"), singlekerns, useFloat));
             for (int i = 0; i < singlekerns; i++)
                 ProdColsKernel.getInput("colProd" + i) <== colProds[i];
             SumUpPermKernel.getInput("colProd0") <== ProdColsKernel.getOutput("colProd");
@@ -69,7 +69,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
                 maxRingStream0.getLinkToRemoteDFE() <== ProdColsKernel.getOutput("colProdRemote");
                 SumUpPermKernel.getInput("colProd1") <== maxRingStream0.getLinkFromRemoteDFE();
             } else {
-                KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), singlekerns));
+                KernelBlock ProdColsKernel2 = addKernel(new ProdColsDFEKernel(makeKernelParameters("ProdColsDFEKernel2"), singlekerns, useFloat));
                 for (int i = singlekerns; i < numkernels; i++)
                     ProdColsKernel2.getInput("colProd" + (i - singlekerns)) <== colProds[i];
                 SumUpPermKernel.getInput("colProd1") <== ProdColsKernel2.getOutput("colProd");
