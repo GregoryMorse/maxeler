@@ -11,12 +11,22 @@ MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*.max))
 
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
-  TARGET := libPermanentGlynnSIM.so
-  COMPVAR := -DMAXELER_SIM
+  ifeq ($(strip $(USE_FLOAT)),true)
+      TARGET := libPermanentGlynnSIMF.so
+      COMPVAR := -DMAXELER_SIM -DUSE_FLOAT
+  else
+      TARGET := libPermanentGlynnSIM.so
+      COMPVAR := -DMAXELER_SIM
+  endif
 else
   ##### Target executable or shared-object name. ####
-  TARGET := libPermanentGlynnDFE.so
-  COMPVAR :=
+  ifeq ($(strip $(USE_FLOAT)),true)
+      TARGET := libPermanentGlynnDFEF.so
+      COMPVAR := -DUSE_FLOAT
+  else
+      TARGET := libPermanentGlynnDFE.so
+      COMPVAR :=
+  endif
 endif
 
 ##### Simulator configuration #####
@@ -153,7 +163,7 @@ run_sim: start_sim
 	@ MAXELEROSDIR="$(MAXCOMPILERDIR)/lib/maxeleros-sim" \
 		LD_PRELOAD="$(MAXCOMPILERDIR)/lib/maxeleros-sim/lib/libmaxeleros.so:$(LD_PRELOAD)" \
 		SLIC_CONF="$(SLIC_CONF);use_simulation=$(SIM_NAME)" \
-		python "../../piquassoboost/permanent_benchmark.py"
+		env LD_LIBRARY_PATH=./dist/release/lib:$LD_LIBRARY_PATH python "../../piquassoboost/permanent_benchmark.py"
 	@ echo
 	@ echo "$(BIN_DIR)/$(TARGET) Terminated successfully."
 	@ echo
