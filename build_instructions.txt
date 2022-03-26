@@ -1,5 +1,6 @@
 Copy repository files from source GitHub -> destination as:
 Optional: permanent_benchmark.py -> ~/piquassoboost/permanent_benchmark.py
+Optional: boson_sampling_benchmark.py -> ~/piquassoboost/boson_sampling_benchmark.py
 PermanentGlynn/PermanentGlynnDFE/* -> ~/workspace/PermanentGlynnDFE/*
 PermanentGlynn/PermanentGlynnCPU/* -> ~/workspace/PermanentGlynnCPU/*
 PermanentGlynn/Makefile -> ~/workspace/Makefile
