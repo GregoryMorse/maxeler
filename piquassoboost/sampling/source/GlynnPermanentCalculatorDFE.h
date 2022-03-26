@@ -26,7 +26,7 @@ typedef struct ComplexFix16 {
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
-void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual);
+void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat);
 
 }
 
@@ -36,6 +36,9 @@ typedef void(*FREEPERMGLYNNDFE)(void);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE; 
 extern "C" INITPERMGLYNNDFE initialize_DFE; 
 extern "C" FREEPERMGLYNNDFE releive_DFE; 
+extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFEF; 
+extern "C" INITPERMGLYNNDFE initialize_DFEF; 
+extern "C" FREEPERMGLYNNDFE releive_DFEF; 
 
 
 #endif
