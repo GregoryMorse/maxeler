@@ -153,7 +153,7 @@ run_sim: start_sim
 	@ MAXELEROSDIR="$(MAXCOMPILERDIR)/lib/maxeleros-sim" \
 		LD_PRELOAD="$(MAXCOMPILERDIR)/lib/maxeleros-sim/lib/libmaxeleros.so:$(LD_PRELOAD)" \
 		SLIC_CONF="$(SLIC_CONF);use_simulation=$(SIM_NAME)" \
-		python "../../piquassoboost/boson_sampling_benchmark.py"
+		env LD_LIBRARY_PATH=./dist/release/lib:$LD_LIBRARY_PATH python "../../piquassoboost/boson_sampling_benchmark.py"
 	@ echo
 	@ echo "$(BIN_DIR)/$(TARGET) Terminated successfully."
 	@ echo
