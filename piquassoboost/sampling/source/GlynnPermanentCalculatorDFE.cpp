@@ -8,6 +8,9 @@
 CALCPERMGLYNNDFE calcPermanentGlynnDFE = NULL;
 INITPERMGLYNNDFE initialize_DFE = NULL;
 FREEPERMGLYNNDFE releive_DFE = NULL;
+CALCPERMGLYNNDFE calcPermanentGlynnDFEF = NULL;
+INITPERMGLYNNDFE initialize_DFEF = NULL;
+FREEPERMGLYNNDFE releive_DFEF = NULL;
 
 #define ROWCOL(m, r, c) ToComplex32(m[ r*m.stride + c])
 
@@ -21,11 +24,18 @@ inline Complex32 ToComplex32(Complex16 v) {
   return Complex32((long double)v.real(), (long double)v.imag());
 }
 
+inline long long doubleToLLRaw(double d)
+{
+    double* pd = &d;
+    long long* pll = (long long*)pd;
+    return *pll;
+}
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
 void
-GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
+GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
     if (matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
@@ -69,29 +79,31 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
       }        
       return;
     }
-    // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
-    memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-    for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
-        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-            Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
-            Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
-            if ( std::abs( value1 ) < std::abs( value2 ) ) {
-                colSumMax[jdx] = value2;
-            }
-            else {
-                colSumMax[jdx] = value1;
-            }
-
-        }
-
-    }
-
-    // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
-    for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        renormalize_data[jdx] = std::abs(colSumMax[jdx]); 
-        //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
+    if (!useFloat) {
+        // calulate the maximal sum of the columns to normalize the matrix
+        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
+        memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+        for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+            for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                if ( std::abs( value1 ) < std::abs( value2 ) ) {
+                    colSumMax[jdx] = value2;
+                }
+                else {
+                    colSumMax[jdx] = value1;
+                }
+    
+            }
+    
+        }
+    
+        // calculate the renormalization coefficients
+        for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
+            renormalize_data[jdx] = std::abs(colSumMax[jdx]); 
+            //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
+        }
     }
 
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -103,6 +115,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     const size_t actualinits = (matrix_mtx.cols + 9) / 10;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1L << 62;
+    const double fOne = doubleToLLRaw(1.0);
     for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
       size_t basecol = max_fpga_cols * i;
@@ -111,13 +124,13 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
         size_t offset = idx * matrix_mtx.stride + basecol;
         size_t offset_small = idx*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-          mtxfix[i][offset_small+jdx].real = llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
-          mtxfix[i][offset_small+jdx].imag = llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
           //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
       }
-      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = fixpow; 
+      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
     }
 
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
@@ -125,7 +138,10 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual)
     //assert(mtxfix[i].stride == mtxfix[i].cols);
     //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
-    calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
+    if (useFloat)
+        calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
+    else
+        calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
 
 
     return;
