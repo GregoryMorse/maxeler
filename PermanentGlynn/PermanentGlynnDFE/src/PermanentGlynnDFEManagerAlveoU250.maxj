@@ -12,12 +12,16 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     }
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
+        declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
     }
     public boolean dual() {
         return getParam("dual");
     }
     public boolean isSim() {
         return getTarget() != EngineParameters.Target.DFE;
+    }
+    public boolean useFloat() {
+        return getParam("useFloat");
     }
 }
 
@@ -26,7 +30,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
-        setup(this, params.dual(), params.isSim());
+        setup(this, params.dual(), params.isSim(), params.useFloat());
     }
 
     public void assignKernelToSLR(KernelBlock kernel, int slr_index) {
