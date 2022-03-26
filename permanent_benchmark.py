@@ -158,15 +158,19 @@ def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep)
 def permanent_Glynn_Cpp_Inf(Arep): return permanent_Glynn_calculator.calculateInf(Arep)
 def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
+def permanent_Glynn_SIMF(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, use_float=True)
+def permanent_Glynn_SIMFDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True, use_float=True)
 def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
 def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
+def permanent_Glynn_DFEF(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, use_float=True)
+def permanent_Glynn_DFEFDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True, use_float=True)
 def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
   if len(Arep) == 0: return 1+0j
   input_state = np.ones(Arep.shape[0], np.int64)
   output_state = np.ones(Arep.shape[0], np.int64)
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
-dfePermFuncs = ((permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
 largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
 testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
@@ -320,7 +324,7 @@ def verify_timing():
     for func in largePermFuncs:
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       if not func.__name__ in results[key]: results[key][func.__name__] = []
-      print("Verifying and Testing ", func.__name__)
+      print("Verifying and Testing", func.__name__)
       for dim in xaxis:
         if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
@@ -374,7 +378,7 @@ def verify_timing():
         ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largePermFuncs], "glynnpermtime", "Time (log10 s)")):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
-        markers = ['o', '*', 'x', '+', 's']
+        markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
         for i, val in enumerate(vals):
           ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
         ax1.set_xlabel("Size")  
