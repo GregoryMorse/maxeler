@@ -49,8 +49,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   sort(mrows.begin(), mrows.end(), [&input_state](size_t i, size_t j) { return input_state[i] < input_state[j]; }); 
   while (rowchange_indices.size() < 1+2+(useDual ? 1 : 0)) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel plus one more for the sum up kernel to tick
     rowchange_indices.push_back(mrows[0]);
-    input_state[mrows[0]]--;
-    if (mrows[0] == 1) {
+    if (--input_state[mrows[0]] == 1) {
       rowchange_indices.push_back(mrows[0]);
       mrows.erase(mrows.begin());
     }
