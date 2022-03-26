@@ -78,7 +78,7 @@ def get_bincoeff_magic():
 
 #test_complex_sampling(print_histogram())
 
-DEPTH = 8
+DEPTH = 4
 
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
@@ -188,18 +188,18 @@ def permanent_Glynn_DFEDual(Arep, input_state, output_state): return permanent_G
 def permanent_ChinHuh_calculator(Arep, input_state, output_state):
   if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
-largePermFuncs = (permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE)
+largePermFuncs = (permanent_repeated, permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE)
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    #input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
-    input_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
-    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)    
+    input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
+    #input_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
+    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
     for x in output_states: np.random.shuffle(output_states[x])
-    print(output_states)
+    print(input_states)
     res = [[] for _ in largePermFuncs]
     for i, func in enumerate(largePermFuncs):
       #print("Verifying", func.__name__)
@@ -209,4 +209,5 @@ def verify():
         print(dim, func.__name__, res[i][-1])
     for i in range(len(res[0])):
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
+      assert all(abs((res[0][i] - x[i]) / abs(res[0][i])) < ERRBOUND for x in res[1:])
 verify()
