@@ -78,7 +78,7 @@ def get_bincoeff_magic():
 
 #test_complex_sampling(print_histogram())
 
-DEPTH = 4
+DEPTH = 7
 
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
@@ -108,7 +108,7 @@ def permanent_repeated(mat, inp, outp):
 def mat_mul_rows(matzones, mat, inpidx, mplicity):
   return np.array([[x[k] + sum(mat[y][k] * mplicity[j] for j, y in enumerate(inpidx)) for k in range(len(mat[0]))] if i == 0 else x for i, x in enumerate(matzones)])
 def binomial_gcode(bc, parity, n, k):
-  return bc*k//(n-k+1) if parity else bc*(n-k)/(k+1)
+  return bc*k//(n-k+1) if parity else bc*(n-k)//(k+1)
 def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repeated-Chin Huh method without proper Gray code, but one multiplicities using normal permanent
   #the Gray code anchor must be on the first row of the rectangular computation or this algorithm will be incorrect!
   matoutp = np.repeat(mat, outp, axis=0).transpose()
@@ -125,6 +125,7 @@ def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repea
   #a=n!/(k!(n-k)!) and b=n!/((k+1)!(n-k-1)!) b/a=(n-k)/(k+1)
   cur_multiplicity = 1
   while True:
+    print(cur_multiplicity, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, curmp)))
     tot = plusminus(parity, tot, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, curmp)))
     parity = not parity
     for i in range(len(curmp)-1, -1, -1):
@@ -188,18 +189,20 @@ def permanent_Glynn_DFEDual(Arep, input_state, output_state): return permanent_G
 def permanent_ChinHuh_calculator(Arep, input_state, output_state):
   if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
-largePermFuncs = (permanent_repeated, permanent_square_repeated, permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE)
+largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE, permanent_Glynn_DFEDual) + ((permanent_repeated, permanent_square_repeated) if False else ())
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)}
+    extra = 4
+    input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim+extra, [1/dim]*dim) for dim in range(nmax+1)}
     #input_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
-    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
-    for x in output_states: np.random.shuffle(output_states[x])
-    print(input_states)
+    #input_states[5] = np.array([1, 1, 1, 1, 3], dtype=np.int64)
+    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim+extra, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
+    #for x in output_states: np.random.shuffle(output_states[x])
+    print(input_states, output_states)
     res = [[] for _ in largePermFuncs]
     for i, func in enumerate(largePermFuncs):
       #print("Verifying", func.__name__)
