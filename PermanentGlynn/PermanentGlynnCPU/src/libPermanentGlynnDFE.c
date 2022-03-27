@@ -281,13 +281,21 @@ void calcPermanentGlynnDFE(const ComplexFix16** mtx_data, const long double* ren
 
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
 #ifdef USE_FLOAT
-    //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383, mantissa stores 63 bits not 64, must adjust manually
+    //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
     __int128 temp = res[0] >> 63;
-    temp = ((temp & (1 << 16)) >> 1) | ((temp & 0xFFFF) - 16384); //exponent has overflowed if 0x8000 is set
-    res[0] = ((res[0] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
+    if ((temp & 0x7FFF) == 0) //+/- 0
+        res[0] = (res[0] & ((1ULL<<63)-1)) | (temp << 64);
+    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
+        res[0] = ((res[0] & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
+    else
+        res[0] = ((res[0] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
     temp = res[1] >> 63;
-    temp = ((temp & (1 << 16)) >> 1) | ((temp & 0xFFFF) - 16384); //exponent has overflowed if 0x8000 is set
-    res[1] = ((res[1] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
+    if ((temp & 0x7FFF) == 0) //+/- 0
+        res[1] = (res[1] & ((1ULL<<63)-1)) | (temp << 64);
+    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
+        res[1] = ((res[1] & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
+    else
+        res[1] = ((res[1] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
     long double* pld = (long double*)&res[0];
     perm->real = *pld / numOfPartialPerms;
     pld = (long double*)&res[1];
