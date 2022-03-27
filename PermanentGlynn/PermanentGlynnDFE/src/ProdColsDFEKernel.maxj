@@ -19,7 +19,7 @@ public class ProdColsDFEKernel extends Kernel {
     public ProdColsDFEKernel(final KernelParameters parameters, int n, boolean useFloat) {
         super(parameters);
 
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(16, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
