@@ -123,7 +123,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
         DFEVar changePos = nextRowIdx ? storeRowIndex : grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum));
         DFEVar changeValue = nextRowIdx ? rowChangeIsNeg : (grayCounter.changeValue ^ gcodeDir);
-        if (kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", nextRowIdx, storeRowIndex, rowChangeIsNeg, changePos, changeValue); 
+        //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", nextRowIdx, storeRowIndex, rowChangeIsNeg, changePos, changeValue); 
         DFEVector < DFEComplex > rowToAdd = control.mux(changePos, allRows.getElementsAsList())
             .cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
 
