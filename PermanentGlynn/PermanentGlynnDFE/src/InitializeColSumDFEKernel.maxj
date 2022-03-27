@@ -100,8 +100,11 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
         DFEVector < DFEVar > useRow = control.mux(grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum)), allRows.getElementsAsList());
         DFEVector < DFEComplex > rowToAdd;
-        if (useFloat) rowToAdd = (useRow + useRow).reinterpret(colSumType);
-        else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
+        if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
+            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
+            DFEVector<DFEVar> exponent = useRow.slice(53-1, 11);
+            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(colSumType);
+        } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
 
         DFEVector < DFEComplex > oneRowCplx = oneRow.cast(oneRowFixType).reinterpret(colSumType);
         DFEVector < DFEComplex > oneRowNeg = (-oneRow).cast(oneRowFixType).reinterpret(colSumType);
