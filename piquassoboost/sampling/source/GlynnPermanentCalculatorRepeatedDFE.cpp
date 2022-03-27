@@ -65,7 +65,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   }
   matrix matrix_rows = transpose_reorder_rows(matrix_mtx, row_indices);
   for (size_t i = 0; i < row_indices.size(); i++) {
-      for (size_t j = input_state[row_indices[i]]; j != 0; j--) {
+      for (size_t j = i < onerows ? 1 : input_state[row_indices[i]]; j != 0; j--) {
         rowchange_indices.push_back(i);
       }
   }
