@@ -179,7 +179,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
     // simulation
     if (!useDual) {
-      printf("%llu %llu %llu %u %llu %X %X %X\n", numOfPartialPerms, rows, cols, photons, changecount, rowchange_indices[photons], rowchange_indices[photons+1], rowchange_indices[photons+2]);
       actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
       actions.glynnRowsGray.param_rows = rows, actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
       actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
@@ -261,6 +260,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
             real *= renormalize_data[colIndices[jdx]];
             imag *= renormalize_data[colIndices[jdx]];
         }
+        //printf("%llu, %Lf %Lf\n", mplicity[i], real, imag);
         if (parity) {
             perm->real -= real; perm->imag -= imag;
         } else {
