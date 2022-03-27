@@ -76,7 +76,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
     mplicity.push_back(cur_multiplicity);
     parity = !parity;
     for (size_t i = curmp.size()-1; ; i--) {
-      bool curdir = gcodeidx & (1 << i);
+      bool curdir = (gcodeidx & (1 << i)) == 0;
       if ((!curdir && curmp[i] != inp[i]) || (curdir && curmp[i] != -inp[i])) {
         cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
         curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
