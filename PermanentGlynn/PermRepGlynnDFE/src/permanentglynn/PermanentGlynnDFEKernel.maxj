@@ -231,6 +231,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar tickCount = control.count.makeCounter(control.count.makeParams(maxtickbits).withMax(constant.var(dfeUInt(maxtickbits), 1) << msizeadj).withReset(isInit & (initCount === photonsm1))).getCount();
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
+        DFEVar firstTick = isInit & (initCount === 0);
+        DFEVar nextRowIdx = ~isInit & (tickCount === 0);
+        DFEVar gcodeDir = dfeBool().newInstance(this);
+        gcodeDir <== control.mux(firstTick.cat(nextRowIdx), stream.offset(gcodeDir, -1), ~stream.offset(gcodeDir, -1), constant.zero(dfeBool()), constant.zero(dfeBool()));
+
 
         DFEVectorType < DFEVar > colIndexType = new DFEVectorType < DFEVar > (dfeUInt(6), cols);
         DFEVar colIndex = io.input("colIndex", dfeUInt(8), isInit).cast(dfeUInt(6));
@@ -312,7 +317,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         }
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
-        DFEVar sign = tickCount.get(0) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        DFEVar sign = (tickCount.get(0) ^ (gcodeDir & (msizeadj !== 0))) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
 
