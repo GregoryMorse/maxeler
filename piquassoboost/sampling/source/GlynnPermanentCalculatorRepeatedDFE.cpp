@@ -87,7 +87,6 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
       } else if (i == 0) return matrix_rows;
     }
   }
-  //return matrix_rows;
 }
 
 /**
