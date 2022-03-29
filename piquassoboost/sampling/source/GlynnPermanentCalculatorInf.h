@@ -19,18 +19,27 @@ namespace pic {
 class FloatInf
 {
 public:
-  FloatInf() : FloatInf(0.0) { }
-  virtual ~FloatInf() { if (init) mpfr_clear(this->f); init = 0; }
+  FloatInf() : FloatInf(0.0) {}
+  virtual ~FloatInf() { uninit(); }
   FloatInf(const double d) { init = 1; mpfr_init2(this->f, IEEE_DBL_MANT_DIG); mpfr_set_d(this->f, d, MPFR_RNDN); }
   FloatInf(const long double ld) { init = 1; mpfr_init2(this->f, MPFR_LDBL_MANT_DIG); mpfr_set_ld(this->f, ld, MPFR_RNDN); }
-  FloatInf(const mpfr_t f) { init = 1; mpfr_init2(this->f, mpfr_get_prec(f)); mpfr_set(this->f, f, MPFR_RNDN); }
+  FloatInf(const mpfr_t& f) { init = 1; mpfr_init2(this->f, mpfr_get_prec(f)); mpfr_set(this->f, f, MPFR_RNDN); }
+  FloatInf(mpfr_prec_t prec) { init = 1; mpfr_init2(this->f, prec); mpfr_set(this->f, f, MPFR_RNDN); }
   FloatInf(const FloatInf& f) : FloatInf(f.f) {}
+  FloatInf(FloatInf&& f) { memcpy(&this->f, &f.f, sizeof(mpfr_t)); f.init = 0; } 
   FloatInf& operator=(const FloatInf& f) {
     if (this != &f) {
       if (init) mpfr_set_prec(this->f, mpfr_get_prec(f.f));
       else init = 1, mpfr_init2(this->f, mpfr_get_prec(f.f));
       mpfr_set(this->f, f.f, MPFR_RNDN);
     }
+    return *this;
+  }
+  FloatInf& operator=(FloatInf&& other) {
+    if (init) uninit();
+    else init = 1;
+    memcpy(&this->f, &other.f, sizeof(mpfr_t));
+    other.init = 0;
     return *this;
   }
   void uninit() { if (init) mpfr_clear(this->f); init = 0; }
@@ -64,21 +73,32 @@ public:
     mpfr_add_d(this->f, this->f, d, MPFR_RNDN);
     return *this;
   }
-  FloatInf& operator+=(const FloatInf& f) {
-    mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
-    mpfr_add(this->f, this->f, f.f, MPFR_RNDN);
-    //mpfr_prec_t minprec = mpfr_min_prec(this->f);
-    //if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
-    return *this;
-  }
-  FloatInf& operator-=(double d) { //subtracting only values added before, no precision change
+  FloatInf& operator-=(const double d) { //subtracting only values added before, no precision change
     mpfr_sub_d(this->f, this->f, d, MPFR_RNDN);
     return *this;
   }
-  FloatInf& operator*=(const double d) { //d=1 or -1, changing sign only, no precision change 
-    mpfr_mul_d(this->f, this->f, d, MPFR_RNDN);
+  FloatInf& operator+=(const FloatInf& f) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
+    mpfr_add(this->f, this->f, f.f, MPFR_RNDN);
+    if (mpfr_regular_p(this->f)) {
+        mpfr_prec_t minprec = mpfr_min_prec(this->f);
+        if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
+    }
     return *this;
   }
+  FloatInf& operator-=(const FloatInf& f) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
+    mpfr_sub(this->f, this->f, f.f, MPFR_RNDN);
+    if (mpfr_regular_p(this->f)) {
+        mpfr_prec_t minprec = mpfr_min_prec(this->f);
+        if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
+    }
+    return *this;
+  }
+  /*FloatInf& operator*=(const double d) { //d=1 or -1, changing sign only, no precision change 
+    mpfr_mul_d(this->f, this->f, d, MPFR_RNDN);
+    return *this;
+  }*/
   FloatInf& operator*=(const FloatInf& f) {
     mpfr_prec_round(this->f, bound_prec_mul(this->f, f.f), MPFR_RNDN);
     mpfr_mul(this->f, this->f, f.f, MPFR_RNDN);
@@ -88,18 +108,21 @@ public:
     mpfr_div(this->f, this->f, f.f, MPFR_RNDN);
     return *this;
   }
-  FloatInf operator+(const FloatInf& f) {
-    FloatInf newf(this->f); newf += f; 
+  /*FloatInf operator+(const FloatInf& f) {
+    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    mpfr_add(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
-  }
-  FloatInf operator*(const double d) {
-    FloatInf newf(this->f); newf *= d;
+  }  
+  FloatInf operator-(const FloatInf& f) {
+    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    mpfr_sub(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
-  }
-  FloatInf operator/(const long double ld) {
-    FloatInf newf(this->f);
-    return newf /= FloatInf(ld);
-  }
+  }  
+  FloatInf operator*(const FloatInf& f) {
+    FloatInf newf(bound_prec_mul(this->f, f.f));
+    mpfr_mul(newf.f, this->f, f.f, MPFR_RNDN);
+    return newf;
+  }*/
 private:
   int init;
   mpfr_t f;
@@ -165,9 +188,9 @@ public:
     /// Unitary describing a quantum circuit
     matrix mtx;
     /// 2*mtx used in the recursive calls (The storing of thos matrix spare many repeating multiplications)
-    matrix32 mtx2;
+    matrix mtx2;
     /// thread local storage for partial permanents
-    tbb::combinable<pic::ComplexM<FloatInf>> priv_addend;
+    tbb::combinable<pic::ComplexInf> priv_addend;
 
 public:
 
