@@ -12,6 +12,76 @@ CALCPERMGLYNNDFE calcPermanentGlynnDFEF = NULL;
 INITPERMGLYNNDFE initialize_DFEF = NULL;
 FREEPERMGLYNNDFE releive_DFEF = NULL;
 
+#include <dlfcn.h>
+#include <unistd.h>
+#include "GlynnPermanentCalculatorRepeatedDFE.h"
+
+#define DFE_LIB_SIM "libPermanentGlynnSIM.so"
+#define DFE_LIB "libPermanentGlynnDFE.so"
+#define DFE_LIB_SIMF "libPermanentGlynnSIMF.so"
+#define DFE_LIBF "libPermanentGlynnDFEF.so"
+#define DFE_REP_LIB_SIM "libPermRepGlynnSIM.so"
+#define DFE_REP_LIB "libPermRepGlynnDFE.so"
+
+void* handle = NULL;
+size_t refcount = 0;
+
+
+void unload_dfe_lib()
+{
+    if (handle) {
+        if (releive_DFE) {
+            releive_DFE();
+            initialize_DFE = NULL, releive_DFE = NULL, calcPermanentGlynnDFE = NULL;
+        }
+        if (releive_DFEF) {
+            releive_DFEF();
+            initialize_DFEF = NULL, releive_DFEF = NULL, calcPermanentGlynnDFEF = NULL;
+        }
+        if (releiveRep_DFE) {
+            releiveRep_DFE();
+            initializeRep_DFE = NULL, releiveRep_DFE = NULL, calcPermanentGlynnRepDFE = NULL;
+        }
+        dlclose(handle);
+        handle = NULL;
+    }
+}
+
+void init_dfe_lib(int choice) {
+    unload_dfe_lib();
+    const char* simLib = NULL, *lib = NULL;
+    if (choice == DFE_MAIN) {
+        simLib = DFE_LIB_SIM;
+        lib = DFE_LIB;
+    } else if (choice == DFE_FLOAT) {
+        simLib = DFE_LIB_SIMF;
+        lib = DFE_LIBF;
+    } else if (choice == DFE_REP) {
+        simLib = DFE_REP_LIB_SIM;
+        lib = DFE_REP_LIB;
+    }
+    handle = dlopen(getenv("SLIC_CONF") ? simLib : lib, RTLD_NOW); //"MAXELEROSDIR"
+    if (handle == NULL) {
+        char* pwd = getcwd(NULL, 0);
+        fprintf(stderr, "%s\n'%s' (in %s mode) failed to load from working directory '%s' use export LD_LIBRARY_PATH\n", dlerror(), getenv("SLIC_CONF") ? simLib : lib, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
+        free(pwd);
+    } else {
+      if (choice == DFE_MAIN) {
+          calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFE");
+          initialize_DFE = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFE");
+          releive_DFE = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFE");
+      } else if (choice == DFE_FLOAT) {
+          calcPermanentGlynnDFEF = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFEF");
+          initialize_DFEF = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFEF");
+          releive_DFEF = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFEF");
+      } else if (choice == DFE_REP) {
+          calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
+          initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
+          releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
+      }
+    }
+}
+
 #define ROWCOL(m, r, c) ToComplex32(m[ r*m.stride + c])
 
 namespace pic {
