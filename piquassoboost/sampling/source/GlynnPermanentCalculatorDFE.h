@@ -38,7 +38,18 @@ extern "C" INITPERMGLYNNDFE initialize_DFE;
 extern "C" FREEPERMGLYNNDFE releive_DFE; 
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFEF; 
 extern "C" INITPERMGLYNNDFE initialize_DFEF; 
-extern "C" FREEPERMGLYNNDFE releive_DFEF; 
+extern "C" FREEPERMGLYNNDFE releive_DFEF;
+
+
+extern "C" void* handle;
+extern "C" size_t refcount;
+
+#define DFE_MAIN 0
+#define DFE_FLOAT 1
+#define DFE_REP 2
+
+void unload_dfe_lib();
+void init_dfe_lib(int choice);
 
 
 #endif
