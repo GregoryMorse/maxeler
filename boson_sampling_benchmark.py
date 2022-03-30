@@ -5,7 +5,7 @@ import numpy as np
 
 import piquasso as pq
 from piquassoboost.sampling.BosonSamplingSimulator import BosonSamplingSimulator
-from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategySingleDFE
+from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE
 
 
 def print_histogram():
@@ -205,22 +205,27 @@ def permanent_Glynn_DFEDual(Arep, input_state, output_state):
   return calculators[3].calculate()
 
 samplers = [None, None, None, None]
+seed = 0x123456789ABCDEF
 def boson_sampling_Clifford_GlynnRep(Arep, input_state, shots):
   if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategy(Arep))
-  else: samplers[0].simulation_strategy.interferometer_matrix = Arep  
+  else: samplers[0].simulation_strategy.interferometer_matrix = Arep
+  samplers[0].simulation_strategy.seed(seed)  
   return samplers[0].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_ChinHuh(Arep, input_state, shots):
-  if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyChinHuh(Arep))
-  else: samplers[0].simulation_strategy.interferometer_matrix = Arep  
-  return samplers[0].get_classical_simulation_results(input_state, shots)
+  if samplers[1] is None: samplers[1] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyChinHuh(Arep))
+  else: samplers[1].simulation_strategy.interferometer_matrix = Arep
+  samplers[0].simulation_strategy.seed(seed)  
+  return samplers[1].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepSingleDFE(Arep, input_state, shots):
-  if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategySingleDFE(Arep))
-  else: samplers[0].simulation_strategy.interferometer_matrix = Arep  
-  return samplers[0].get_classical_simulation_results(input_state, shots)
+  if samplers[2] is None: samplers[2] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategySingleDFE(Arep))
+  else: samplers[2].simulation_strategy.interferometer_matrix = Arep
+  samplers[0].simulation_strategy.seed(seed)  
+  return samplers[2].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepDualDFE(Arep, input_state, shots):
-  if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDualDFE(Arep))
-  else: samplers[0].simulation_strategy.interferometer_matrix = Arep  
-  return samplers[0].get_classical_simulation_results(input_state, shots)
+  if samplers[3] is None: samplers[3] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDualDFE(Arep))
+  else: samplers[3].simulation_strategy.interferometer_matrix = Arep
+  samplers[0].simulation_strategy.seed(seed)  
+  return samplers[3].get_classical_simulation_results(input_state, shots)
   
 
 largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE, permanent_Glynn_DFEDual) + ((permanent_repeated, permanent_square_repeated) if False else ())
@@ -228,6 +233,7 @@ samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinH
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
+  shots = 10
   # generate the random matrix
   for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
     A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
@@ -238,7 +244,6 @@ def verify():
     output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim+extra, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
     #for x in output_states: np.random.shuffle(output_states[x])
     #print(input_states, output_states)
-    shots = 10
     res = [[] for _ in largePermFuncs]
     for i, func in enumerate(largePermFuncs):
       #print("Verifying", func.__name__)
@@ -247,7 +252,7 @@ def verify():
         #print(func(np.ones((dim, dim), dtype=np.complex128)*1j, np.ones(dim, dtype=np.int64)*2, np.ones(dim, dtype=np.int64)*2))
         print(dim, func.__name__, res[i][-1])
     for i, func in enumerate(samplingFuncs):
-      for dim in range(nmax+1):
+      for dim in range(1, 2+1):
         print(dim, func.__name__, func(A[dim], input_states[dim], shots))
     for i in range(len(res[0])):
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
