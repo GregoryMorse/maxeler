@@ -107,7 +107,13 @@ inline long long doubleToLLRaw(double d)
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
-    if (matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+    if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN);
+    else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT);
+    if (!useFloat && initialize_DFE) initialize_DFE(useDual);
+    else if (useFloat && initialize_DFEF) initialize_DFEF(useDual);
+
+    if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
+        matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
       if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
       else if (matrix_mtx.rows == 1) perm = matrix_mtx[0];
       else if (matrix_mtx.rows == 2) perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0));
