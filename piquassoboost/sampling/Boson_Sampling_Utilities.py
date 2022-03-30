@@ -122,7 +122,7 @@ class GlynnPermanentInf(GlynnPermanentCalculator_wrapper):
     def __init__(self):
 
         # call the constructor of the wrapper class
-        super(GlynnPermanent, self).__init__(1)
+        super(GlynnPermanentInf, self).__init__(1)
         pass
 
 class GlynnPermanentSingleDFE(GlynnPermanentCalculator_wrapper):
@@ -134,7 +134,7 @@ class GlynnPermanentSingleDFE(GlynnPermanentCalculator_wrapper):
     def __init__(self):
 
         # call the constructor of the wrapper class
-        super(GlynnPermanent, self).__init__(2)
+        super(GlynnPermanentSingleDFE, self).__init__(2)
         pass
 
 class GlynnPermanentDualDFE(GlynnPermanentCalculator_wrapper):
@@ -146,7 +146,7 @@ class GlynnPermanentDualDFE(GlynnPermanentCalculator_wrapper):
     def __init__(self):
 
         # call the constructor of the wrapper class
-        super(GlynnPermanent, self).__init__(3)
+        super(GlynnPermanentDualDFE, self).__init__(3)
         pass
 
 class GlynnPermanentSingleDFEF(GlynnPermanentCalculator_wrapper):
@@ -158,7 +158,7 @@ class GlynnPermanentSingleDFEF(GlynnPermanentCalculator_wrapper):
     def __init__(self):
 
         # call the constructor of the wrapper class
-        super(GlynnPermanent, self).__init__(4)
+        super(GlynnPermanentSingleDFEF, self).__init__(4)
         pass
 
 class GlynnPermanentDualDFEF(GlynnPermanentCalculator_wrapper):
@@ -170,7 +170,7 @@ class GlynnPermanentDualDFEF(GlynnPermanentCalculator_wrapper):
     def __init__(self):
 
         # call the constructor of the wrapper class
-        super(GlynnPermanent, self).__init__(5)
+        super(GlynnPermanentDualDFEF, self).__init__(5)
         pass
 
 
