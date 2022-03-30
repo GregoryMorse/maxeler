@@ -49,7 +49,7 @@ class RepeatedPermanentCalculator(ChinHuhPermanentCalculator_wrapper):
         output_state = output_state.astype(np.int64)
 
         # call the constructor of the wrapper class
-        super(ChinHuhPermanentCalculator, self).__init__(lib=lib, matrix=matrix, input_state=input_state, output_state=output_state)
+        super(RepeatedPermanentCalculator, self).__init__(lib=lib, matrix=matrix, input_state=input_state, output_state=output_state)
         pass
 
        
@@ -67,7 +67,7 @@ class RepeatedPermanentCalculator(ChinHuhPermanentCalculator_wrapper):
 
 
         # call the permanent calculator of the parent class
-        return super(ChinHuhPermanentCalculator, self).calculate()
+        return super(RepeatedPermanentCalculator, self).calculate()
 
 
     def __can_calculation_be_performed(self) -> bool:
