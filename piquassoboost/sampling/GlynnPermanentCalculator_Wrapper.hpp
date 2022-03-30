@@ -170,7 +170,41 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
     return Py_BuildValue("D", &ret);
 }
 
+
+/**
+@brief Method to call get attribute matrix
+*/
+/*static PyObject *
+GlynnPermanentCalculator_wrapper_getmatrix(GlynnPermanentCalculator_wrapper *self, void *closure)
+{
+    Py_INCREF(self->matrix);
+    return self->matrix;
+}*/
+
+/**
+@brief Method to call set attribute matrix
+*/
+/*static int
+GlynnPermanentCalculator_wrapper_setmatrix(GlynnPermanentCalculator_wrapper *self, PyObject *matrix_arg, void *closure)
+{
+    // set the array on the Python side
+    Py_DECREF(self->matrix);
+
+    // establish memory contiguous arrays for C calculations
+    if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+        self->matrix = matrix_arg;
+        Py_INCREF(self->matrix);
+    }
+    else {
+        self->matrix = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+    }
+
+    return 0;
+}*/
+
 static PyGetSetDef GlynnPermanentCalculator_wrapper_getsetters[] = {
+//    {"matrix", (getter) GlynnPermanentCalculator_wrapper_getmatrix, (setter) GlynnPermanentCalculator_wrapper_setmatrix,
+//     "matrix", NULL},
     {NULL}  /* Sentinel */
 };
 
