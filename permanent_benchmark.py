@@ -1,6 +1,6 @@
 import numpy as np
 from thewalrus.libwalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
-from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnPermanent
+from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnPermanent, GlynnPermanentInf, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF
 import piquasso as pq
 import random
 from scipy.stats import unitary_group
@@ -151,19 +151,24 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
 
 
 permanent_Glynn_calculator = GlynnPermanent( )
+permanent_Glynn_calculatorInf = GlynnPermanentInf( )
+permanent_Glynn_calculatorSingleDFE = GlynnPermanentSingleDFE( )
+permanent_Glynn_calculatorDualDFE = GlynnPermanentDualDFE( )
+permanent_Glynn_calculatorSingleDFEF = GlynnPermanentSingleDFEF( )
+permanent_Glynn_calculatorDualDFEF = GlynnPermanentDualDFEF( )
 #https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
 def permanent_walrus_quad_Ryser(Arep): return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #2*permanent_Glynn_Cpp
 def permanent_walrus_quad_BBFG(Arep): return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep) #ChinHuh, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
 def permanent_Glynn_Cpp(Arep): return permanent_Glynn_calculator.calculate(Arep)
-def permanent_Glynn_Cpp_Inf(Arep): return permanent_Glynn_calculator.calculateInf(Arep)
-def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
-def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
-def permanent_Glynn_SIMF(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, use_float=True)
-def permanent_Glynn_SIMFDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True, use_float=True)
-def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculator.calculateDFE(Arep)
-def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True)
-def permanent_Glynn_DFEF(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, use_float=True)
-def permanent_Glynn_DFEFDual(Arep): return permanent_Glynn_calculator.calculateDFE(Arep, dual=True, use_float=True)
+def permanent_Glynn_Cpp_Inf(Arep): return permanent_Glynn_calculatorInf.calculate(Arep)
+def permanent_Glynn_SIM(Arep): return permanent_Glynn_calculatorSingleDFE.calculate(Arep)
+def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_calculatorDualDFE.calculate(Arep)
+def permanent_Glynn_SIMF(Arep): return permanent_Glynn_calculatorSingleDFEF.calculate(Arep)
+def permanent_Glynn_SIMFDual(Arep): return permanent_Glynn_calculatorDualDFEF.calculate(Arep)
+def permanent_Glynn_DFE(Arep): return permanent_Glynn_calculatorSingleDFE.calculate(Arep)
+def permanent_Glynn_DFEDual(Arep): return permanent_Glynn_calculatorDualDFE.calculate(Arep)
+def permanent_Glynn_DFEF(Arep): return permanent_Glynn_calculatorSingleDFEF.calculate(Arep)
+def permanent_Glynn_DFEFDual(Arep): return permanent_Glynn_calculatorDualDFEF.calculate(Arep)
 def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
   if len(Arep) == 0: return 1+0j
   input_state = np.ones(Arep.shape[0], np.int64)
@@ -171,8 +176,8 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*wa
   return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
 
 #np.save("mtx", A )
@@ -328,7 +333,7 @@ def verify_timing():
       for dim in xaxis:
         if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_Glynn_Cpp_Inf:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -340,7 +345,7 @@ def verify_timing():
           else: res[key][func.__name__][dim] = v[0]
           if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
           else: results[key][func.__name__][dim] = r
-          print(v[0], r)
+          if dim < 24: print(dim, v[0], r)
           with open("verifydata.bin", "wb") as f:
             pickle.dump(res, f)
           with open("resultdata.bin", "wb") as f:
