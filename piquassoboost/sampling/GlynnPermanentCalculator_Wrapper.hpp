@@ -11,7 +11,6 @@
 #include "GlynnPermanentCalculatorDFE.h"
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
 #include "numpy_interface.h"
-#include <dlfcn.h>
 
 
 /**
@@ -19,7 +18,6 @@
 */
 typedef struct GlynnPermanentCalculator_wrapper {
     PyObject_HEAD
-    void *handle = NULL;
     /// The C++ variant of class CGlynnPermanentCalculator
     pic::GlynnPermanentCalculator* calculator;
 } GlynnPermanentCalculator_wrapper;
@@ -47,74 +45,6 @@ release_GlynnPermanentCalculator( pic::GlynnPermanentCalculator*  instance ) {
     return;
 }
 
-#define DFE_MAIN 0
-#define DFE_FLOAT 1
-#define DFE_REP 2
-#define DFE_LIB_SIM "libPermanentGlynnSIM.so"
-#define DFE_LIB "libPermanentGlynnDFE.so"
-#define DFE_LIB_SIMF "libPermanentGlynnSIMF.so"
-#define DFE_LIBF "libPermanentGlynnDFEF.so"
-#define DFE_REP_LIB_SIM "libPermRepGlynnSIM.so"
-#define DFE_REP_LIB "libPermRepGlynnDFE.so"
-
-
-void unload_dfe_lib(GlynnPermanentCalculator_wrapper * wrapper)
-{
-    if (wrapper->handle) {
-        if (releive_DFE) {
-            releive_DFE();
-            initialize_DFE = NULL, releive_DFE = NULL, calcPermanentGlynnDFE = NULL;
-        }
-        if (releive_DFEF) {
-            releive_DFEF();
-            initialize_DFEF = NULL, releive_DFEF = NULL, calcPermanentGlynnDFEF = NULL;
-        }
-        if (releiveRep_DFE) {
-            releiveRep_DFE();
-            initializeRep_DFE = NULL, releiveRep_DFE = NULL, calcPermanentGlynnRepDFE = NULL;
-        }
-        dlclose(wrapper->handle);
-        wrapper->handle = NULL;
-    }
-}
-
-void init_dfe_lib(GlynnPermanentCalculator_wrapper * wrapper, int choice) {
-    unload_dfe_lib(wrapper);
-    const char* simLib = NULL, *lib = NULL;
-    if (choice == DFE_MAIN) {
-        simLib = DFE_LIB_SIM;
-        lib = DFE_LIB;
-    } else if (choice == DFE_FLOAT) {
-        simLib = DFE_LIB_SIMF;
-        lib = DFE_LIBF;
-    } else if (choice == DFE_REP) {
-        simLib = DFE_REP_LIB_SIM;
-        lib = DFE_REP_LIB;
-    }
-    wrapper->handle = dlopen(getenv("SLIC_CONF") ? simLib : lib, RTLD_NOW); //"MAXELEROSDIR"
-    if (wrapper->handle == NULL) {
-        char* pwd = getcwd(NULL, 0);
-        fprintf(stderr, "%s\n'%s' (in %s mode) failed to load from working directory '%s' use export LD_LIBRARY_PATH\n", dlerror(), getenv("SLIC_CONF") ? simLib : lib, getenv("SLIC_CONF") ? "simulator" : "DFE", pwd);
-        free(pwd);
-    } else {
-      if (choice == DFE_MAIN) {
-          calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(wrapper->handle, "calcPermanentGlynnDFE");
-          initialize_DFE = (INITPERMGLYNNDFE)dlsym(wrapper->handle, "initialize_DFE");
-          releive_DFE = (FREEPERMGLYNNDFE)dlsym(wrapper->handle, "releive_DFE");
-      } else if (choice == DFE_FLOAT) {
-          calcPermanentGlynnDFEF = (CALCPERMGLYNNDFE)dlsym(wrapper->handle, "calcPermanentGlynnDFEF");
-          initialize_DFEF = (INITPERMGLYNNDFE)dlsym(wrapper->handle, "initialize_DFEF");
-          releive_DFEF = (FREEPERMGLYNNDFE)dlsym(wrapper->handle, "releive_DFEF");
-      } else if (choice == DFE_REP) {
-          calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(wrapper->handle, "calcPermanentGlynnRepDFE");
-          initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(wrapper->handle, "initializeRep_DFE");
-          releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(wrapper->handle, "releiveRep_DFE");
-      }
-    }
-}
-
-
-
 extern "C"
 {
 
@@ -127,7 +57,7 @@ static void
 GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 {
     // unload DFE
-    unload_dfe_lib(self);
+    if (--refcount == 0) unload_dfe_lib();
     // deallocate the instance of class N_Qubit_Decomposition
     release_GlynnPermanentCalculator( self->calculator );
    
@@ -144,6 +74,7 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
+    ++refcount;
     
     return (PyObject *) self;
 }
@@ -379,8 +310,8 @@ GlynnPermanentCalculator_Wrapper_calculateDFE(GlynnPermanentCalculator_wrapper *
     // create PIC version of the input matrices
     pic::matrix matrix_mtx = numpy2matrix(matrix_arg);
 
-    if (!useFloat && !initialize_DFE) init_dfe_lib(self, DFE_MAIN);
-    else if (useFloat && !initialize_DFEF) init_dfe_lib(self, DFE_FLOAT);
+    if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN);
+    else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT);
     if (!useFloat && initialize_DFE) initialize_DFE(useDual);
     else if (useFloat && initialize_DFEF) initialize_DFEF(useDual);
 
@@ -465,7 +396,7 @@ GlynnPermanentCalculator_Wrapper_calculate_repeatedDFE(GlynnPermanentCalculator_
     pic::PicState_int64 input_state_mtx = numpy2PicState_int64(input_state);
     pic::PicState_int64 output_state_mtx = numpy2PicState_int64(output_state);
 
-    if (!initializeRep_DFE) init_dfe_lib(self, DFE_REP);
+    if (!initializeRep_DFE) init_dfe_lib(DFE_REP);
     if (initializeRep_DFE) initializeRep_DFE(useDual);
     
     // start the calculation of the permanent
