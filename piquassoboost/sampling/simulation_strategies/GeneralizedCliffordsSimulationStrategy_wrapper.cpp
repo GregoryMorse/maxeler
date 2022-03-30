@@ -164,7 +164,20 @@ GeneralizedCliffordsSimulationStrategy_wrapper_init(GeneralizedCliffordsSimulati
     return 0;
 }
 
+static PyObject *
+GeneralizedCliffordsSimulationStrategy_wrapper_seed(GeneralizedCliffordsSimulationStrategy_wrapper *self, PyObject *args)
+{
+    // initiate variables for input arguments
+    unsigned long long seed = 0;
 
+    // parsing input arguments
+    if (!PyArg_ParseTuple(args, "|K",
+                                     &seed))
+        return Py_BuildValue("i", -1);
+    self->simulation_strategy->seed(seed);
+    Py_INCREF(Py_None);
+    return Py_None;
+}
 
 /**
 @brief Wrapper function to call the simulate method of C++ class CGaussianState
@@ -203,7 +216,7 @@ GeneralizedCliffordsSimulationStrategy_wrapper_simulate(GeneralizedCliffordsSimu
     pic::PicState_int64 input_state_mtx = numpy2PicState_int64(input_state);
 
 
-
+    
     // call the C++ variant of the sampling method
     std::vector<pic::PicState_int64> samples = self->simulation_strategy->simulate(input_state_mtx, sample_num);
 
@@ -285,6 +298,9 @@ static PyMemberDef GeneralizedCliffordsSimulationStrategy_wrapper_Members[] = {
 
 
 static PyMethodDef GeneralizedCliffordsSimulationStrategy_wrapper_Methods[] = {
+    {"seed", (PyCFunction) GeneralizedCliffordsSimulationStrategy_wrapper_seed, METH_VARARGS,
+     "Method to set random number generator seed for boson sampling"
+    },
     {"simulate", (PyCFunction) GeneralizedCliffordsSimulationStrategy_wrapper_simulate, METH_VARARGS,
      "Method to calculate boson sampling output samples"
     },
