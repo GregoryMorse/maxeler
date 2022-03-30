@@ -290,7 +290,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //optimization.pushFixOpMode(Optimization.bitSizeExact(curBits), Optimization.offsetExact(-curBits + 4), MathOps.MUL);
                 //colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
                 //optimization.popFixOpMode(MathOps.MUL);
-                colSumFix[idx] = doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, true, useFloat, this);
+                colSumFix[idx] = doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
             }
             //if (limit <= 5) optimization.popDSPFactor();
 
