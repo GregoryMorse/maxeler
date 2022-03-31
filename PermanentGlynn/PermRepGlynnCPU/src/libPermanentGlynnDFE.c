@@ -79,7 +79,7 @@ void releiveRep_DFE();
 /**
 @brief Interface function to initialize DFE array
 */
-void initializeRep_DFE(int dual)
+void initializeRep_DFE()
 {
 
 	if (initialized) return;
@@ -176,6 +176,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 	//__int128 res[2];
     size_t resbytes = sizeof(__int128)*2*(changecount+1);
     __int128* res = (__int128*)malloc(resbytes);
+#ifdef DUAL
+    __int128* res2 = (__int128*)malloc(resbytes);
+#endif
 
     union {
 #ifdef MAXELER_SIM    
@@ -216,6 +219,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
       actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
+      actions.dualGlynnRowsGray.outstream_res2 = res2, actions.dualGlynnRowsGray.outstream_size_res2 = resbytes;
       actions.dualGlynnRowsGray.param_rows = rows, actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > 10 ? sizeof(ComplexFix16)*10*rows : 0;
@@ -267,6 +271,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm->real = 0, perm->imag = 0;
     int parity = 0;
     for (uint64_t i = 0; i < changecount+1; i++) {
+#ifdef DUAL
+    res[i*2] += res2[i*2];
+    res[i*2+1] += res[i*2+1];
+#endif    
         long double real = ((long double)res[i*2])/factor/factor;
         long double imag = ((long double)res[i*2+1])/factor/factor;
     
@@ -291,6 +299,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     uint64_t mulSumPerms = 1ULL << mulsum;
     perm->real /= mulSumPerms, perm->imag /= mulSumPerms;
     free(res);
+#ifdef DUAL
+    free(res2);
+#endif
     return;
 }
 
