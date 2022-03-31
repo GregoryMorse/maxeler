@@ -159,6 +159,9 @@ CGeneralizedCliffordsSimulationStrategy::get_sorted_possible_states() {
 
     // locate nonzero elements of input state and count the number of photons
     number_of_input_photons = 0;
+    possible_output_states.clear();
+    pmfs.clear();
+    input_state_inidices.clear();
     input_state_inidices.reserve( input_state.rows*input_state.cols );
     input_state_inidices.number_of_photons = 0;
 
@@ -172,6 +175,7 @@ CGeneralizedCliffordsSimulationStrategy::get_sorted_possible_states() {
 
 
     // preallocate elements for labeled states
+    labeled_states.clear();
     labeled_states.reserve(number_of_input_photons+1);
     for (int64_t idx=0; idx<=number_of_input_photons; idx++) {
         concurrent_PicStates tmp;
