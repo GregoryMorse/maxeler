@@ -62,8 +62,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         addStreamToCPU("res") <== toCPU;
         if (dual && isSim) {            
             KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, dim - basekernpow2, useFloat));
-            for (int i = 0; i < singlekerns; i++)
-                SumUpPermKernel.getInput("colProd" + i) <== colProds[i];
             for (int i = singlekerns; i < numkernels; i++)
                 SumUpPermKernel2.getInput("colProd" + (i - singlekerns)) <== colProds[i];                
             DFELink toCPU2 = SumUpPermKernel2.getOutput("res2");
