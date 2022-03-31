@@ -27,7 +27,7 @@ void GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_mtx, PicState_int64& in
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNREPDFE)(int);
+typedef void(*INITPERMGLYNNREPDFE)(void);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE; 
 extern "C" INITPERMGLYNNREPDFE initializeRep_DFE; 
