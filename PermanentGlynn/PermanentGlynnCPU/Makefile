@@ -7,25 +7,51 @@ DEBUG_DIR := "$(DIST_DIR)/debug"
 USE_SLIC=1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
 
-MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*.max))
-
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
   ifeq ($(strip $(USE_FLOAT)),true)
-      TARGET := libPermanentGlynnSIMF.so
-      COMPVAR := -DMAXELER_SIM -DUSE_FLOAT
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermanentGlynnDualSIMF.so
+          COMPVAR := -DMAXELER_SIM -DDUAL -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIMF.max))
+      else
+          TARGET := libPermanentGlynnSIMF.so
+          COMPVAR := -DMAXELER_SIM -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIMF.max))
+      endif                
   else
-      TARGET := libPermanentGlynnSIM.so
-      COMPVAR := -DMAXELER_SIM
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermanentGlynnDualSIM.so
+          COMPVAR := -DMAXELER_SIM -DDUAL
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+      else
+          TARGET := libPermanentGlynnSIM.so
+          COMPVAR := -DMAXELER_SIM
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+      endif                
   endif
 else
   ##### Target executable or shared-object name. ####
   ifeq ($(strip $(USE_FLOAT)),true)
-      TARGET := libPermanentGlynnDFEF.so
-      COMPVAR := -DUSE_FLOAT
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermanentGlynnDualDFEF.so
+          COMPVAR := -DDUAL -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFEF.max))
+      else
+          TARGET := libPermanentGlynnDFEF.so
+          COMPVAR := -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFEF.max))
+      endif
   else
-      TARGET := libPermanentGlynnDFE.so
-      COMPVAR :=
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermanentGlynnDualDFE.so
+          COMPVAR := -DDUAL
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+      else
+          TARGET := libPermanentGlynnDFE.so
+          COMPVAR :=
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+      endif
   endif
 endif
 
