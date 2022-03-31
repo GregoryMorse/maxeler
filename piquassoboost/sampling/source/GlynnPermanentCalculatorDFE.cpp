@@ -17,9 +17,9 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
 
 #define DFE_LIB_SIM "libPermanentGlynnSIM.so"
-#define DFE_LIB_SIMDUAL "libPermanentGlynnDUALSIM.so"
+#define DFE_LIB_SIMDUAL "libPermanentGlynnDualSIM.so"
 #define DFE_LIB "libPermanentGlynnDFE.so"
-#define DFE_LIBDUAL "libPermanentGlynnDUALDFE.so"
+#define DFE_LIBDUAL "libPermanentGlynnDualDFE.so"
 #define DFE_LIB_SIMF "libPermanentGlynnSIMF.so"
 #define DFE_LIB_SIMFDUAL "libPermanentGlynnDualSIMF.so"
 #define DFE_LIBF "libPermanentGlynnDFEF.so"
@@ -30,6 +30,7 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 #define DFE_REP_LIBDUAL "libPermRepGlynnDualDFE.so"
 
 void* handle = NULL;
+int isLastDual = 0;
 size_t refcount = 0;
 
 
@@ -54,6 +55,10 @@ void unload_dfe_lib()
 }
 
 void init_dfe_lib(int choice, int dual) {
+    if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return;
+    if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return;
+    if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return;
+    isLastDual = dual;
     unload_dfe_lib();
     const char* simLib = NULL, *lib = NULL;
     if (choice == DFE_MAIN) {
@@ -76,14 +81,17 @@ void init_dfe_lib(int choice, int dual) {
           calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFE");
           initialize_DFE = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFE");
           releive_DFE = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFE");
+          if (initialize_DFE) initialize_DFE();
       } else if (choice == DFE_FLOAT) {
           calcPermanentGlynnDFEF = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFEF");
           initialize_DFEF = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFEF");
           releive_DFEF = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFEF");
+          if (initialize_DFEF) initialize_DFEF();
       } else if (choice == DFE_REP) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
+          if (initializeRep_DFE) initializeRep_DFE();
       }
     }
 }
@@ -113,10 +121,8 @@ inline long long doubleToLLRaw(double d)
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
-    if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN, useDual);
-    else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT, useDual);
-    if (!useFloat && initialize_DFE) initialize_DFE();
-    else if (useFloat && initialize_DFEF) initialize_DFEF();
+    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
+    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
         matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
