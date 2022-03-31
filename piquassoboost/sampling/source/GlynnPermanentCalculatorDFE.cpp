@@ -113,8 +113,8 @@ inline long long doubleToLLRaw(double d)
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
-    if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN);
-    else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT);
+    if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN, useDual);
+    else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT, useDual);
     if (!useFloat && initialize_DFE) initialize_DFE(useDual);
     else if (useFloat && initialize_DFEF) initialize_DFEF(useDual);
 
