@@ -7,16 +7,29 @@ DEBUG_DIR := "$(DIST_DIR)/debug"
 USE_SLIC=1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
 
-MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*.max))
 
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
-  TARGET := libPermRepGlynnSIM.so
-  COMPVAR := -DMAXELER_SIM
+  ifeq ($(strip $(DUAL)),true)
+      TARGET := libPermRepGlynnDualSIM.so
+      COMPVAR := -DMAXELER_SIM -DDUAL
+      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+  else
+      TARGET := libPermRepGlynnSIM.so
+      COMPVAR := -DMAXELER_SIM
+      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+  endif
 else
   ##### Target executable or shared-object name. ####
-  TARGET := libPermRepGlynnDFE.so
-  COMPVAR :=
+  ifeq ($(strip $(DUAL)),true)
+      TARGET := libPermRepGlynnDualDFE.so
+      COMPVAR := -DDUAL
+      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+  else
+      TARGET := libPermRepGlynnDFE.so
+      COMPVAR :=
+      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+  endif
 endif
 
 ##### Simulator configuration #####
