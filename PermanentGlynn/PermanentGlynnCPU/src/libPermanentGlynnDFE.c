@@ -189,6 +189,20 @@ void releive_DFE()
   freeFunc();  
 }
 
+//DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
+long double dfeFloatToLD(__int128 res)
+{
+    __int128 temp = res >> 63;
+    if ((temp & 0x7FFF) == 0) //+/- 0
+        res = (res & ((1ULL<<63)-1)) | (temp << 64);
+    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
+        res = ((res & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
+    else
+        res = ((res & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64);
+    long double* pld = (long double*)&res;
+    return *pld;
+}
+
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
@@ -291,9 +305,6 @@ union {
 #else
     runFunc(mavDFE, &actions);
 #endif
-#ifdef DUAL
-    res[0] += res2[0], res[1] += res2[1];
-#endif
 
 #ifdef DEBUG
 	printf("Permanent calulation on DFE finished\n");
@@ -301,26 +312,18 @@ union {
 
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
 #ifdef USE_FLOAT
-    //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
-    __int128 temp = res[0] >> 63;
-    if ((temp & 0x7FFF) == 0) //+/- 0
-        res[0] = (res[0] & ((1ULL<<63)-1)) | (temp << 64);
-    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
-        res[0] = ((res[0] & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
-    else
-        res[0] = ((res[0] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
-    temp = res[1] >> 63;
-    if ((temp & 0x7FFF) == 0) //+/- 0
-        res[1] = (res[1] & ((1ULL<<63)-1)) | (temp << 64);
-    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
-        res[1] = ((res[1] & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
-    else
-        res[1] = ((res[1] & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64); 
-    long double* pld = (long double*)&res[0];
-    perm->real = *pld / numOfPartialPerms;
-    pld = (long double*)&res[1];
-    perm->imag = *pld / numOfPartialPerms;
+    perm->real = dfeFloatToLD(res[0]);
+    perm->imag = dfeFloatToLD(res[1]);
+#ifdef DUAL
+    perm->real += dfeFloatToLD(res2[0]);
+    perm->imag += dfeFloatToLD(res2[1]);
+#endif
+    perm->real /= numOfPartialPerms;
+    perm->imag /= numOfPartialPerms;
 #else
+#ifdef DUAL
+    res[0] += res2[0], res[1] += res2[1];
+#endif
     //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     long double factor = (long double)(1ULL<<62);
 
