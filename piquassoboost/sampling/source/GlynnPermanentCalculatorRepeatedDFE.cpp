@@ -99,7 +99,6 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     if (!initializeRep_DFE) init_dfe_lib(DFE_REP);
     if (initializeRep_DFE) initializeRep_DFE(useDual);
     int64_t photons = 0;
-    input_state = input_state.copy();
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
     }
@@ -111,7 +110,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     std::vector<uint8_t> rowchange_indices;
     std::vector<uint64_t> mplicity;
     uint8_t onerows, mulsum; uint64_t changecount;
-    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum); 
+    PicState_int64 adj_input_state = input_state.copy();
+    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum); 
     
     // calulate the maximal sum of the columns to normalize the matrix
     matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
