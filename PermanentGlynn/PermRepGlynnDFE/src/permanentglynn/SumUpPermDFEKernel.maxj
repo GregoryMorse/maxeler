@@ -15,10 +15,10 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 
 public class SumUpPermDFEKernel extends Kernel {
 
-    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits) {
+    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, boolean useFloat) {
         super(parameters);
 
-        DFEType dataTypeFix128 = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
@@ -45,9 +45,12 @@ public class SumUpPermDFEKernel extends Kernel {
         DFEComplex sum = cplxFix128Type.newInstance(this);
         optimization.pushNoPipelining();
         DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
-        optimization.popNoPipelining();
         sum <== cursum + colProdVals[0];
-        io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
+        optimization.popNoPipelining();
+        if (useFloat) {
+            io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), tickCount === ticksmax - 1);
+        } else
+            io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
 
     }
 
