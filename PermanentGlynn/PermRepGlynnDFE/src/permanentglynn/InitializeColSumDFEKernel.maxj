@@ -45,20 +45,19 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
     }
 
-    public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim) {
+    public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
         DFEType IntType = dfeInt(64);
-        DFEType dataTypeFix64 = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFixCommonAdd = dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
-
+        DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(15, 64) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
         DFEComplexType cplxFixCommonAddType = new DFEComplexType(dataTypeFixCommonAdd);
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFixCommonAddType, cols);
-        DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
+        DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (useFloat ? cplxFixCommonAddType : cplxFix64Type, cols);
         int bitsToAddressSum = MathUtils.bitsToAddress(rows - (basekernpow2 + (dual ? 1 : 0)) - 1);
 
-        DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (IntType, 2 * cols);
-        DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (dfeInt(64 + 1), 2 * cols);
+        DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFix64 : IntType, 2 * cols);
+        DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFixCommonAdd : dfeInt(64 + 1), 2 * cols);
         DFEVectorType < DFEVector < DFEVar >> allRowsType = new DFEVectorType < DFEVector < DFEVar >> (oneRowType, rows - 1 - (basekernpow2 + (dual ? 1 : 0)));
         int kerns = 1 << basekernpow2;
         DFEVar rowpow2 = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
@@ -85,7 +84,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
         DFEVar needData = kernNum == 0 ? constant.var(dfeBool(), 1) : msizem1 >= (kernNum * maxdim / initKerns);
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isRowInit & needData);
-        DFEVar c0 = constant.zero(IntType), c1 = constant.var(IntType, 1L << 62);
+        DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
+                c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
 
         List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
         initChoices.add(constant.zero(oneRowType));
@@ -124,8 +124,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar changePos = nextRowIdx ? storeRowIndex : grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum));
         DFEVar changeValue = nextRowIdx ? rowChangeIsNeg : (grayCounter.changeValue ^ gcodeDir);
         //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", nextRowIdx, storeRowIndex, rowChangeIsNeg, changePos, changeValue); 
-        DFEVector < DFEComplex > rowToAdd = control.mux(changePos, allRows.getElementsAsList())
-            .cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
+        DFEVector < DFEVar > useRow = control.mux(changePos, allRows.getElementsAsList());
+        DFEVector < DFEComplex > rowToAdd;
+        if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
+            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
+            DFEVector<DFEVar> exponent = useRow.slice(53-1, 11);
+            DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
+            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(cplxRowType).cast(colSumType);
+        } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
 
         DFEVector < DFEComplex > oneRowCplx = oneRow.cast(oneRowFixType).reinterpret(colSumType);
         DFEVector < DFEComplex > oneRowNeg = (-oneRow).cast(oneRowFixType).reinterpret(colSumType);
