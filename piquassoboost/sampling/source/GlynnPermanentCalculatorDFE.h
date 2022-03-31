@@ -42,6 +42,7 @@ extern "C" FREEPERMGLYNNDFE releive_DFEF;
 
 
 extern "C" void* handle;
+extern "C" int isLastDual;
 extern "C" size_t refcount;
 
 #define DFE_MAIN 0
