@@ -31,7 +31,7 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 }
 
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNDFE)(int);
+typedef void(*INITPERMGLYNNDFE)(void);
 typedef void(*FREEPERMGLYNNDFE)(void);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE; 
 extern "C" INITPERMGLYNNDFE initialize_DFE; 
@@ -49,7 +49,7 @@ extern "C" size_t refcount;
 #define DFE_REP 2
 
 void unload_dfe_lib();
-void init_dfe_lib(int choice);
+void init_dfe_lib(int choice, int dual);
 
 
 #endif
