@@ -180,44 +180,54 @@ public class PermanentGlynnDFEKernel extends Kernel {
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
-    DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, KernelBase <?> owner) {
+    DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, boolean useUngar, boolean useFloat, KernelBase <?> owner) {
         //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
         //vs. 3 multiplications 5 additions 3M+5A
-        //Gauss: (c*(a+b)-b*(c+d))+(c*(a+b)+a*(d-c))i
-        //Karatsuba: (ac - bd)+((a+b)*(c+d)-ac-bd)
+        //Knuth: (c*(a+b)-b*(c+d))+(c*(a+b)+a*(d-c))i
+        //Ungar: (ac - bd)+((a+b)*(c+d)-ac-bd)
+        //Ungar is more numerically stable than Knuth, even if dataflow more even in Knuth!
         //if M=3A then 4M+2A=12A+2A=14A, 3M+5A=9A+5A=14A
         DFEVar a = n1.getReal();
         DFEVar c = n2.getReal();
         DFEVar b = n1.getImaginary();
         DFEVar d = n2.getImaginary();
-        //DFEVar ac = a * c;
-        //DFEVar bd = b * d;
-        //return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
         //DFEVar cab = mulFrac(c, a + b);
         //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
-        DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits + 2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
-        DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
-        int newBits = bits * 2 + (bits == 64 ? 1 : 0);
-        DFEType resultType = dfeFixOffset(newBits - 3, -newBits + 2 + 3, SignMode.TWOSCOMPLEMENT);
-        DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
-            (cab + mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
-        return ret;
+        if (useFloat) {
+            if (useUngar) {
+                DFEVar ac = a * c;
+                DFEVar bd = b * d;
+                return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
+            } else {
+                DFEVar cab = c * (a+b);
+                return DFEComplexType.newInstance(owner, cab - b * (c + d), cab + a * (d - c));
+            }
+        } else {
+            DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT);
+            DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits + 2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
+            int newBits = bits * 2 + (bits == 64 ? 1 : 0);
+            DFEType resultType = dfeFixOffset(newBits - 3, -newBits + 2 + 3, SignMode.TWOSCOMPLEMENT);
+            if (useUngar) {
+                DFEVar ac = mulExact(a.cast(dataTypeLeftFix), c.cast(dataTypeLeftFix)).cast(resultType);
+                DFEVar bd = mulExact(b.cast(dataTypeLeftFix), d.cast(dataTypeLeftFix)).cast(resultType);
+                return DFEComplexType.newInstance(owner, ac - bd, addExact(mulExact(addExact(a, b, false).cast(dataTypeRightFix), addExact(c, d, false).cast(dataTypeRightFix)), addExact(ac, bd, false), true).cast(resultType));
+            } else {
+                DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
+                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
+                    (cab + mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
+                return ret;
+            }
+        }
     }
 
-    public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum) {
+    public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
         super(parameters);
 
-        //DFEType doubleType         = dfeFloat(11,53);
-        //DFEType dataTypeFix32     = dfeInt(32);//dfeFixOffset(32, -28, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix64 = dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        //DFEType dataTypeFixCommonAdd     = dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix128 = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
-        //DFEComplexType cplxFixCommonAddType    = new DFEComplexType(dataTypeFixCommonAdd);
-        //DFEComplexType cplxFix32Type    = new DFEComplexType(dataTypeFix32);
 
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols / initKerns);
 
@@ -301,7 +311,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //optimization.pushFixOpMode(Optimization.bitSizeExact(curBits), Optimization.offsetExact(-curBits + 4), MathOps.MUL);
                 //colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
                 //optimization.popFixOpMode(MathOps.MUL);
-                colSumFix[idx] = doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, this);
+                colSumFix[idx] = doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
             }
             //if (limit <= 5) optimization.popDSPFactor();
 
