@@ -64,7 +64,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
             KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, dim - basekernpow2, useFloat));
             for (int i = singlekerns; i < numkernels; i++)
                 SumUpPermKernel2.getInput("colProd" + (i - singlekerns)) <== colProds[i];                
-            DFELink toCPU2 = SumUpPermKernel2.getOutput("res2");
+            DFELink toCPU2 = SumUpPermKernel2.getOutput("res");
             addStreamToCPU("res2") <== toCPU2;
         }
         addMaxFileConstant("MTXSIZE", dim);
