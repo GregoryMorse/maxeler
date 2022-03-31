@@ -96,8 +96,8 @@ void
 GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
-    if (!initializeRep_DFE) init_dfe_lib(DFE_REP);
-    if (initializeRep_DFE) initializeRep_DFE(useDual);
+    if (!initializeRep_DFE) init_dfe_lib(DFE_REP, useDual);
+    if (initializeRep_DFE) initializeRep_DFE();
     int64_t photons = 0;
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
