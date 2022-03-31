@@ -17,11 +17,17 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
 
 #define DFE_LIB_SIM "libPermanentGlynnSIM.so"
+#define DFE_LIB_SIMDUAL "libPermanentGlynnDUALSIM.so"
 #define DFE_LIB "libPermanentGlynnDFE.so"
+#define DFE_LIBDUAL "libPermanentGlynnDUALDFE.so"
 #define DFE_LIB_SIMF "libPermanentGlynnSIMF.so"
+#define DFE_LIB_SIMFDUAL "libPermanentGlynnDualSIMF.so"
 #define DFE_LIBF "libPermanentGlynnDFEF.so"
+#define DFE_LIBFDUAL "libPermanentGlynnDualDFEF.so"
 #define DFE_REP_LIB_SIM "libPermRepGlynnSIM.so"
+#define DFE_REP_LIB_SIMDUAL "libPermRepGlynnDualSIM.so"
 #define DFE_REP_LIB "libPermRepGlynnDFE.so"
+#define DFE_REP_LIBDUAL "libPermRepGlynnDualDFE.so"
 
 void* handle = NULL;
 size_t refcount = 0;
@@ -47,18 +53,18 @@ void unload_dfe_lib()
     }
 }
 
-void init_dfe_lib(int choice) {
+void init_dfe_lib(int choice, int dual) {
     unload_dfe_lib();
     const char* simLib = NULL, *lib = NULL;
     if (choice == DFE_MAIN) {
-        simLib = DFE_LIB_SIM;
-        lib = DFE_LIB;
+        simLib = dual ? DFE_LIB_SIMDUAL : DFE_LIB_SIM;
+        lib = dual ? DFE_LIBDUAL : DFE_LIB;
     } else if (choice == DFE_FLOAT) {
-        simLib = DFE_LIB_SIMF;
-        lib = DFE_LIBF;
+        simLib = dual ? DFE_LIB_SIMFDUAL : DFE_LIB_SIMF;
+        lib = dual ? DFE_LIBFDUAL : DFE_LIBF;
     } else if (choice == DFE_REP) {
-        simLib = DFE_REP_LIB_SIM;
-        lib = DFE_REP_LIB;
+        simLib = dual ? DFE_REP_LIB_SIMDUAL : DFE_REP_LIB_SIM;
+        lib = dual ? DFE_REP_LIBDUAL : DFE_REP_LIB;
     }
     handle = dlopen(getenv("SLIC_CONF") ? simLib : lib, RTLD_NOW); //"MAXELEROSDIR"
     if (handle == NULL) {
