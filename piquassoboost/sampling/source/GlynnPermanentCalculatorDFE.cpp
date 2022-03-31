@@ -115,8 +115,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
 {
     if (!useFloat && !initialize_DFE) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat && !initialize_DFEF) init_dfe_lib(DFE_FLOAT, useDual);
-    if (!useFloat && initialize_DFE) initialize_DFE(useDual);
-    else if (useFloat && initialize_DFEF) initialize_DFEF(useDual);
+    if (!useFloat && initialize_DFE) initialize_DFE();
+    else if (useFloat && initialize_DFEF) initialize_DFEF();
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
         matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
