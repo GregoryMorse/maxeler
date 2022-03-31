@@ -4,11 +4,17 @@
 #include <MaxSLiCInterface.h>
 
 #ifdef MAXELER_SIM
+#ifndef DUAL
 #include "PermRepGlynn_singleSIM.h"
-#include "PermRepGlynn_dualSIM.h"
 #else
+#include "PermRepGlynn_dualSIM.h"
+#endif
+#else
+#ifndef DUAL
 #include "PermRepGlynn_singleDFE.h"
+#else
 #include "PermRepGlynn_dualDFE.h"
+#endif
 #endif
 
 #define SIZE 8
@@ -57,15 +63,16 @@ unsigned long long power_of_2(unsigned long long n) {
 
 /// static variable to indicate whether DFE is initialized
 typedef void (*RUNFUNC)(max_engine_t*, void*);
-static bool initialized = false, useDual;
+static bool initialized = false;
 static max_file_t* mavMaxFile;
-static max_engine_t* mavDFE;
 static void (*freeFunc)(void);
-static RUNFUNC runFunc;
-#ifndef MAXELER_SIM
+#if defined(DUAL) && !defined(MAXELER_SIM)
 typedef void (*RUNARRAYFUNC)(max_engarray_t*, void**);
 static max_engarray_t* array = NULL;
 static RUNARRAYFUNC runArrayFunc;
+#else
+static max_engine_t* mavDFE;
+static RUNFUNC runFunc;
 #endif
 
 void releiveRep_DFE();
@@ -75,25 +82,21 @@ void releiveRep_DFE();
 void initializeRep_DFE(int dual)
 {
 
-	if (initialized) {
-    if (dual==useDual) return;
-    else releiveRep_DFE();
-  }
+	if (initialized) return;
   max_file_t* (*initFunc)(void) = NULL;
-  useDual = dual;
-  if (!useDual) {
+#ifndef DUAL
 #ifdef MAXELER_SIM
     initFunc = PermRepGlynn_singleSIM_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIM_run, freeFunc = PermRepGlynn_singleSIM_free;
 #else
     initFunc = PermRepGlynn_singleDFE_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFE_run, freeFunc = PermRepGlynn_singleDFE_free;
 #endif  
-  } else {
+#else
 #ifdef MAXELER_SIM
     initFunc = PermRepGlynn_dualSIM_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIM_run, freeFunc = PermRepGlynn_dualSIM_free;
 #else
     initFunc = PermRepGlynn_dualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFE_run_array, freeFunc = PermRepGlynn_dualDFE_free;
 #endif  
-  }
+#endif
 	// initialize the max file
 
 #ifdef DEBUG
@@ -103,11 +106,10 @@ void initializeRep_DFE(int dual)
 
   if (!initFunc) return;
   mavMaxFile = initFunc();
-#ifdef MAXELER_SIM 
-  mavDFE = max_load(mavMaxFile, "local:*");
+#if defined(DUAL) && !defined(MAXELER_SIM)
+  array = max_load_array(mavMaxFile, 2, "*");
 #else
-  if (dual) array = max_load_array(mavMaxFile, 2, "*");
-  else mavDFE = max_load(mavMaxFile, "local:*");
+  mavDFE = max_load(mavMaxFile, "local:*");
 #endif
   initialized = true;
 #ifdef DEBUG
@@ -134,14 +136,27 @@ void releiveRep_DFE()
 
 	// unload the max files from the devices
   initialized = false;
-#ifdef MAXELER_SIM
-  max_unload(mavDFE);
+#if defined(DUAL) && !defined(MAXELER_SIM)
+  max_unload_array(array);
 #else
-  if (useDual) max_unload_array(array);
-  else max_unload(mavDFE);
+  max_unload(mavDFE);
 #endif
   max_file_free(mavMaxFile);
   freeFunc();  
+}
+
+//DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
+long double dfeFloatToLD(__int128 res)
+{
+    __int128 temp = res >> 63;
+    if ((temp & 0x7FFF) == 0) //+/- 0
+        res = (res & ((1ULL<<63)-1)) | (temp << 64);
+    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
+        res = ((res & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
+    else
+        res = ((res & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64);
+    long double* pld = (long double*)&res;
+    return *pld;
 }
 
 /**
@@ -164,11 +179,17 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 
     union {
 #ifdef MAXELER_SIM    
+#ifndef DUAL
       PermRepGlynn_singleSIM_actions_t glynnRowsGray;
-      PermRepGlynn_dualSIM_actions_t dualGlynnRowsGray;
 #else
+      PermRepGlynn_dualSIM_actions_t dualGlynnRowsGray;
+#endif
+#else
+#ifndef DUAL
       PermRepGlynn_singleDFE_actions_t glynnRowsGray;
+#else
       PermRepGlynn_dualDFE_actions_t dualGlynnRowsGray;
+#endif
 #endif
     } actions
 #ifdef MAXELER_SIM
@@ -178,7 +199,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     void *arractions[2] = {&actions, &dualactions};
 #endif
     // simulation
-    if (!useDual) {
+#ifndef DUAL
       actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
       actions.glynnRowsGray.param_rows = rows, actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
       actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*10*rows;
@@ -191,7 +212,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_size_rowChangeIndices = photons + changecount + ((photons + changecount) % 16 == 0 ? 0 : (16 - (photons + changecount) % 16));
       actions.glynnRowsGray.routing_string = "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
         "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout";
-    } else {
+#else
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
       actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
@@ -224,17 +245,16 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       dualactions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; dualactions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 20 ? sizeof(ComplexFix16)*10*rows : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; dualactions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 30 ? sizeof(ComplexFix16)*10*rows : 0;
 #endif
-    }
+#endif
 
 #ifdef DEBUG
 	printf("Start permanent calulation on DFE\n");
 #endif
 
-#ifdef MAXELER_SIM
-    runFunc(mavDFE, &actions);
+#if defined(DUAL) && !defined(MAXELER_SIM)
+    runArrayFunc(array, arractions);
 #else
-    if (useDual) runArrayFunc(array, arractions);
-    else runFunc(mavDFE, &actions);
+    runFunc(mavDFE, &actions);
 #endif
 
 #ifdef DEBUG
