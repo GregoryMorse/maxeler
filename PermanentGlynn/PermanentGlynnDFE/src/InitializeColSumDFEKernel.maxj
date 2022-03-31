@@ -50,15 +50,15 @@ public class InitializeColSumDFEKernel extends Kernel {
         super(parameters);
         DFEType IntType = dfeInt(64);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(11, 53) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(15, 64) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
         DFEComplexType cplxFixCommonAddType = new DFEComplexType(dataTypeFixCommonAdd);
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFixCommonAddType, cols);
-        DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
+        DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (useFloat ? cplxFixCommonAddType : cplxFix64Type, cols);
         int bitsToAddressSum = MathUtils.bitsToAddress(rows - (basekernpow2 + (dual ? 1 : 0)) - 1);
 
         DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFix64 : IntType, 2 * cols);
-        DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFix64 : dfeInt(64 + 1), 2 * cols);
+        DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFixCommonAdd : dfeInt(64 + 1), 2 * cols);
         DFEVectorType < DFEVector < DFEVar >> allRowsType = new DFEVectorType < DFEVector < DFEVar >> (oneRowType, rows - 1 - (basekernpow2 + (dual ? 1 : 0)));
         int kerns = 1 << basekernpow2;
         DFEVar rowpow2 = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
@@ -103,7 +103,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
             DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
             DFEVector<DFEVar> exponent = useRow.slice(53-1, 11);
-            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(colSumType);
+            DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
+            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(cplxRowType).cast(colSumType);
         } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
 
         DFEVector < DFEComplex > oneRowCplx = oneRow.cast(oneRowFixType).reinterpret(colSumType);
