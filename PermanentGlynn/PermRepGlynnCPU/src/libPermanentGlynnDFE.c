@@ -272,8 +272,8 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     int parity = 0;
     for (uint64_t i = 0; i < changecount+1; i++) {
 #ifdef DUAL
-    res[i*2] += res2[i*2];
-    res[i*2+1] += res[i*2+1];
+        res[i*2] += res2[i*2];
+        res[i*2+1] += res2[i*2+1];
 #endif    
         long double real = ((long double)res[i*2])/factor/factor;
         long double imag = ((long double)res[i*2+1])/factor/factor;
