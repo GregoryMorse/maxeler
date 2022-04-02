@@ -17,6 +17,10 @@
 
 namespace pic {
 
+void
+GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& input_state,
+    PicState_int64& output_state, Complex16& perm, int useDual);
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
