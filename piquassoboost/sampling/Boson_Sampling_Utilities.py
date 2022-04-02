@@ -100,6 +100,16 @@ class GlynnRepeatedDualDFEPermanentCalculator(RepeatedPermanentCalculator):
         super(GlynnRepeatedDualDFEPermanentCalculator, self).__init__(3, matrix, input_state, output_state)
         pass
 
+class GlynnRepeatedMultiSingleDFEPermanentCalculator(RepeatedPermanentCalculator):
+    def __init__(self, matrix, input_state, output_state):
+        super(GlynnRepeatedMultiSingleDFEPermanentCalculator, self).__init__(4, matrix, input_state, output_state)
+        pass
+
+class GlynnRepeatedMultiDualDFEPermanentCalculator(RepeatedPermanentCalculator):
+    def __init__(self, matrix, input_state, output_state):
+        super(GlynnRepeatedMultiDualDFEPermanentCalculator, self).__init__(5, matrix, input_state, output_state)
+        pass
+
 
 class GlynnPermanent(GlynnPermanentCalculator_wrapper):
     """
