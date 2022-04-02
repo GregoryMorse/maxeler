@@ -17,6 +17,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.VectorMemory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 
@@ -65,18 +66,21 @@ public class InitializeColSumDFEKernel extends Kernel {
 
         DFEVar msizemkernpow1 = (rowpow2 + (dual ? 1 : 0));
         DFEVar msizem1 = (rowpow2 + (basekernpow2 + (dual ? 1 : 0)));
+        DFEVar msizem1cast = msizem1.cast(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)));
+        DFEVar colsm1 = kernNum == 0 ? null : io.scalarInput("colsm1", dfeUInt(8)).cast(dfeUInt(6));
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
 
-        DFEVar initCount = control.count.simpleCounter(6, msizem1 + 1);
-        DFEVar isInit = control.count.pulse(1, initCount === msizem1);
-        DFEVar isCalc = control.count.pulse(1, false, initCount === msizem1 - 1);
-        DFEVar tickCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2).withReset(isInit & (initCount === msizem1))).getCount();
+        DFEVar ticksMax = (constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2) + msizem1cast + 1;
+        DFEVar mainCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(ticksMax)).getCount();
+        DFEVar initCount = mainCount.slice(0, 6).cast(dfeUInt(6));
+        DFEVar isInit = mainCount <= msizem1cast, isCalc = mainCount >= msizem1cast;
+        DFEVar tickCount = mainCount - msizem1cast;
 
         DFEVar firstTick = isInit & (initCount === 0);
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
-        DFEVar needData = msizem1 >= (kernNum * maxdim / initKerns);
+        DFEVar needData = kernNum == 0 ? constant.var(dfeBool(), 1) : colsm1 >= (kernNum * maxdim / initKerns);
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, isInit & needData);
         DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
                 c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
@@ -134,9 +138,10 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
         optimization.pushNoPipelining();
         DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = firstTick ? constant.zero(allKernsType) : stream.offset(allColSums, -1);
-        allColSums <== prevColmnSumVector + toAdd;
+        if (useFloat) allColSums <== prevColmnSumVector + toAdd;
         optimization.popNoPipelining();
 
+        if (!useFloat) allColSums <== prevColmnSumVector + toAdd;
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
             io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
