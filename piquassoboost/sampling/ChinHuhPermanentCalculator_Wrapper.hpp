@@ -32,6 +32,8 @@
 #define GlynnRep 1
 #define GlynnRepSingleDFE 2
 #define GlynnRepDualDFE 3
+#define GlynnRepMultiSingleDFE 4
+#define GlynnRepMultiDualDFE 5
 
 
 
@@ -94,7 +96,7 @@ extern "C"
 static void
 ChinHuhPermanentCalculator_wrapper_dealloc(ChinHuhPermanentCalculator_wrapper *self)
 {
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
+    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
         if (--refcount == 0) unload_dfe_lib();
 
     // deallocate the instance of class N_Qubit_Decomposition
@@ -118,7 +120,7 @@ ChinHuhPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObj
     ChinHuhPermanentCalculator_wrapper *self;
     self = (ChinHuhPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
+    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
         ++refcount;
 
     self->matrix = NULL;
@@ -212,7 +214,9 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
     // start the calculation of the permanent
     pic::Complex16 ret;
     if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-        GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE); 
+        GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE);
+    else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
+        GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepMultiDualDFE);
     else ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
 
     return Py_BuildValue("D", &ret);
