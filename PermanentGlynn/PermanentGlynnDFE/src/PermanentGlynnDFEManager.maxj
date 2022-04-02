@@ -41,7 +41,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
                 if (dual && isSim && i >= numkernels * numarrays / 2)
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
-                curOutput.setAdditionalRegisters(cols / initKerns);
+                curOutput.setAdditionalRegisters(2 * cols / initKerns);
                 colSumKernels[i].getInput("colSums" + j) <== curOutput;
             }
         }
