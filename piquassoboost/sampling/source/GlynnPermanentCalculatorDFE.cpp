@@ -126,45 +126,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
         matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
-      if (matrix_mtx.rows == 0) perm = Complex16(1.0,0.0);
-      else if (matrix_mtx.rows == 1) perm = matrix_mtx[0];
-      else if (matrix_mtx.rows == 2) perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) + ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0));
-      else if (matrix_mtx.rows == 3)
-        perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) +
-               ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) +
-               ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 1) +
-               ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) +
-               ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) +
-               ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1));
-      else if (matrix_mtx.rows == 4)
-        perm = ToComplex16(ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 0) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 0) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 1) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 0) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 3) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 3) * ROWCOL(matrix_mtx, 3, 0) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 2) * ROWCOL(matrix_mtx, 1, 3) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 0) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 2) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 1) * ROWCOL(matrix_mtx, 2, 2) * ROWCOL(matrix_mtx, 3, 0) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 0) * ROWCOL(matrix_mtx, 3, 1) +
-                ROWCOL(matrix_mtx, 0, 3) * ROWCOL(matrix_mtx, 1, 2) * ROWCOL(matrix_mtx, 2, 1) * ROWCOL(matrix_mtx, 3, 0));
-      else {
-        GlynnPermanentCalculator gpc;
-        perm = gpc.calculate(matrix_mtx);
-      }        
+      GlynnPermanentCalculator gpc;
+      perm = gpc.calculate(matrix_mtx);
       return;
     }
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
@@ -202,7 +165,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     const size_t numinits = 1 << BASEKERNPOW2;
     const size_t actualinits = (matrix_mtx.cols + 9) / 10;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
-    const long double fixpow = 1L << 62;
+    const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
     for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
