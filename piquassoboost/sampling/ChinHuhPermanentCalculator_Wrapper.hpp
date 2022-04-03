@@ -97,7 +97,7 @@ static void
 ChinHuhPermanentCalculator_wrapper_dealloc(ChinHuhPermanentCalculator_wrapper *self)
 {
     if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
-        if (--refcount == 0) unload_dfe_lib();
+        dec_dfe_lib_count();
 
     // deallocate the instance of class N_Qubit_Decomposition
     if (self->lib == ChinHuh) release_ChinHuhPermanentCalculator( self->calculator );
@@ -121,7 +121,7 @@ ChinHuhPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObj
     self = (ChinHuhPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
     if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
-        ++refcount;
+        inc_dfe_lib_count();
 
     self->matrix = NULL;
     self->input_state = NULL;
