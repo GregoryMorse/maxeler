@@ -67,7 +67,7 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
 {
     // unload DFE
     if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
-        if (--refcount == 0) unload_dfe_lib();
+        dec_dfe_lib_count();
     // deallocate the instance of class N_Qubit_Decomposition
     if (self->lib == GlynnCPP) release_GlynnPermanentCalculator( self->calculator );
     else if (self->lib == GlynnInf && self->calculatorInf != NULL) delete self->calculatorInf;
@@ -86,7 +86,7 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
     if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
-        ++refcount;
+        inc_dfe_lib_count();
     
     return (PyObject *) self;
 }
