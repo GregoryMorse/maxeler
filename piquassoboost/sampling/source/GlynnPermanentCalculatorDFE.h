@@ -2,6 +2,7 @@
 #ifndef GlynnPermanentCalculatorDFE_H
 #define GlynnPermanentCalculatorDFE_H
 
+#include <atomic>
 #include "matrix.h"
 
 #ifndef CPYTHON
@@ -23,6 +24,9 @@ typedef struct ComplexFix16 {
   __int64_t imag;
 } ComplexFix16;
 
+void
+GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Complex16>& perm, int useDual, int useFloat);
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
@@ -30,7 +34,7 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 
 }
 
-typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, pic::Complex16*);
+typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
 typedef void(*INITPERMGLYNNDFE)(void);
 typedef void(*FREEPERMGLYNNDFE)(void);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE; 
@@ -43,7 +47,7 @@ extern "C" FREEPERMGLYNNDFE releive_DFEF;
 
 extern "C" void* handle;
 extern "C" int isLastDual;
-extern "C" size_t refcount;
+extern "C" std::atomic_size_t refcount;
 
 #define DFE_MAIN 0
 #define DFE_FLOAT 1
