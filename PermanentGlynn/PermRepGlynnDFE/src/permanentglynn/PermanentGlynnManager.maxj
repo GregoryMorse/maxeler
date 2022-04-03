@@ -113,6 +113,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         ei.setTicks("SumUpPermDFEKernel", ticksmax * changeCount);
         for (int i = 0; i < initKerns; i++) {
             ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
+            ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
             ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + photons - 1);
             if (i != 0) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
             ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
@@ -128,6 +129,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", 1);
             for (int i = initKerns; i < initKerns * 2; i++) {
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
+                ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
                 ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + photons - 1);
                 if (i != initKerns) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
