@@ -51,7 +51,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setImplementationStrategies(ImplementationStrategy.MAXELER3);
         conf.setParallelism(64);
 
-        manager.setDefaultStreamClockFrequency(190);
+        manager.setDefaultStreamClockFrequency(200);
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
