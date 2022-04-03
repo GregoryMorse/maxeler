@@ -17,12 +17,13 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
-
+import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 
 
 public class PermanentGlynnDFEKernel extends Kernel {
@@ -221,7 +222,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
         super(parameters);
-
+        optimization.pushFanoutLimit(2, FanoutLimitType.TREE);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
@@ -230,26 +231,63 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols / initKerns);
 
-
         // tick count
         DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
-        DFEVar tickCount = control.count.simpleCounter(maxtickbits, constant.var(dfeUInt(maxtickbits), 1) << msizeadj);
+        DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64)) << msizeadj;
+        DFEVar photonsm1cast = photonsm1.cast(dfeUInt(64));
+        DFEVar mainCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeCols + photonsm1cast)).getCount();
+        DFEVar initCount = mainCount.slice(0, 6).cast(dfeUInt(6));
+
+        DFEVar tickCount = mainCount - photonsm1cast;
+        DFEVar isTransition = tickCount === 0;
+        DFEVar isInit = tickCount.get(tickCount.getType().getTotalBits()-1).cast(dfeBool()) | isTransition;
+        DFEVar isCalc = ~isInit | isTransition;
+
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
+        DFEVar gcodeDir = (tickCount >> msizeadj).get(0);
+
+        DFEVectorType < DFEVar > colIndexType = new DFEVectorType < DFEVar > (dfeUInt(6), cols);
+        DFEVar colIndex = io.input("colIndex", dfeUInt(8), isInit).cast(dfeUInt(6));
+        DFEVectorType<DFEVar> colIndOneHotType = new DFEVectorType<DFEVar>(dfeBool(), cols);
+        DFEVector<DFEVar> colIndOneHot = (isInit.cast(dfeUInt(cols)) << initCount).reinterpret(colIndOneHotType);
+        DFEVector<DFEVar> colIndFixOneHot = (((constant.var(dfeUInt(cols+1), 1) << (photonsm1+1)) - 1).cast(dfeUInt(cols))).reinterpret(colIndOneHotType);
+        DFEVector < DFEVar > colIndicesCache = colIndexType.newInstance(this);
+        DFEVector < DFEVar > colIndices = colIndexType.newInstance(this);
+        for (int i = 0; i < cols; i++) {
+            colIndicesCache[i] <== colIndOneHot[i] ? colIndex : stream.offset(colIndicesCache[i], -1);
+            colIndices[i] <== colIndFixOneHot[i] ? colIndicesCache[i] : constant.var(dfeUInt(6), i); 
+        }
 
         // multiply the elements in colSum over a tree reduction
-        DFEComplex[] colSumFix = new DFEComplex[cols];
+        DFEVectorType<DFEComplex> colType = new DFEVectorType<DFEComplex>(cplxFix64Type, cols);
+        DFEVector<DFEComplex> colSumPreFix = colType.newInstance(this);
+        //DFEComplex[] colSumPreFix = new DFEComplex[cols];
         int limit = cols;
 
         for (int j = 0; j < initKerns; j++) {
             DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-            colmnSumVector <== io.input("colSums" + j, colSumType);
+            colmnSumVector <== io.input("colSums" + j, colSumType, isCalc);
             //debug.simPrintf("%KObj%\n", colmnSumVector);
 
             for (int idx = 0; idx < cols / initKerns; idx++) {
-                colSumFix[j * (cols / initKerns) + idx] = useFloat ? colmnSumVector[idx].cast(cplxFix128Type) : colmnSumVector[idx];
+                colSumPreFix[j * (cols / initKerns) + idx] <== colmnSumVector[idx];
             }
         }
+        DFEComplex[] colSumFix = new DFEComplex[cols];
+        for (int j = 0; j < cols; j++) {
+            colSumFix[j] = cplxFix64Type.newInstance(this);
+            colSumFix[j] <== control.mux(colIndices[j], colSumPreFix.getElementsAsList());
+            //if (kernNum == 0) debug.simPrintf(isCalc, "%d %KObj%\n", colIndices[j], colSumPreFix); 
+            /*if (j == cols-1)
+                colSumFix[j] <== control.mux(colIndices[j]-colIndices[j-1], colSumPreFix.getElementsAsList());
+            else {
+                colSumPreFix = colSumPreFix.shiftElementsRight(j == 0 ? colIndices[j] : (colIndices[j]-colIndices[j-1]));
+                colSumFix[j] <== colSumPreFix[0];
+            }*/
+        }
+        
         //System.out.println("Graph Pipelining: " + optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
         //System.out.println("Node Pipelining: " + optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
         //System.out.println("DSP Factor: " + optimization.peekDSPFactor(MathOps.ALL)); //default 0.5
@@ -306,12 +344,12 @@ public class PermanentGlynnDFEKernel extends Kernel {
         }
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
-        DFEVar sign = tickCount.get(0) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        DFEVar sign = ((tickCount.get(0) ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
 
-        io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type);
-
+        io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type, isCalc);
+        optimization.popFanoutLimit();
     }
 
 }
