@@ -87,7 +87,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel {
         EngineInterface ei = new EngineInterface();
         InterfaceParam origRows = ei.addParam("ticksMax", CPUTypes.UINT8);
         InterfaceParam msizeadj = origRows - 1 - basekernpow2;
-        InterfaceParam ticksmax = 1 << msizeadj;
+        InterfaceParam ticksmax = 1L << msizeadj;
         InterfaceParam cols = ei.addParam("cols", CPUTypes.UINT8);
         InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT64);
         if (dual && !isSim) {
