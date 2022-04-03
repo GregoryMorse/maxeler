@@ -71,14 +71,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
 
-        DFEVar ticksMax = (constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2) + msizem1cast + 1;
+        DFEVar ticksMax = (constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2) + msizem1cast;
         DFEVar mainCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(ticksMax)).getCount();
         DFEVar initCount = mainCount.slice(0, 6).cast(dfeUInt(6));
         DFEVar tickCount = mainCount - msizem1cast;
         DFEVar isTransition = tickCount === 0;
         DFEVar isInit = tickCount.get(tickCount.getType().getTotalBits()-1).cast(dfeBool()) | isTransition;
         DFEVar isCalc = ~isInit | isTransition;
-
+        
         DFEVar firstTick = isInit & (initCount === 0);
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
