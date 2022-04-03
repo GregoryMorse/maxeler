@@ -222,7 +222,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
         super(parameters);
-
+        optimization.pushFanoutLimit(2, FanoutLimitType.TREE);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
@@ -275,7 +275,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 colSumPreFix[j * (cols / initKerns) + idx] <== colmnSumVector[idx];
             }
         }
-        optimization.pushFanoutLimit(4, FanoutLimitType.TREE);
         DFEComplex[] colSumFix = new DFEComplex[cols];
         for (int j = 0; j < cols; j++) {
             colSumFix[j] = cplxFix64Type.newInstance(this);
@@ -288,7 +287,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 colSumFix[j] <== colSumPreFix[0];
             }*/
         }
-        optimization.popFanoutLimit();
         
         //System.out.println("Graph Pipelining: " + optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
         //System.out.println("Node Pipelining: " + optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
@@ -351,7 +349,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
 
         io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type, isCalc);
-
+        optimization.popFanoutLimit();
     }
 
 }
