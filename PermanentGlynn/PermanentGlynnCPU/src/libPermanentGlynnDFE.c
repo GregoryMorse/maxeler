@@ -316,8 +316,8 @@ union {
         imag *= renormalize_data[offset+jdx];
     }
     perm[i].real = real; perm[i].imag = imag;
-    }
 #endif
+    }
     free(res);
 #ifdef DUAL
     free(res2);
