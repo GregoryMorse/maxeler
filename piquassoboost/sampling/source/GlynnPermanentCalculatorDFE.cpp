@@ -156,7 +156,6 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     matrix_base<long double> renormalize_data(matrices.size(), matrices.begin()->cols);
     for (size_t i = 0; i < matrices.size(); i++) {
         matrix& matrix_mtx = matrices[i];
-        matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
         if (!useFloat) {
             // calulate the maximal sum of the columns to normalize the matrix
             matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
