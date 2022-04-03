@@ -31,11 +31,13 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 
 void* handle = NULL;
 int isLastDual = 0;
-size_t refcount = 0;
+std::atomic_size_t refcount(0);
+std::mutex libmutex;
 
 
 void unload_dfe_lib()
 {
+    const std::lock_guard<std::mutex> lock(libmutex);
     if (handle) {
         if (releive_DFE) {
             releive_DFE();
@@ -55,6 +57,7 @@ void unload_dfe_lib()
 }
 
 void init_dfe_lib(int choice, int dual) {
+    const std::lock_guard<std::mutex> lock(libmutex);
     if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return;
     if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return;
     if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return;
@@ -115,6 +118,95 @@ inline long long doubleToLLRaw(double d)
     return *pll;
 }
 
+void
+GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Complex16>& perm, int useDual, int useFloat)
+{
+    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
+    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
+
+    if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
+        matrices.begin()->rows < 1+BASEKERNPOW2 || (matrices.begin()->rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+      GlynnPermanentCalculator gpc;
+      for (size_t i = 0; i < matrices.size(); i++)
+          perm[i] = gpc.calculate(matrices[i]);
+      return;
+    }
+    matrix_base<long double> renormalize_data(matrices.size(), matrices.begin()->cols);
+    for (size_t i = 0; i < matrices.size(); i++) {
+        matrix& matrix_mtx = matrices[i];
+        matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
+        if (!useFloat) {
+            // calulate the maximal sum of the columns to normalize the matrix
+            matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
+            memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+            for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+                for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                    Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                    Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                    if ( std::abs( value1 ) < std::abs( value2 ) ) {
+                        colSumMax[jdx] = value2;
+                    }
+                    else {
+                        colSumMax[jdx] = value1;
+                    }
+        
+                }
+        
+            }
+        
+            // calculate the renormalization coefficients
+            for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
+                renormalize_data[i*renormalize_data.stride+jdx] = std::abs(colSumMax[jdx]); 
+                //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
+            }
+        }
+    }
+
+    // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
+    // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
+    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t rows = matrices.begin()->rows;
+    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
+    const size_t numinits = 1 << BASEKERNPOW2;
+    const size_t actualinits = (matrices.begin()->cols + max_fpga_cols-1) / max_fpga_cols;
+    matrix_base<ComplexFix16> mtxfix[numinits] = {};
+    const long double fixpow = 1ULL << 62;
+    const double fOne = doubleToLLRaw(1.0);
+    for (size_t i = 0; i < actualinits; i++) {
+      mtxfix[i] = matrix_base<ComplexFix16>(rows * matrices.size(), max_fpga_cols);
+      size_t basecol = max_fpga_cols * i;
+      size_t lastcol = matrices.begin()->cols<=basecol ? 0 : std::min(max_fpga_cols, matrices.begin()->cols-basecol);
+      for (size_t j = 0; j < matrices.size(); j++) {
+          size_t rowbase = j * rows;
+          matrix& matrix_mtx = matrices[j];
+          for (size_t idx=0; idx < rows; idx++) {
+            size_t offset = idx * matrix_mtx.stride + basecol;
+            size_t offset_small = (rowbase + idx)*mtxfix[i].stride;
+            for (size_t jdx = 0; jdx < lastcol; jdx++) {
+              mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
+              mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
+              //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
+            }
+            memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
+          }
+          for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][rowbase*mtxfix[i].stride+jdx].real = useFloat ? fOne : fixpow;
+      } 
+    }
+
+    //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
+    ComplexFix16* mtx_fix_data[numinits];
+    //assert(mtxfix[i].stride == mtxfix[i].cols);
+    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
+    for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
+    if (useFloat)
+        calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrices.begin()->rows, matrices.begin()->cols, matrices.size(), perm.data());
+    else
+        calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrices.begin()->rows, matrices.begin()->cols, matrices.size(), perm.data());
+
+
+    return;
+}
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
@@ -163,7 +255,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     const size_t rows = matrix_mtx.rows;
     const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
     const size_t numinits = 1 << BASEKERNPOW2;
-    const size_t actualinits = (matrix_mtx.cols + 9) / 10;
+    const size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
@@ -190,9 +282,9 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     if (useFloat)
-        calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
+        calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, 1, &perm);
     else
-        calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, &perm);
+        calcPermanentGlynnDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, 1, &perm);
 
 
     return;
