@@ -131,43 +131,77 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
 {
 
     // The tuple of expected keywords
-    static char *kwlist[] = {(char*)"matrix", NULL};
+    static char *kwlist[] = {(char*)"matrix", (char*)"batch", NULL};
 
 
     // initiate variables for input arguments
     PyObject *matrix_arg = NULL;
+    int batch = 0;
 
     // parsing input arguments
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist,
-                                     &matrix_arg))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|Op", kwlist,
+                                     &matrix_arg, &batch))
         return Py_BuildValue("");
 
     // convert python object array to numpy C API array
     if ( matrix_arg == NULL ) return Py_BuildValue("");
 
-    // establish memory contiguous arrays for C calculations
-    if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+    if (batch) {
         Py_INCREF(matrix_arg);
-    }
-    else {
-        matrix_arg = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
-    }
-
-    // create PIC version of the input matrices
-    pic::matrix matrix_mtx = numpy2matrix(matrix_arg);
-
-    // start the calculation of the permanent
-
-    pic::Complex16 ret;
+        Py_ssize_t sz = PyList_Size(matrix_arg);
+        std::vector<pic::matrix> matrices;
+        matrices.reserve(sz);
+        std::vector<pic::Complex16> ret;
+        ret.reserve(sz);
+        for (Py_ssize_t i = 0; i < sz; i++) {
+            PyObject *o = PyList_GetItem(matrix_arg, i);
+            if ( PyArray_IS_C_CONTIGUOUS(o) ) {
+                Py_INCREF(o);
+            } else {
+                o = PyArray_FROM_OTF(o, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+            }
+            matrices.push_back(numpy2matrix(o));
+            ret.push_back(pic::Complex16());
+        }
+        if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
+            GlynnPermanentCalculatorBatch_DFE( matrices, ret, self->lib == GlynnDualDFE || self->lib == GlynnDualDFEF, self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF);
+        else {
+            for (size_t i = 0; i < matrices.size(); i++)
+                ret[i] = self->calculator->calculate(matrices[i]);
+        }    
+        
+        Py_DECREF(matrix_arg);
+        PyObject* list = PyList_New(0);
+        for (size_t i = 0; i < ret.size(); i++) {
+            PyList_Append(list, Py_BuildValue("D", &ret[i]));
+        }
+        return list;
+    } else {
     
-    if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
-        GlynnPermanentCalculator_DFE( matrix_mtx, ret, self->lib == GlynnDualDFE || self->lib == GlynnDualDFEF, self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF);
-    else ret = self->calculator->calculate(matrix_mtx);    
-
-    // release numpy arrays
-    Py_DECREF(matrix_arg);
-
-    return Py_BuildValue("D", &ret);
+        // establish memory contiguous arrays for C calculations
+        if ( PyArray_IS_C_CONTIGUOUS(matrix_arg) ) {
+            Py_INCREF(matrix_arg);
+        }
+        else {
+            matrix_arg = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+        }
+    
+        // create PIC version of the input matrices
+        pic::matrix matrix_mtx = numpy2matrix(matrix_arg);
+    
+        // start the calculation of the permanent
+    
+        pic::Complex16 ret;
+        
+        if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
+            GlynnPermanentCalculator_DFE( matrix_mtx, ret, self->lib == GlynnDualDFE || self->lib == GlynnDualDFEF, self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF);
+        else ret = self->calculator->calculate(matrix_mtx);    
+    
+        // release numpy arrays
+        Py_DECREF(matrix_arg);
+    
+        return Py_BuildValue("D", &ret);
+    }
 }
 
 
