@@ -2,7 +2,7 @@
 #ifndef GlynnPermanentCalculatorDFE_H
 #define GlynnPermanentCalculatorDFE_H
 
-#include <atomic>
+#include <mutex>
 #include "matrix.h"
 
 #ifndef CPYTHON
@@ -34,25 +34,13 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 
 }
 
-typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNDFE)(void);
-typedef void(*FREEPERMGLYNNDFE)(void);
-extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE; 
-extern "C" INITPERMGLYNNDFE initialize_DFE; 
-extern "C" FREEPERMGLYNNDFE releive_DFE; 
-extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFEF; 
-extern "C" INITPERMGLYNNDFE initialize_DFEF; 
-extern "C" FREEPERMGLYNNDFE releive_DFEF;
-
-
-extern "C" void* handle;
-extern "C" int isLastDual;
-extern "C" std::atomic_size_t refcount;
-
 #define DFE_MAIN 0
 #define DFE_FLOAT 1
 #define DFE_REP 2
 
+extern "C" std::mutex libmutex;
+void inc_dfe_lib_count();
+void dec_dfe_lib_count();
 void unload_dfe_lib();
 void init_dfe_lib(int choice, int dual);
 
