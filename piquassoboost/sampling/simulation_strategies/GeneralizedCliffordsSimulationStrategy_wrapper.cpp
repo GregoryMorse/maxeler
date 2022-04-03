@@ -84,7 +84,7 @@ GeneralizedCliffordsSimulationStrategy_wrapper_dealloc(GeneralizedCliffordsSimul
     release_ChinHuhPermanentCalculator( self->simulation_strategy );
 
     if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-        if (--refcount == 0) unload_dfe_lib();
+        dec_dfe_lib_count();
     // release numpy arrays
     if (self->interferometer_matrix != NULL)
         Py_DECREF(self->interferometer_matrix);
@@ -103,7 +103,7 @@ GeneralizedCliffordsSimulationStrategy_wrapper_new(PyTypeObject *type, PyObject 
     self = (GeneralizedCliffordsSimulationStrategy_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
     if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-        refcount++;
+        inc_dfe_lib_count();
 
     self->interferometer_matrix = NULL;
     self->simulation_strategy = NULL;
