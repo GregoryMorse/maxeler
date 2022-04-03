@@ -34,10 +34,16 @@ int isLastDual = 0;
 std::atomic_size_t refcount(0);
 std::mutex libmutex;
 
+void inc_dfe_lib_count() { refcount++; }
+
+void dec_dfe_lib_count()
+{
+    const std::lock_guard<std::mutex> lock(libmutex);
+    if (--refcount == 0) unload_dfe_lib();
+}
 
 void unload_dfe_lib()
 {
-    const std::lock_guard<std::mutex> lock(libmutex);
     if (handle) {
         if (releive_DFE) {
             releive_DFE();
@@ -57,7 +63,6 @@ void unload_dfe_lib()
 }
 
 void init_dfe_lib(int choice, int dual) {
-    const std::lock_guard<std::mutex> lock(libmutex);
     if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return;
     if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return;
     if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return;
@@ -121,6 +126,7 @@ inline long long doubleToLLRaw(double d)
 void
 GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Complex16>& perm, int useDual, int useFloat)
 {
+    const std::lock_guard<std::mutex> lock(libmutex);
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
@@ -213,6 +219,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
 void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
+    const std::lock_guard<std::mutex> lock(libmutex);
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
