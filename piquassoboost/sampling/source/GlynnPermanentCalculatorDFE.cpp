@@ -5,17 +5,11 @@
 #include <tbb/tbb.h>
 #endif
 
-CALCPERMGLYNNDFE calcPermanentGlynnDFE = NULL;
-INITPERMGLYNNDFE initialize_DFE = NULL;
-FREEPERMGLYNNDFE releive_DFE = NULL;
-CALCPERMGLYNNDFE calcPermanentGlynnDFEF = NULL;
-INITPERMGLYNNDFE initialize_DFEF = NULL;
-FREEPERMGLYNNDFE releive_DFEF = NULL;
-
+#include <atomic>
 #include <dlfcn.h>
 #include <unistd.h>
-#include "GlynnPermanentCalculatorRepeatedDFE.h"
 
+//DFE management library interface follows:
 #define DFE_LIB_SIM "libPermanentGlynnSIM.so"
 #define DFE_LIB_SIMDUAL "libPermanentGlynnDualSIM.so"
 #define DFE_LIB "libPermanentGlynnDFE.so"
@@ -28,6 +22,28 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 #define DFE_REP_LIB_SIMDUAL "libPermRepGlynnDualSIM.so"
 #define DFE_REP_LIB "libPermRepGlynnDFE.so"
 #define DFE_REP_LIBDUAL "libPermRepGlynnDualDFE.so"
+
+
+typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
+typedef void(*INITPERMGLYNNDFE)(void);
+typedef void(*FREEPERMGLYNNDFE)(void);
+
+CALCPERMGLYNNDFE calcPermanentGlynnDFE = NULL;
+INITPERMGLYNNDFE initialize_DFE = NULL;
+FREEPERMGLYNNDFE releive_DFE = NULL;
+CALCPERMGLYNNDFE calcPermanentGlynnDFEF = NULL;
+INITPERMGLYNNDFE initialize_DFEF = NULL;
+FREEPERMGLYNNDFE releive_DFEF = NULL;
+
+typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
+  const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
+typedef void(*INITPERMGLYNNREPDFE)(void);
+typedef void(*FREEPERMGLYNNREPDFE)(void);
+
+extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE;
+extern "C" INITPERMGLYNNREPDFE initializeRep_DFE;
+extern "C" FREEPERMGLYNNREPDFE releiveRep_DFE;
+
 
 void* handle = NULL;
 int isLastDual = 0;
@@ -131,7 +147,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
-        matrices.begin()->rows < 1+BASEKERNPOW2 || (matrices.begin()->rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+        matrices.begin()->rows < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
       GlynnPermanentCalculator gpc;
       for (size_t i = 0; i < matrices.size(); i++)
           perm[i] = gpc.calculate(matrices[i]);
@@ -224,7 +240,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
-        matrix_mtx.rows < 1+BASEKERNPOW2 || (matrix_mtx.rows < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+        matrix_mtx.rows < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
       GlynnPermanentCalculator gpc;
       perm = gpc.calculate(matrix_mtx);
       return;
