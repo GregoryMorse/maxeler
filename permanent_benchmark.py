@@ -348,6 +348,8 @@ def verify_timing():
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
+          #def save_result():
+          #    v[0] = func(A[dim])
           def save_result():
               v[0] = func([A[dim], A[dim]], batch=True)
           r = timeit.timeit(save_result , number=mplier) / mplier #v[0] = func(A[dim])
