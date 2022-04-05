@@ -24,6 +24,8 @@
 typedef struct GlynnPermanentCalculator_wrapper {
     PyObject_HEAD
     int lib;
+    /// pointer to numpy matrix to keep it alive
+    //PyObject *matrix = NULL;
     /// The C++ variant of class CGlynnPermanentCalculator
     union {
         pic::GlynnPermanentCalculatorInf* calculatorInf;
@@ -85,8 +87,6 @@ GlynnPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObjec
     GlynnPermanentCalculator_wrapper *self;
     self = (GlynnPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
-        inc_dfe_lib_count();
     
     return (PyObject *) self;
 }
@@ -105,7 +105,7 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
 
     // The tuple of expected keywords
     static char *kwlist[] = {(char*)"lib", NULL};
-    self->lib = 0;
+    self->lib = GlynnCPP;
     // parsing input arguments
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist,
                                      &self->lib))
@@ -114,6 +114,8 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
     // create instance of class GlynnPermanentCalculator
     if (self->lib == GlynnCPP) self->calculator = create_GlynnPermanentCalculator();
     else if (self->lib == GlynnInf) self->calculatorInf = new pic::GlynnPermanentCalculatorInf();
+    else if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
+        inc_dfe_lib_count();
 
     return 0;
 }
