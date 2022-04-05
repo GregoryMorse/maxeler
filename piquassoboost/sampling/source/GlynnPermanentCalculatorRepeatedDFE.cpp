@@ -49,12 +49,11 @@ void
 GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
-    init_dfe_lib(DFE_REP, useDual);    
     int64_t photons = 0;
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
     }
-    if (!calcPermanentGlynnRepDFE || photons < 1+BASEKERNPOW2 || (photons < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+    if (photons < 1+BASEKERNPOW2 || (photons < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       return;
