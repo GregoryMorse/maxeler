@@ -317,18 +317,20 @@ def load_test_data():
     with open("matrices.bin", "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
-def verify_timing():
+def verify_timing(nmax, batchsize=1):
   ERRBOUND = 1e-10
-  nmax = DEPTH
+  suffix = "" if batchsize == 1 else str(batchsize)
+  verdata = "verifydata.bin"
+  resdata = "resultdata" + suffix + ".bin"
   xaxis = list(range(nmax+1))
   gen_test_data = load_test_data()
   import os, pickle, timeit
-  if os.path.isfile("verifydata.bin"):
-    with open("verifydata.bin", "rb") as f:
+  if os.path.isfile(verdata):
+    with open(verdata, "rb") as f:
       res = pickle.load(f)
   else: res = {}
-  if os.path.isfile("resultdata.bin"):
-    with open("resultdata.bin", "rb") as f:
+  if os.path.isfile(resdata):
+    with open(resdata, "rb") as f:
       results = pickle.load(f)
   else: results = {}
   for key in gen_test_data:
@@ -351,37 +353,44 @@ def verify_timing():
           #def save_result():
           #    v[0] = func(A[dim])
           def save_result():
-              v[0] = func([A[dim], A[dim]], batch=True)
-          r = timeit.timeit(save_result , number=mplier) / mplier #v[0] = func(A[dim])
+              if batchsize == 1: v[0] = func(A[dim])
+              else: v[0] = func([A[dim]] * batchsize, batch=True)
+          r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfePermFuncs: print(check_power())
-          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
-          else: res[key][func.__name__][dim] = v[0]
+          if batchsize != 1:             
+            assert all(abs(res[key][func.__name__][dim] - x) < ERRBOUND for x in v[0])
+            v[0] = v[0][0]
+          else:
+            if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
+            else: res[key][func.__name__][dim] = v[0]
           if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
           else: results[key][func.__name__][dim] = r
           if dim < 24: print(dim, v[0], r)
-          with open("verifydata.bin", "wb") as f:
-            pickle.dump(res, f)
-          with open("resultdata.bin", "wb") as f:
+          if batchsize == 1:
+            with open(verdata, "wb") as f:
+              pickle.dump(res, f)
+          with open(resdata, "wb") as f:
             pickle.dump(results, f)        
         if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
-    with open("verifydata.csv", "w") as f:
-      import csv
-      writer = csv.writer(f, delimiter='\t')
-      writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in xaxis])
-      writer.writerow(["Relative Error compared to " + largePermFuncs[0].__name__]) 
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for x in largePermFuncs] for i in xaxis])
-      writer.writerow(["Permanent Computation Raw Results"])
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
-      for dim in range(nmax+1):
-        writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
-        if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
-        for i in range(dim):
-          writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
-    with open("resultdata.csv", "w") as f:
+    if batchsize == 1:
+      with open("verifydata.csv", "w") as f:
+          import csv
+          writer = csv.writer(f, delimiter='\t')
+          writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+          writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in xaxis])
+          writer.writerow(["Relative Error compared to " + largePermFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+          writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for x in largePermFuncs] for i in xaxis])
+          writer.writerow(["Permanent Computation Raw Results"])
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+          writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
+          for dim in range(nmax+1):
+            writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
+            if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
+            for i in range(dim):
+              writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
+    with open("resultdata" + suffix + ".csv", "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs if f != permanent_Glynn_Cpp_Inf])
@@ -392,22 +401,25 @@ def verify_timing():
     #  assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    for vals, fname, ylbl in (([(f, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis]) for f in largePermFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)"),
-        ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largePermFuncs], "glynnpermtime", "Time (log10 s)")):
+    verinfo = ([(f, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis]) for f in largePermFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largePermFuncs], "glynnpermtime" + suffix, "Time (log10 s)")
+    for vals, fname, ylbl in ((verinfo, timeinfo) if batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
         for i, val in enumerate(vals):
           ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
-        ax1.set_xlabel("Size")  
+        ax1.set_xlabel("Size (n=|A|)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
         ax1.legend()
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax1.set_title("Permanent Computation of Square Matrix A (n=|A|)")
+        ax1.set_title("Permanent Computation of Square Matrix A" + ("" if batchsize==1 else (" Batch=" + str(batchsize))))
         fig.savefig(fname + ".svg", format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
         tikzplotlib.save(fname + ".tex")
         
-verify_timing()
+verify_timing(DEPTH, 1)
+for batch_size in (2, 3, 4, 5, 10, 20, 25, 50, 100):
+    verify_timing(DEPTH if hasSim else 22, batch_size)
