@@ -83,7 +83,7 @@ GeneralizedCliffordsSimulationStrategy_wrapper_dealloc(GeneralizedCliffordsSimul
     // deallocate the instance of class N_Qubit_Decomposition
     release_ChinHuhPermanentCalculator( self->simulation_strategy );
 
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
+    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
         dec_dfe_lib_count();
     // release numpy arrays
     if (self->interferometer_matrix != NULL)
@@ -102,8 +102,6 @@ GeneralizedCliffordsSimulationStrategy_wrapper_new(PyTypeObject *type, PyObject 
     GeneralizedCliffordsSimulationStrategy_wrapper *self;
     self = (GeneralizedCliffordsSimulationStrategy_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-        inc_dfe_lib_count();
 
     self->interferometer_matrix = NULL;
     self->simulation_strategy = NULL;
@@ -160,6 +158,9 @@ GeneralizedCliffordsSimulationStrategy_wrapper_init(GeneralizedCliffordsSimulati
     PyObject* result = PyObject_CallMethod(constants, "get_seed", "");
 
     self->simulation_strategy->seed(PyLong_AsUnsignedLongLong(result));
+    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
+        inc_dfe_lib_count();
+    
 
     return 0;
 }
