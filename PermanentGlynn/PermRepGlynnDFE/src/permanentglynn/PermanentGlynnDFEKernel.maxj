@@ -23,7 +23,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
-import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 
 
 public class PermanentGlynnDFEKernel extends Kernel {
@@ -222,7 +222,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
         super(parameters);
-        optimization.pushFanoutLimit(2, FanoutLimitType.TREE);
+        //optimization.pushFanoutLimit(4, FanoutLimitType.TREE);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
 
@@ -275,6 +275,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 colSumPreFix[j * (cols / initKerns) + idx] <== colmnSumVector[idx];
             }
         }
+        colSumPreFix = optimization.limitFanout(colSumPreFix, 4);
         DFEComplex[] colSumFix = new DFEComplex[cols];
         for (int j = 0; j < cols; j++) {
             colSumFix[j] = cplxFix64Type.newInstance(this);
@@ -349,7 +350,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
 
         io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type, isCalc);
-        optimization.popFanoutLimit();
+        //optimization.popFanoutLimit();
     }
 
 }
