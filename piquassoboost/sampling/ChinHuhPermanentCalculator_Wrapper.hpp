@@ -120,8 +120,6 @@ ChinHuhPermanentCalculator_wrapper_new(PyTypeObject *type, PyObject *args, PyObj
     ChinHuhPermanentCalculator_wrapper *self;
     self = (ChinHuhPermanentCalculator_wrapper *) type->tp_alloc(type, 0);
     if (self != NULL) {}
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
-        inc_dfe_lib_count();
 
     self->matrix = NULL;
     self->input_state = NULL;
@@ -190,6 +188,8 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
     // create instance of class ChinHuhPermanentCalculator
     if (self->lib == ChinHuh) self->calculator = create_ChinHuhPermanentCalculator();
     else if (self->lib == GlynnRep) self->calculatorRep = new pic::GlynnPermanentCalculatorRepeated();
+    else if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
+        inc_dfe_lib_count();
 
     return 0;
 }
