@@ -581,6 +581,9 @@ calculate_outputs_probability(
     } else if (lib == GlynnRepSingleDFE || lib == GlynnRepDualDFE) {
         GlynnPermanentCalculatorRepeated_DFE(
             interferometer_mtx, input_state, output_state, permanent, lib == GlynnRepDualDFE); 
+    } else if (lib == GlynnRepMultiSingleDFE || lib == GlynnRepMultiDualDFE) {
+        GlynnPermanentCalculatorRepeatedMulti_DFE(
+            interferometer_mtx, input_state, output_state, permanent, lib == GlynnRepMultiDualDFE); 
     }
 
     double probability =
