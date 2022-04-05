@@ -54,14 +54,18 @@ typedef void (*RUNFUNC)(max_engine_t*, void*);
 static bool initialized = false;
 static max_file_t* mavMaxFile;
 static void (*freeFunc)(void);
+static max_group_t* group = NULL;
 #if defined(DUAL) && !defined(MAXELER_SIM)
-typedef void (*RUNARRAYFUNC)(max_engarray_t*, void**);
-static max_engarray_t* array = NULL;
-static RUNARRAYFUNC runArrayFunc;
+//typedef void (*RUNARRAYFUNC)(max_engarray_t*, void**);
+//static max_engarray_t* array = NULL;
+//static RUNARRAYFUNC runArrayFunc;
+typedef max_run_t*(*RUNGROUPFUNC)(max_group_t*, void*);
 #else
-static max_engine_t* mavDFE;
-static RUNFUNC runFunc;
+//static max_engine_t* mavDFE;
+//static RUNFUNC runFunc;
+typedef void(*RUNGROUPFUNC)(max_group_t*, void*);
 #endif
+static RUNGROUPFUNC runFunc;
 
 #ifdef USE_FLOAT
 void releive_DFEF();
@@ -83,29 +87,29 @@ void initialize_DFE()
 #ifndef DUAL
 #ifdef MAXELER_SIM
 #ifdef USE_FLOAT
-    initFunc = PermanentGlynn_singleSIMF_init, runFunc = (RUNFUNC)PermanentGlynn_singleSIMF_run, freeFunc = PermanentGlynn_singleSIMF_free;
+    initFunc = PermanentGlynn_singleSIMF_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleSIMF_run_group, freeFunc = PermanentGlynn_singleSIMF_free;
 #else
-    initFunc = PermanentGlynn_singleSIM_init, runFunc = (RUNFUNC)PermanentGlynn_singleSIM_run, freeFunc = PermanentGlynn_singleSIM_free;
+    initFunc = PermanentGlynn_singleSIM_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleSIM_run_group, freeFunc = PermanentGlynn_singleSIM_free;
 #endif
 #else
 #ifdef USE_FLOAT
-    initFunc = PermanentGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFEF_run, freeFunc = PermanentGlynn_singleDFEF_free;
+    initFunc = PermanentGlynn_singleDFEF_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFEF_run_group, freeFunc = PermanentGlynn_singleDFEF_free;
 #else
-    initFunc = PermanentGlynn_singleDFE_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFE_run, freeFunc = PermanentGlynn_singleDFE_free;
+    initFunc = PermanentGlynn_singleDFE_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFE_run_group, freeFunc = PermanentGlynn_singleDFE_free;
 #endif
 #endif  
 #else
 #ifdef MAXELER_SIM
 #ifdef USE_FLOAT
-    initFunc = PermanentGlynn_dualSIMF_init, runFunc = (RUNFUNC)PermanentGlynn_dualSIMF_run, freeFunc = PermanentGlynn_dualSIMF_free;
+    initFunc = PermanentGlynn_dualSIMF_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_dualSIMF_run_group, freeFunc = PermanentGlynn_dualSIMF_free;
 #else
-    initFunc = PermanentGlynn_dualSIM_init, runFunc = (RUNFUNC)PermanentGlynn_dualSIM_run, freeFunc = PermanentGlynn_dualSIM_free;
+    initFunc = PermanentGlynn_dualSIM_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_dualSIM_run_group, freeFunc = PermanentGlynn_dualSIM_free;
 #endif
 #else
 #ifdef USE_FLOAT
-    initFunc = PermanentGlynn_dualDFEF_init, runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFEF_run_array, freeFunc = PermanentGlynn_dualDFEF_free;
+    initFunc = PermanentGlynn_dualDFEF_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_dualDFEF_run_group_nonblock, freeFunc = PermanentGlynn_dualDFEF_free; //runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFEF_run_array
 #else
-    initFunc = PermanentGlynn_dualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFE_run_array, freeFunc = PermanentGlynn_dualDFE_free;
+    initFunc = PermanentGlynn_dualDFE_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_dualDFE_run_group_nonblock, freeFunc = PermanentGlynn_dualDFE_free; //runArrayFunc = (RUNARRAYFUNC)PermanentGlynn_dualDFE_run_array
 #endif
 #endif  
 #endif
@@ -118,10 +122,11 @@ void initialize_DFE()
 
   if (!initFunc) return;
   mavMaxFile = initFunc();
+  group = max_load_group(mavMaxFile, MAXOS_EXCLUSIVE, "local:*", 2);
 #if defined(DUAL) && !defined(MAXELER_SIM)
-  array = max_load_array(mavMaxFile, 2, "*");
+  //array = max_load_array(mavMaxFile, 2, "*");
 #else
-  mavDFE = max_load(mavMaxFile, "local:*");
+  //mavDFE = max_load(mavMaxFile, "local:*");
 #endif
   initialized = true;
 #ifdef DEBUG
@@ -152,10 +157,11 @@ void releive_DFE()
 
 	// unload the max files from the devices
   initialized = false;
+  max_unload_group(group);
 #if defined(DUAL) && !defined(MAXELER_SIM)
-  max_unload_array(array);
+  //max_unload_array(array);
 #else
-  max_unload(mavDFE);
+  //max_unload(mavDFE);
 #endif
   max_file_free(mavMaxFile);
   freeFunc();  
@@ -277,9 +283,14 @@ union {
 #endif
 
 #if defined(DUAL) && !defined(MAXELER_SIM)
-    runArrayFunc(array, arractions);
+    //runArrayFunc(array, arractions);
+    max_run_t* run0 = runFunc(group, arractions[0]), *run1 = runFunc(group, arractions[1]); max_wait(run0); max_wait(run1);
+    //max_actions_t* dualactions[2] = { PermanentGlynn_dualDFE_convert(mavMaxFile, arractions[0]), PermanentGlynn_dualDFE_convert(mavMaxFile, arractions[1]) }; 
+    //max_run_group_multi(group, dualactions);
+    //max_actions_free(dualactions[0]), max_actions_free(dualactions[1]);
 #else
-    runFunc(mavDFE, &actions);
+    //runFunc(mavDFE, &actions);
+    runFunc(group, &actions);
 #endif
 
 #ifdef DEBUG
