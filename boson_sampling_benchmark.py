@@ -5,8 +5,12 @@ import numpy as np
 
 import piquasso as pq
 from piquassoboost.sampling.BosonSamplingSimulator import BosonSamplingSimulator
-from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE
+from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE, GeneralizedCliffordsSimulationStrategyMultiSingleDFE, GeneralizedCliffordsSimulationStrategyMultiDualDFE
 
+def checkSim():
+  import os
+  return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
+hasSim = checkSim(); hasDFE = not hasSim
 
 def print_histogram():
     def func(samples):
@@ -235,19 +239,19 @@ def boson_sampling_Clifford_GlynnRepDualDFE(Arep, input_state, shots):
   samplers[3].simulation_strategy.seed(seed)
   return samplers[3].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepMultiSingleDFE(Arep, input_state, shots):
-  if samplers[4] is None: samplers[4] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategySingleDFE(Arep))
+  if samplers[4] is None: samplers[4] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiSingleDFE(Arep))
   else: samplers[4].simulation_strategy.interferometer_matrix = Arep
   samplers[4].simulation_strategy.seed(seed)
   return samplers[4].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
-  if samplers[5] is None: samplers[5] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDualDFE(Arep))
+  if samplers[5] is None: samplers[5] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiDualDFE(Arep))
   else: samplers[5].simulation_strategy.interferometer_matrix = Arep
   samplers[5].simulation_strategy.seed(seed)
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
 
-largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) + ((permanent_repeated, permanent_square_repeated) if False else ())
-samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE)
+largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) + ((permanent_Glynn_DFE, permanent_Glynn_DFEDual) if hasSim else ()) + ((permanent_repeated, permanent_square_repeated) if False else ())
+samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh, boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE) + ((boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else ())
 def verify():
   ERRBOUND = 1e-10
   nmax = DEPTH
@@ -269,9 +273,9 @@ def verify():
         res[i].append(func(A[dim], input_states[dim], output_states[dim]))
         #print(func(np.ones((dim, dim), dtype=np.complex128)*1j, np.ones(dim, dtype=np.int64)*2, np.ones(dim, dtype=np.int64)*2))
         print(dim, func.__name__, res[i][-1])
-    #for i, func in enumerate(samplingFuncs):
-    #  for dim in range(1, nmax+1):
-    #    print(dim, func.__name__, func(A[dim], input_states[dim], shots))
+    for i, func in enumerate(samplingFuncs):
+      for dim in range(1, nmax+1):
+        print(dim, func.__name__, func(A[dim], input_states[dim], shots))
     for i in range(len(res[0])):
       assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
       assert all(abs((res[0][i] - x[i]) / abs(res[0][i])) < ERRBOUND for x in res[1:])
