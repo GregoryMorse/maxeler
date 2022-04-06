@@ -28,6 +28,18 @@ def print_histogram():
 
     return func
     
+"""
+shots = 100
+
+with pq.Program() as program:
+    pq.Q() | pq.StateVector(np.ones(dim))
+    pq.Q() | pq.Interferometer(U)
+
+    pq.Q() | pq.Sampling()
+
+simulator = pqb.BoostedSamplingSimulator(d=dim)
+"""
+    
 def test_complex_sampling(print_histogram):
     """
     NOTE: Expected distribution probabilities:
@@ -84,7 +96,9 @@ def get_bincoeff_magic():
 
 #test_complex_sampling(print_histogram())
 
-DEPTH = 7
+DEPTH = 8 if hasSim else 30
+saveFolder = "resultsbs"
+
 
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
@@ -190,12 +204,12 @@ from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalc
 calculators = [None, None, None, None, None, None]
 
 def permanent_Glynn_Cpp(Arep, input_state, output_state):
-  if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
+  #if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   if calculators[0] is None: calculators[0] = GlynnRepeatedPermanentCalculator(Arep, input_state, output_state)
   else: calculators[0].matrix, calculators[0].input_state, calculators[0].output_state = Arep, input_state, output_state  
   return calculators[0].calculate()
 def permanent_ChinHuh_calculator(Arep, input_state, output_state):
-  if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
+  #if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
   if calculators[1] is None: calculators[1] = ChinHuhPermanentCalculator(Arep, input_state, output_state)
   else: calculators[1].matrix, calculators[1].input_state, calculators[1].output_state = Arep, input_state, output_state  
   return calculators[1].calculate()
@@ -249,34 +263,130 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   samplers[5].simulation_strategy.seed(seed)
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
-
-largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) + ((permanent_Glynn_DFE, permanent_Glynn_DFEDual) if hasSim else ()) + ((permanent_repeated, permanent_square_repeated) if False else ())
-samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh, boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE) + ((boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else ())
-def verify():
+testPermFuncs = (permanent_repeated, permanent_square_repeated)
+dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
+largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
+testSamplingFuncs = ()
+dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
+samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh) + dfeSamplingFuncs
+def load_test_data():
+  nmax = 40
+  randfuncs = (unitary_group.rvs, )#generate_random_unitary):
+  import os, pickle
+  if not os.path.isdir(saveFolder): os.mkdir(saveFolder)
+  if os.path.isfile(os.path.join(saveFolder, "repmatrices.bin")):
+    with open(os.path.join(saveFolder, "repmatrices.bin"), "rb") as f: 
+      gen_test_data = pickle.load(f)
+  else:
+    # generate the random matrix
+    gen_test_data = {rf.__name__:{dim:(np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else rf(dim),
+      {d:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(d, [1/dim]*dim) for d in range(nmax+1)},
+      {d:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(d, [1/dim]*dim) for d in range(nmax+1)}
+         ) for dim in range(nmax+1)} for rf in randfuncs}
+    with open(os.path.join(saveFolder, "repmatrices.bin"), "wb") as f:
+      pickle.dump(gen_test_data, f)
+  return gen_test_data
+def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column testing
   ERRBOUND = 1e-10
-  nmax = DEPTH
-  shots = 10
-  # generate the random matrix
-  for gen_test_data in (unitary_group.rvs, ):#generate_random_unitary):
-    A = {dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else gen_test_data(dim) for dim in range(nmax+1)}
-    extra = 4
-    input_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim+extra, [1/dim]*dim) for dim in range(nmax+1)}
-    #input_states = {dim:np.ones(dim, dtype=np.int64) for dim in range(nmax+1)}
-    #input_states[5] = np.array([1, 1, 1, 1, 3], dtype=np.int64)
-    output_states = {dim:np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(dim+extra, [1/dim]*dim) for dim in range(nmax+1)} #np.ones(dim, dtype=np.int64)
-    #for x in output_states: np.random.shuffle(output_states[x])
-    #print(input_states, output_states)
-    res = [[] for _ in largePermFuncs]
-    for i, func in enumerate(largePermFuncs):
-      #print("Verifying", func.__name__)
-      for dim in range(nmax+1):
-        res[i].append(func(A[dim], input_states[dim], output_states[dim]))
-        #print(func(np.ones((dim, dim), dtype=np.complex128)*1j, np.ones(dim, dtype=np.int64)*2, np.ones(dim, dtype=np.int64)*2))
-        print(dim, func.__name__, res[i][-1])
-    for i, func in enumerate(samplingFuncs):
-      for dim in range(1, nmax+1):
-        print(dim, func.__name__, func(A[dim], input_states[dim], shots))
-    for i in range(len(res[0])):
-      assert all(abs(res[0][i] - x[i]) < ERRBOUND for x in res[1:])
-      assert all(abs((res[0][i] - x[i]) / abs(res[0][i])) < ERRBOUND for x in res[1:])
-verify()
+  testFuncs = testPermFuncs if shots is None else testSamplingFuncs
+  dfeFuncs = dfePermFuncs if shots is None else dfeSamplingFuncs
+  largeFuncs = largePermFuncs if shots is None else samplingFuncs
+  suffix = str(photons) + ("" if shots is None else ("-" + str(shots)))
+  verdata = "repverifydata" + suffix + ".bin"
+  resdata = "represultdata" + suffix + ".bin"
+  xaxis = list(range(nmax+1))
+  gen_test_data = load_test_data()
+  import os, pickle, timeit
+  if os.path.isfile(os.path.join(saveFolder, verdata)):
+    with open(os.path.join(saveFolder, verdata), "rb") as f:
+      res = pickle.load(f)
+  else: res = {}
+  if os.path.isfile(os.path.join(saveFolder, resdata)):
+    with open(os.path.join(saveFolder, resdata), "rb") as f:
+      results = pickle.load(f)
+  else: results = {}
+  for key in gen_test_data:
+    A = gen_test_data[key]
+    if not key in res: res[key] = {}
+    if not key in results: results[key] = {}
+    for func in testFuncs:
+      if func.__name__ in res[key]: del res[key][func.__name__]
+    for func in largeFuncs:
+      if not func.__name__ in res[key]: res[key][func.__name__] = []
+      if not func.__name__ in results[key]: results[key][func.__name__] = []
+      print("Verifying and Testing", func.__name__)
+      for dim in xaxis:
+        if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
+          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim:# or func in dfeFuncs:
+          mplier = 5 if photons < 8 else 1
+          v = [None]
+          #if func in dfeFuncs: print(check_power())
+          def save_result():
+              if shots is None: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+              else: v[0] = func(A[dim][0], A[dim][1][photons], shots)
+          r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
+          #if func in dfeFuncs: print(check_power())
+          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
+          else: res[key][func.__name__][dim] = v[0]
+          if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
+          else: results[key][func.__name__][dim] = r
+          if dim < 24: print(dim, v[0], r)
+          with open(os.path.join(saveFolder, verdata), "wb") as f:
+            pickle.dump(res, f)
+          with open(os.path.join(saveFolder, resdata), "wb") as f:
+            pickle.dump(results, f)        
+        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
+    if shots is None:
+      with open(os.path.join(saveFolder, "repverifydata.csv"), "w") as f:
+          import csv
+          writer = csv.writer(f, delimiter='\t')
+          writer.writerow(["Absolute Error compared to " + largeFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largeFuncs] for i in xaxis])
+          writer.writerow(["Relative Error compared to " + largeFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for x in largeFuncs] for i in xaxis])
+          writer.writerow(["Permanent Computation Raw Results"])
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [res[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
+          for dim in range(nmax+1):
+            writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
+            if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
+            for i in range(dim):
+              writer.writerow([i] + [A[dim][0][i][j] for j in range(dim)])
+            writer.writerow(["Random multinomial distributed input states"])
+            for i in range(dim): writer.writerow([i, *A[dim][1][i]])
+            writer.writerow(["Random multinomial distributed output states"])
+            for i in range(dim): writer.writerow([i, *A[dim][2][i]])
+    with open(os.path.join(saveFolder, "represultdata" + suffix + ".csv"), "w") as f:
+      import csv
+      writer = csv.writer(f, delimiter='\t')
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
+
+    #for i in xaxis:
+    #  assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
+    #  assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time (log10 s)")
+    for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
+        for i, val in enumerate(vals):
+          ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
+        ax1.set_xlabel("Size (n=|A|)")  
+        ax1.set_yscale('log', base=10)
+        ax1.set_ylabel(ylbl)
+        ax1.legend()
+        ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax1.set_title("Repeated Permanent Computation of Square Matrix A" + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))))
+        fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
+        import tikzplotlib #pip install tikzplotlib
+        #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
+        tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
+verify_timing(DEPTH, 10, None)
+verify_timing(DEPTH, 10, 10)
