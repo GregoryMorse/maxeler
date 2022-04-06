@@ -1,5 +1,10 @@
+#pip install numpy, scipy, piquasso, thewalrus, matplotlib, tikzplotlib
 import numpy as np
-from thewalrus.libwalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
+#from thewalrus.libwalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
+#from thewalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
+from thewalrus import perm
+def perm_complex(A, quad): return perm(A, "ryser")
+def perm_BBFG_complex(A): return perm(A, "bbfg")
 from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnPermanent, GlynnPermanentInf, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF
 import piquasso as pq
 import random
@@ -13,6 +18,7 @@ def checkSim():
 hasSim = checkSim(); hasDFE = not hasSim
 
 DEPTH = 12 if hasSim else 40
+saveFolder = "results"
 
 def pairwise(t):
     return zip(t[::2], t[1::2])
@@ -308,13 +314,13 @@ def load_test_data():
   nmax = 40
   randfuncs = (unitary_group.rvs, )#generate_random_unitary):
   import os, pickle
-  if os.path.isfile("matrices.bin"):
-    with open("matrices.bin", "rb") as f: 
+  if os.path.isfile(os.path.join(saveFolder, "matrices.bin")):
+    with open(os.path.join(saveFolder, "matrices.bin"), "rb") as f: 
       gen_test_data = pickle.load(f)
   else:
     # generate the random matrix
     gen_test_data = {rf.__name__:{dim:np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else rf(dim) for dim in range(nmax+1)} for rf in randfuncs}
-    with open("matrices.bin", "wb") as f:
+    with open(os.path.join(saveFolder, "matrices.bin"), "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
 def verify_timing(nmax, batchsize=1):
@@ -325,12 +331,12 @@ def verify_timing(nmax, batchsize=1):
   xaxis = list(range(nmax+1))
   gen_test_data = load_test_data()
   import os, pickle, timeit
-  if os.path.isfile(verdata):
-    with open(verdata, "rb") as f:
+  if os.path.isfile(os.path.join(saveFolder, verdata)):
+    with open(os.path.join(saveFolder, verdata), "rb") as f:
       res = pickle.load(f)
   else: res = {}
-  if os.path.isfile(resdata):
-    with open(resdata, "rb") as f:
+  if os.path.isfile(os.path.join(saveFolder, resdata)):
+    with open(os.path.join(saveFolder, resdata), "rb") as f:
       results = pickle.load(f)
   else: results = {}
   for key in gen_test_data:
@@ -367,13 +373,13 @@ def verify_timing(nmax, batchsize=1):
           else: results[key][func.__name__][dim] = r
           if dim < 24: print(dim, v[0], r)
           if batchsize == 1:
-            with open(verdata, "wb") as f:
+            with open(os.path.join(saveFolder, verdata), "wb") as f:
               pickle.dump(res, f)
-          with open(resdata, "wb") as f:
+          with open(os.path.join(saveFolder, resdata), "wb") as f:
             pickle.dump(results, f)        
         if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
     if batchsize == 1:
-      with open("verifydata.csv", "w") as f:
+      with open(os.path.join(saveFolder, "verifydata.csv"), "w") as f:
           import csv
           writer = csv.writer(f, delimiter='\t')
           writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
@@ -390,7 +396,7 @@ def verify_timing(nmax, batchsize=1):
             if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
             for i in range(dim):
               writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
-    with open("resultdata" + suffix + ".csv", "w") as f:
+    with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs if f != permanent_Glynn_Cpp_Inf])
@@ -415,11 +421,11 @@ def verify_timing(nmax, batchsize=1):
         ax1.legend()
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.set_title("Permanent Computation of Square Matrix A" + ("" if batchsize==1 else (" Batch=" + str(batchsize))))
-        fig.savefig(fname + ".svg", format="svg")
+        fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
-        tikzplotlib.save(fname + ".tex")
+        tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         
 verify_timing(DEPTH, 1)
-for batch_size in (2, 3, 4, 5, 10, 20, 25, 50, 100):
+for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
     verify_timing(DEPTH if hasSim else 22, batch_size)
