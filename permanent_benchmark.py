@@ -314,6 +314,7 @@ def load_test_data():
   nmax = 40
   randfuncs = (unitary_group.rvs, )#generate_random_unitary):
   import os, pickle
+  if not os.path.isdir(saveFolder): os.mkdir(saveFolder)
   if os.path.isfile(os.path.join(saveFolder, "matrices.bin")):
     with open(os.path.join(saveFolder, "matrices.bin"), "rb") as f: 
       gen_test_data = pickle.load(f)
