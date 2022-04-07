@@ -9,11 +9,6 @@
 #include <tbb/tbb.h>
 #endif
 
-// the maximal dimension of matrix to be ported to FPGA for permanent calculation
-#define MAX_FPGA_DIM 8*5
-#define MAX_SINGLE_FPGA_DIM 4*10
-#define BASEKERNPOW2 2
-
 namespace pic {
 
 /// @brief Structure type representing 16 byte complex numbers
@@ -40,8 +35,10 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 
 void inc_dfe_lib_count();
 void dec_dfe_lib_count();
-void init_dfe_lib(int choice, int dual);
+int init_dfe_lib(int choice, int dual);
 void lock_lib();
 void unlock_lib();
+extern "C" size_t dfe_mtx_size;
+extern "C" size_t dfe_basekernpow2;
 
 #endif
