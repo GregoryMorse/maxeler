@@ -141,12 +141,11 @@ public class InitializeColSumDFEKernel extends Kernel {
             if (dual) isInitNeg = isInitNeg | (dualInit & (((gcode & 1) == 0) ^ ~isLocal)) | dualPreInit;
             toAdd[kern] <== control.mux(isInit.cat((dual || ((kern & 1) != 0) ? isNeg : isNegEven) | isInitNeg), choices);
         }
-        optimization.pushNoPipelining();
+        if (useFloat) optimization.pushNoPipelining();
         DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = firstTick ? constant.zero(allKernsType) : stream.offset(allColSums, -1);
-        if (useFloat) allColSums <== prevColmnSumVector + toAdd;
-        optimization.popNoPipelining();
+        allColSums <== prevColmnSumVector + toAdd;
+        if (useFloat) optimization.popNoPipelining();
 
-        if (!useFloat) allColSums <== prevColmnSumVector + toAdd;
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
             io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
