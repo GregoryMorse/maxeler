@@ -370,7 +370,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
     #  assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
+    verinfo = None if shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time (log10 s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
         fig = plt.figure()
