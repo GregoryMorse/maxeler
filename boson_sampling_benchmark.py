@@ -318,7 +318,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim:# or func in dfeFuncs:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
           mplier = 5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
@@ -370,7 +370,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
     #  assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    verinfo = None if shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
+    verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time (log10 s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
         fig = plt.figure()
@@ -383,10 +383,12 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         ax1.set_ylabel(ylbl)
         ax1.legend()
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax1.set_title("Repeated Permanent Computation of Square Matrix A" + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))))
+        ax1.set_title(("Repeated Permanent of Square Matrix A" if shots is None else "Boson Sampling of Interferometer Matrix A") + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))))
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
-verify_timing(DEPTH, 10, None)
-verify_timing(DEPTH, 10, 10)
+#verify_timing(DEPTH, 10, None)
+#verify_timing(DEPTH, 10, 10)
+verify_timing(DEPTH, 20, None)
+verify_timing(DEPTH, 20, 10)
