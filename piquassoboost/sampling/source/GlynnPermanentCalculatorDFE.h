@@ -38,11 +38,10 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 #define DFE_FLOAT 1
 #define DFE_REP 2
 
-extern "C" std::mutex libmutex;
 void inc_dfe_lib_count();
 void dec_dfe_lib_count();
-void unload_dfe_lib();
 void init_dfe_lib(int choice, int dual);
-
+void lock_lib();
+void unlock_lib();
 
 #endif
