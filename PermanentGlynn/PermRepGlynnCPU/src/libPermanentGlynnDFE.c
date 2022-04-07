@@ -6,20 +6,24 @@
 #ifdef MAXELER_SIM
 #ifndef DUAL
 #include "PermRepGlynn_singleSIM.h"
+#define MTX_SIZE PermRepGlynn_singleSIM_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleSIM_BASEKERNPOW2
 #else
 #include "PermRepGlynn_dualSIM.h"
+#define MTX_SIZE PermRepGlynn_dualSIM_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualSIM_BASEKERNPOW2
 #endif
 #else
 #ifndef DUAL
 #include "PermRepGlynn_singleDFE.h"
+#define MTX_SIZE PermRepGlynn_singleDFE_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleDFE_BASEKERNPOW2
 #else
 #include "PermRepGlynn_dualDFE.h"
+#define MTX_SIZE PermRepGlynn_dualDFE_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualDFE_BASEKERNPOW2
 #endif
 #endif
-
-#define SIZE 8
-
-#define BASEKERNPOW2 3
 
 
 /// @brief Structure type representing 16 byte complex numbers
@@ -38,28 +42,6 @@ typedef struct ComplexFix16 {
 } ComplexFix16;
 
 
-/// @brief Structure type representing 32 byte complex numbers
-typedef struct Complex32 {
-  /// the real part of a complex number
-  long double real;
-  /// the imaginary part of a complex number
-  long double imag;
-} Complex32;
-
-
-
-/**
-@brief Calculates the n-th power of 2.
-@param n An natural number
-@return Returns with the n-th power of 2.
-*/
-unsigned long long power_of_2(unsigned long long n) {
-  if (n == 0) return 1;
-  if (n == 1) return 2;
-
-  return 2 * power_of_2(n-1);
-}
-
 
 /// static variable to indicate whether DFE is initialized
 typedef void (*RUNFUNC)(max_engine_t*, void*);
@@ -67,9 +49,16 @@ static bool initialized = false;
 static max_file_t* mavMaxFile;
 static void (*freeFunc)(void);
 #if defined(DUAL) && !defined(MAXELER_SIM)
-typedef void (*RUNARRAYFUNC)(max_engarray_t*, void**);
-static max_engarray_t* array = NULL;
-static RUNARRAYFUNC runArrayFunc;
+//typedef void (*RUNARRAYFUNC)(max_engarray_t*, void**);
+//static max_engarray_t* array = NULL;
+//static RUNARRAYFUNC runArrayFunc;
+static max_group_t* group = NULL;
+typedef max_run_t*(*RUNGROUPFUNC)(max_group_t*, void*);
+static RUNGROUPFUNC runFunc;
+#elif !defined(MAXELER_SIM)
+static max_group_t* group = NULL;
+typedef void(*RUNGROUPFUNC)(max_group_t*, void*);
+static RUNGROUPFUNC runFunc;
 #else
 static max_engine_t* mavDFE;
 static RUNFUNC runFunc;
@@ -79,22 +68,22 @@ void releiveRep_DFE();
 /**
 @brief Interface function to initialize DFE array
 */
-void initializeRep_DFE()
+int initializeRep_DFE(size_t* mtx_size, size_t* basekernpow2)
 {
 
-	if (initialized) return;
+	if (initialized) return 1;
   max_file_t* (*initFunc)(void) = NULL;
 #ifndef DUAL
 #ifdef MAXELER_SIM
     initFunc = PermRepGlynn_singleSIM_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIM_run, freeFunc = PermRepGlynn_singleSIM_free;
 #else
-    initFunc = PermRepGlynn_singleDFE_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFE_run, freeFunc = PermRepGlynn_singleDFE_free;
+    initFunc = PermRepGlynn_singleDFE_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFE_run_group, freeFunc = PermRepGlynn_singleDFE_free;
 #endif  
 #else
 #ifdef MAXELER_SIM
     initFunc = PermRepGlynn_dualSIM_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIM_run, freeFunc = PermRepGlynn_dualSIM_free;
 #else
-    initFunc = PermRepGlynn_dualDFE_init, runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFE_run_array, freeFunc = PermRepGlynn_dualDFE_free;
+    initFunc = PermRepGlynn_dualDFE_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFE_run_group_nonblock, freeFunc = PermRepGlynn_dualDFE_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFE_run_array
 #endif  
 #endif
 	// initialize the max file
@@ -104,19 +93,27 @@ void initializeRep_DFE()
 #endif
 	
 
-  if (!initFunc) return;
+  if (!initFunc) return 0;
   mavMaxFile = initFunc();
-#if defined(DUAL) && !defined(MAXELER_SIM)
-  array = max_load_array(mavMaxFile, 2, "*");
+  if (!mavMaxFile) return 0;
+//#if defined(DUAL) && !defined(MAXELER_SIM)
+  //array = max_load_array(mavMaxFile, 2, "*");
+  //if (!array) { max_file_free(mavMaxFile); return 0; }
+#if !defined(MAXELER_SIM)
+  group = max_load_group(mavMaxFile, MAXOS_EXCLUSIVE, "local:*", 2);
+  if (!group) { max_file_free(mavMaxFile); return 0; }
 #else
   mavDFE = max_load(mavMaxFile, "local:*");
+  if (!mavDFE) { max_file_free(mavMaxFile); return 0; }
 #endif
   initialized = true;
 #ifdef DEBUG
 	printf("Maxfile uploaded to DFE\n");
 #endif
 
-
+    *mtx_size = MTX_SIZE;
+    *basekernpow2 = BASEKERNPOW2;
+    return 1;
 }
 
 
@@ -136,13 +133,15 @@ void releiveRep_DFE()
 
 	// unload the max files from the devices
   initialized = false;
-#if defined(DUAL) && !defined(MAXELER_SIM)
-  max_unload_array(array);
+//#if defined(DUAL) && !defined(MAXELER_SIM)
+  //max_unload_array(array);
+#if !defined(MAXELER_SIM)
+  max_unload_group(group);
 #else
   max_unload(mavDFE);
 #endif
   max_file_free(mavMaxFile);
-  freeFunc();  
+  freeFunc(); 
 }
 
 //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
@@ -158,6 +157,9 @@ long double dfeFloatToLD(__int128 res)
     long double* pld = (long double*)&res;
     return *pld;
 }
+
+#define INITS 4
+#define COLDIV (MTX_SIZE / INITS)
 
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
@@ -256,7 +258,13 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 
 #if defined(DUAL) && !defined(MAXELER_SIM)
-    runArrayFunc(array, arractions);
+    //runArrayFunc(array, arractions);
+    max_run_t* run0 = runFunc(group, arractions[0]), *run1 = runFunc(group, arractions[1]); max_wait(run0); max_wait(run1);
+    //max_actions_t* dualactions[2] = { PermanentGlynn_dualDFE_convert(mavMaxFile, arractions[0]), PermanentGlynn_dualDFE_convert(mavMaxFile, arractions[1]) }; 
+    //max_run_group_multi(group, dualactions);
+    //max_actions_free(dualactions[0]), max_actions_free(dualactions[1]);
+#elif !defined(MAXELER_SIM)
+    runFunc(group, &actions);
 #else
     runFunc(mavDFE, &actions);
 #endif
