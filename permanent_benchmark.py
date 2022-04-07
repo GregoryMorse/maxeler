@@ -376,7 +376,7 @@ def verify_timing(nmax, batchsize=1):
               else: v[0] = func([A[dim]] * batchsize)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfePermFuncs: print(check_power())
-          if batchsize != 1:             
+          if batchsize != 1:
             assert all(abs(res[key][func.__name__][dim] - x) < ERRBOUND for x in v[0])
             v[0] = v[0][0]
           else:
