@@ -156,41 +156,53 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
   return decPairToCplxFloat(decPairScalarDiv(tot, (1 << (n-1)))) #tot
 
 
-permanent_Glynn_calculator = GlynnPermanent( )
-permanent_Glynn_calculatorInf = GlynnPermanentInf( )
-permanent_Glynn_calculatorSingleDFE = GlynnPermanentSingleDFE( )
-permanent_Glynn_calculatorDualDFE = GlynnPermanentDualDFE( )
-permanent_Glynn_calculatorSingleDFEF = GlynnPermanentSingleDFEF( )
-permanent_Glynn_calculatorDualDFEF = GlynnPermanentDualDFEF( )
-def batch_adapter(Arep, batch, f):
-    if batch: return [f(A) for A in Arep]
+calculators = [None, None, None, None, None, None, None]
+def batch_adapter(Arep, f):
+    if isinstance(Arep, list): return [f(A) for A in Arep]
     else: return f(Arep)
 #https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
-def permanent_walrus_quad_Ryser(Arep, batch=False):
+def permanent_walrus_quad_Ryser(Arep):
     def f(Arep):
         return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #2*permanent_Glynn_Cpp
-    return batch_adapter(Arep, batch, f)
-def permanent_walrus_quad_BBFG(Arep, batch=False):
+    return batch_adapter(Arep, f)
+def permanent_walrus_quad_BBFG(Arep):
     def f(Arep):
         return 1+0j if len(Arep) == 0 else perm_BBFG_complex(Arep) #ChinHuh, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
-    return batch_adapter(Arep, batch, f)
-def permanent_Glynn_Cpp(Arep, batch=False): return permanent_Glynn_calculator.calculate(Arep, batch)
-def permanent_Glynn_Cpp_Inf(Arep, batch=False): return permanent_Glynn_calculatorInf.calculate(Arep, batch)
-def permanent_Glynn_SIM(Arep, batch=False): return permanent_Glynn_calculatorSingleDFE.calculate(Arep, batch)
-def permanent_Glynn_SIMDual(Arep, batch=False): return permanent_Glynn_calculatorDualDFE.calculate(Arep, batch)
-def permanent_Glynn_SIMF(Arep, batch=False): return permanent_Glynn_calculatorSingleDFEF.calculate(Arep, batch)
-def permanent_Glynn_SIMFDual(Arep, batch=False): return permanent_Glynn_calculatorDualDFEF.calculate(Arep, batch)
-def permanent_Glynn_DFE(Arep, batch=False): return permanent_Glynn_calculatorSingleDFE.calculate(Arep, batch)
-def permanent_Glynn_DFEDual(Arep, batch=False): return permanent_Glynn_calculatorDualDFE.calculate(Arep, batch)
-def permanent_Glynn_DFEF(Arep, batch=False): return permanent_Glynn_calculatorSingleDFEF.calculate(Arep, batch)
-def permanent_Glynn_DFEFDual(Arep, batch=False): return permanent_Glynn_calculatorDualDFEF.calculate(Arep, batch)
-def permanent_ChinHuh_calculator(Arep, batch=False): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
-  def f(Arep):
-      if len(Arep) == 0: return 1+0j
-      input_state = np.ones(Arep.shape[0], np.int64)
-      output_state = np.ones(Arep.shape[0], np.int64)
-      return ChinHuhPermanentCalculator( Arep, input_state, output_state ).calculate()
-  return batch_adapter(Arep, batch, f)
+    return batch_adapter(Arep, f)
+def permanent_Glynn_Cpp(Arep):
+    if calculators[0] is None: calculators[0] = GlynnPermanent(Arep)
+    else: calculators[0].matrix = Arep
+    return calculators[0].calculate()
+def permanent_Glynn_Cpp_Inf(Arep):
+    if calculators[1] is None: calculators[1] = GlynnPermanentInf(Arep)
+    else: calculators[1].matrix = Arep
+    return calculators[1].calculate()
+def permanent_Glynn_SIM(Arep): return permanent_Glynn_DFE(Arep)
+def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_DFEDual(Arep)
+def permanent_Glynn_SIMF(Arep): return permanent_Glynn_DFEF(Arep)
+def permanent_Glynn_SIMFDual(Arep): return permanent_Glynn_DFEFDual(Arep)
+def permanent_Glynn_DFE(Arep):
+    if calculators[2] is None: calculators[2] = GlynnPermanentSingleDFE(Arep)
+    else: calculators[2].matrix = Arep
+    return calculators[2].calculate()
+def permanent_Glynn_DFEDual(Arep):
+    if calculators[3] is None: calculators[3] = GlynnPermanentDualDFE(Arep)
+    else: calculators[3].matrix = Arep
+    return calculators[3].calculate()
+def permanent_Glynn_DFEF(Arep):
+    if calculators[4] is None: calculators[4] = GlynnPermanentSingleDFEF(Arep)
+    else: calculators[4].matrix = Arep
+    return calculators[4].calculate()
+def permanent_Glynn_DFEFDual(Arep):
+    if calculators[5] is None: calculators[5] = GlynnPermanentDualDFEF(Arep)
+    else: calculators[5].matrix = Arep
+    return calculators[5].calculate()
+def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
+    if calculators[6] is None: calculators[6] = ChinHuhPermanentCalculator(Arep, np.ones(Arep.shape[0], np.int64), np.ones(Arep.shape[0], np.int64))
+    else: calculators[6].matrix = Arep
+    def f(Arep):
+        return calculators[6].calculate()
+    return batch_adapter(Arep, f)
 
 dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
 largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
@@ -361,7 +373,7 @@ def verify_timing(nmax, batchsize=1):
           #    v[0] = func(A[dim])
           def save_result():
               if batchsize == 1: v[0] = func(A[dim])
-              else: v[0] = func([A[dim]] * batchsize, batch=True)
+              else: v[0] = func([A[dim]] * batchsize)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfePermFuncs: print(check_power())
           if batchsize != 1:             
