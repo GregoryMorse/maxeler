@@ -10,11 +10,6 @@
 #include <tbb/tbb.h>
 #endif
 
-// the maximal dimension of matrix to be ported to FPGA for permanent calculation
-#define MAX_FPGA_DIM 8*5
-#define MAX_SINGLE_FPGA_DIM 4*10
-#define BASEKERNPOW2 2
-
 namespace pic {
 
 void
