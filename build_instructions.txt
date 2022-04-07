@@ -4,30 +4,16 @@ Optional: boson_sampling_benchmark.py -> ~/piquassoboost/boson_sampling_benchmar
 PermanentGlynn/PermanentGlynnDFE/* -> ~/workspace/PermanentGlynnDFE/*
 PermanentGlynn/PermanentGlynnCPU/* -> ~/workspace/PermanentGlynnCPU/*
 PermanentGlynn/Makefile -> ~/workspace/Makefile
-piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp -> ~/piquassoboost/sampling/GlynnPermanentCalculator_Wrapper.hpp
-piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp
-piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.h
-piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp
-piquassoboost/sampling/source/GlynnPermanentCalculatorInf.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.h
-piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp
-piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.h -> ~/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.h
+piquassoboost/sampling/* -> ~/piquassoboost/sampling/*
+piquassoboost/sampling/source/* -> ~/piquassoboost/sampling/source/*
+piquassoboost/sampling/simulation_strategies/* -> ~/piquassoboost/sampling/simulation_strategies/source/*
+piquassoboost/sampling/simulation_strategies/source/* -> ~/piquassoboost/sampling/simulation_strategies/source/*
 
-1) Adjust CMake files of piquasso boost
-
-Add to CMakeLists.txt of piquassoboost under "list(APPEND piquassoboost_files":
-    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorInf.cpp
-    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorDFE.cpp
-    ${PROJECT_SOURCE_DIR}/piquassoboost/sampling/source/GlynnPermanentCalculatorRepeatedDFE.cpp
-
-Add to CMakeLists.txt of piquassoboost/ under "target_link_libraries(piquassoboost PRIVATE":
-    "/opt/anaconda3/lib/libgmp.so"
-    "/opt/anaconda3/lib/libmpfr.so"
+1) Adjust CMake file of piquasso boost for the new CPP and MPFR (per rp_DFE2)
     
-Add to CMakeLists.txt of piquassoboost/piquassoboost/sampling under "target_include_directories(Boson_Sampling_Utilities_wrapper PUBLIC":
-                            /opt/anaconda3/include
-
 2) Build piquassoboost
 cd piquassoboost
+python3 setup.py build_ext
 cd ..
 
 3) Build FPGA SIM and DFE:
