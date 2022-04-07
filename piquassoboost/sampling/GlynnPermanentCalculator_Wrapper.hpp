@@ -209,19 +209,18 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
         Py_ssize_t sz = PyList_Size(self->matrix);
         std::vector<pic::matrix> matrices;
         matrices.reserve(sz);
-        std::vector<pic::Complex16> ret;
-        ret.reserve(sz);
         for (Py_ssize_t i = 0; i < sz; i++) {
-            PyObject *o = PyList_GetItem(self->matrix, i);
+            PyObject *o = PyList_GetItem(self->matrix, i);            
             if ( PyArray_IS_C_CONTIGUOUS(o) ) {
                 Py_INCREF(o);
             } else {
                 o = PyArray_FROM_OTF(o, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
             }
+            PyList_SetItem(self->matrix, i, o);
             matrices.push_back(numpy2matrix(o));
-            Py_DECREF(o);
-            ret.push_back(pic::Complex16());
         }
+        std::vector<pic::Complex16> ret;
+        ret.resize(sz);
 #ifdef __DFE__        
         if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
             GlynnPermanentCalculatorBatch_DFE( matrices, ret, self->lib == GlynnDualDFE || self->lib == GlynnDualDFEF, self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF);
@@ -238,7 +237,9 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
         
         PyObject* list = PyList_New(0);
         for (size_t i = 0; i < ret.size(); i++) {
-            PyList_Append(list, Py_BuildValue("D", &ret[i]));
+            PyObject* o = Py_BuildValue("D", &ret[i]);
+            PyList_Append(list, o);
+            Py_DECREF(o);
         }
         return list;
     } else {
