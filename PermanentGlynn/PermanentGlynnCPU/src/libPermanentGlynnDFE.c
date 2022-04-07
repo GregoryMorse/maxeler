@@ -7,28 +7,44 @@
 #ifdef USE_FLOAT
 #ifndef DUAL
 #include "PermanentGlynn_singleSIMF.h"
+#define MTX_SIZE PermanentGlynn_singleSIMF_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_singleSIMF_BASEKERNPOW2
 #else
 #include "PermanentGlynn_dualSIMF.h"
+#define MTX_SIZE PermanentGlynn_dualSIMF_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_dualSIMF_BASEKERNPOW2
 #endif
 #else
 #ifndef DUAL
 #include "PermanentGlynn_singleSIM.h"
+#define MTX_SIZE PermanentGlynn_singleSIM_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_singleSIM_BASEKERNPOW2
 #else
 #include "PermanentGlynn_dualSIM.h"
+#define MTX_SIZE PermanentGlynn_dualSIM_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_dualSIM_BASEKERNPOW2
 #endif
 #endif
 #else
 #ifdef USE_FLOAT
 #ifndef DUAL
 #include "PermanentGlynn_singleDFEF.h"
+#define MTX_SIZE PermanentGlynn_singleDFEF_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_singleDFEF_BASEKERNPOW2
 #else
 #include "PermanentGlynn_dualDFEF.h"
+#define MTX_SIZE PermanentGlynn_dualDFEF_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_dualDFEF_BASEKERNPOW2
 #endif
 #else
 #ifndef DUAL
 #include "PermanentGlynn_singleDFE.h"
+#define MTX_SIZE PermanentGlynn_singleDFE_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_singleDFE_BASEKERNPOW2
 #else
 #include "PermanentGlynn_dualDFE.h"
+#define MTX_SIZE PermanentGlynn_dualDFE_MTXSIZE
+#define BASEKERNPOW2 PermanentGlynn_dualDFE_BASEKERNPOW2
 #endif
 #endif
 #endif
@@ -79,13 +95,13 @@ void releive_DFE();
 @brief Interface function to initialize DFE array
 */
 #ifdef USE_FLOAT
-void initialize_DFEF()
+int initialize_DFEF(size_t* mtx_size, size_t* basekernpow2)
 #else
-void initialize_DFE()
+int initialize_DFE(size_t* mtx_size, size_t* basekernpow2)
 #endif
 {
 
-	if (initialized) return;
+	if (initialized) return 1;
   max_file_t* (*initFunc)(void) = NULL;
 #ifndef DUAL
 #ifdef MAXELER_SIM
@@ -123,21 +139,26 @@ void initialize_DFE()
 #endif
 	
 
-  if (!initFunc) return;
+  if (!initFunc) return 0;
   mavMaxFile = initFunc();
+  if (!mavMaxFile) return 0;
 //#if defined(DUAL) && !defined(MAXELER_SIM)
   //array = max_load_array(mavMaxFile, 2, "*");
+  //if (!array) { max_file_free(mavMaxFile); return 0; }
 #if !defined(MAXELER_SIM)
   group = max_load_group(mavMaxFile, MAXOS_EXCLUSIVE, "local:*", 2);
+  if (!group) { max_file_free(mavMaxFile); return 0; }
 #else
   mavDFE = max_load(mavMaxFile, "local:*");
+  if (!mavDFE) { max_file_free(mavMaxFile); return 0; }
 #endif
   initialized = true;
 #ifdef DEBUG
 	printf("Maxfile uploaded to DFE\n");
 #endif
-
-
+    *mtx_size = MTX_SIZE;
+    *basekernpow2 = BASEKERNPOW2;
+    return 1;
 }
 
 
@@ -186,9 +207,8 @@ long double dfeFloatToLD(__int128 res)
     return *pld;
 }
 
-#define MAT_SIZE 40
 #define INITS 4
-#define COLDIV (MAT_SIZE / INITS)
+#define COLDIV (MTX_SIZE / INITS)
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
