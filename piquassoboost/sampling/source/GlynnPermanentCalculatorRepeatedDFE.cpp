@@ -8,7 +8,7 @@
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNREPDFE)(void);
+typedef int(*INITPERMGLYNNREPDFE)(size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
 CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE = NULL;
@@ -101,14 +101,18 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         matrix_rows[i] = ToComplex16(adjRow[i]);
     }
     Complex32 res;
-    int parity = 0;
+    //int parity = 0;
     uint64_t gcodeidx = 0, cur_multiplicity = 1;
+    std::vector<matrix> matrices;
+    std::vector<uint64_t> mplicity;
     while (true) {
-        Complex16 p;
-        GlynnPermanentCalculator_DFE(matrix_rows, p, useDual, false);
-        if (parity) res -= ToComplex32(p) * (long double)cur_multiplicity;
-        else res += ToComplex32(p) * (long double)cur_multiplicity;
-        parity = !parity;
+        //Complex16 p;
+        //GlynnPermanentCalculator_DFE(matrix_rows, p, useDual, false);
+        //if (parity) res -= ToComplex32(p) * (long double)cur_multiplicity;
+        //else res += ToComplex32(p) * (long double)cur_multiplicity;
+        //parity = !parity;
+        matrices.push_back(matrix_rows.copy());
+        mplicity.push_back(cur_multiplicity);    
         for (size_t i = curmp.size()-1; ; i--) {
           bool curdir = (gcodeidx & (1ULL << i)) == 0;
           if ((!curdir && curmp[i] != inp[i]) || (curdir && curmp[i] != -inp[i])) {
@@ -121,7 +125,17 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
             }
             gcodeidx ^= (1ULL << curmp.size()) - (1ULL << (i+1));        
             break;
-          } else if (i == 0) { perm = ToComplex16(res / (long double)(1ULL << mulsum)); return; }
+          } else if (i == 0) {
+              std::vector<Complex16> perms;
+              perms.resize(matrices.size());
+              GlynnPermanentCalculatorBatch_DFE(matrices, perms, useDual, false);
+              for (size_t i = 0; i < perms.size(); i++) {
+                  if (i & 1) res -= ToComplex32(perms[i]) * (long double)mplicity[i]; 
+                  else res += ToComplex32(perms[i]) * (long double)mplicity[i];
+              }
+              perm = ToComplex16(res / (long double)(1ULL << mulsum));
+              return;
+          }
         }
     }
 }
@@ -195,7 +209,7 @@ void
 GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
-    const std::lock_guard<std::mutex> lock(libmutex);
+    lock_lib();
     init_dfe_lib(DFE_REP, useDual);    
     int64_t photons = 0;
     for (size_t i = 0; i < input_state.size(); i++) {
@@ -204,6 +218,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     if (!calcPermanentGlynnRepDFE || photons < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
+      unlock_lib();
       return;
     }
     std::vector<uint8_t> rowchange_indices;
@@ -280,7 +295,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
       rowchange_indices.data(), photons, onerows, mplicity.data(), changecount, mulsum, &perm);
 
-
+    unlock_lib();
     return;
 }
 
