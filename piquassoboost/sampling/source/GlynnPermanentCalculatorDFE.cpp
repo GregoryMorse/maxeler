@@ -25,7 +25,7 @@
 
 
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNDFE)(void);
+typedef int(*INITPERMGLYNNDFE)(size_t*, size_t*);
 typedef void(*FREEPERMGLYNNDFE)(void);
 
 CALCPERMGLYNNDFE calcPermanentGlynnDFE = NULL;
@@ -37,13 +37,15 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
-typedef void(*INITPERMGLYNNREPDFE)(void);
+typedef int(*INITPERMGLYNNREPDFE)(size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
 extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE;
 extern "C" INITPERMGLYNNREPDFE initializeRep_DFE;
 extern "C" FREEPERMGLYNNREPDFE releiveRep_DFE;
 
+size_t dfe_mtx_size;
+size_t dfe_basekernpow2;
 
 void* handle = NULL;
 int isLastDual = 0;
@@ -73,11 +75,11 @@ void unload_dfe_lib()
     }
 }
 
-void init_dfe_lib(int choice, int dual) {
+int init_dfe_lib(int choice, int dual) {
     const std::lock_guard<std::recursive_mutex> lock(libmutex);
-    if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return;
-    if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return;
-    if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return;
+    if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return initialize_DFE(&dfe_mtx_size, &dfe_basekernpow2);
+    if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return initialize_DFEF(&dfe_mtx_size, &dfe_basekernpow2);
+    if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return initializeRep_DFE(&dfe_mtx_size, &dfe_basekernpow2);
     isLastDual = dual;
     unload_dfe_lib();
     const char* simLib = NULL, *lib = NULL;
@@ -103,17 +105,17 @@ void init_dfe_lib(int choice, int dual) {
           calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFE");
           initialize_DFE = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFE");
           releive_DFE = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFE");
-          if (initialize_DFE) initialize_DFE();
+          if (initialize_DFE) return initialize_DFE(&dfe_mtx_size, &dfe_basekernpow2);
       } else if (choice == DFE_FLOAT) {
           calcPermanentGlynnDFEF = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFEF");
           initialize_DFEF = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFEF");
           releive_DFEF = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFEF");
-          if (initialize_DFEF) initialize_DFEF();
+          if (initialize_DFEF) return initialize_DFEF(&dfe_mtx_size, &dfe_basekernpow2);
       } else if (choice == DFE_REP) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
-          if (initializeRep_DFE) initializeRep_DFE();
+          if (initializeRep_DFE) return initializeRep_DFE(&dfe_mtx_size, &dfe_basekernpow2);
       }
     }
 }
@@ -164,7 +166,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
-        matrices.begin()->rows < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
+        matrices.begin()->rows < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculator gpc;
       for (size_t i = 0; i < matrices.size(); i++)
           perm[i] = gpc.calculate(matrices[i]);
@@ -203,10 +205,10 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
 
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
-    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t max_dim = dfe_mtx_size;
     const size_t rows = matrices.begin()->rows;
-    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
-    const size_t numinits = 1 << BASEKERNPOW2;
+    const size_t numinits = 4;
+    const size_t max_fpga_cols = max_dim / numinits;
     const size_t actualinits = (matrices.begin()->cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
@@ -235,7 +237,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
     ComplexFix16* mtx_fix_data[numinits];
     //assert(mtxfix[i].stride == mtxfix[i].cols);
-    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
+    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= dfe_mtx_size);
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     if (useFloat)
         calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrices.begin()->rows, matrices.begin()->cols, matrices.size(), perm.data());
@@ -257,7 +259,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
-        matrix_mtx.rows < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
+        matrix_mtx.rows < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculator gpc;
       perm = gpc.calculate(matrix_mtx);
       unlock_lib();
@@ -292,10 +294,10 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
 
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
-    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t max_dim = dfe_mtx_size;
     const size_t rows = matrix_mtx.rows;
-    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
-    const size_t numinits = 1 << BASEKERNPOW2;
+    const size_t numinits = 4;
+    const size_t max_fpga_cols = max_dim / numinits;
     const size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
@@ -320,7 +322,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
     ComplexFix16* mtx_fix_data[numinits];
     //assert(mtxfix[i].stride == mtxfix[i].cols);
-    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= (dual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM));
+    //assert(matrix_mtx.rows == matrix_mtx.cols && matrix_mtx.rows <= dfe_mtx_size);
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     if (useFloat)
         calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, 1, &perm);
