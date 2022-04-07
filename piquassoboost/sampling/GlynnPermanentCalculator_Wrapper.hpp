@@ -116,9 +116,9 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
     else
 #endif
     // deallocate the instance of class N_Qubit_Decomposition
-    if (self->lib == GlynnCPP) release_GlynnPermanentCalculator( self->calculator.cpu_long_double );
+    if (self->lib == GlynnCPP && self->calculator.cpu_long_double != NULL) release_GlynnPermanentCalculator( self->calculator.cpu_long_double );
 #ifdef __MPFR__
-    else if (self->lib == GlynnInf && self->calculatorInf != NULL) release_GlynnPermanentCalculatorInf( self->calculator.cpu_inf );
+    else if (self->lib == GlynnInf && self->calculator.cpu_inf != NULL) release_GlynnPermanentCalculatorInf( self->calculator.cpu_inf );
 #endif
 
     // release numpy arrays
@@ -186,6 +186,9 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
     else if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
         inc_dfe_lib_count();
 #endif
+    else
+        PyErr_SetString(PyExc_Exception, "Wrong value set for lib.");
+
 
     return 0;
 }
@@ -228,7 +231,7 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
             for (size_t i = 0; i < matrices.size(); i++) {
                 if (self->lib == GlynnCPP) ret[i] = self->calculator.cpu_long_double->calculate(matrices[i]);
 #ifdef __MPFR__
-                else if (self->lib == GlynnINF) ret = self->calculator.cpu_inf->calculate(matrices[i]);
+                else if (self->lib == GlynnInf) ret[i] = self->calculator.cpu_inf->calculate(matrices[i]);
 #endif
             }
         }    
@@ -253,7 +256,7 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
 #endif
         if (self->lib == GlynnCPP) ret = self->calculator.cpu_long_double->calculate(matrix_mtx);
 #ifdef __MPFR__
-        else if (self->lib == GlynnINF) ret = self->calculator.cpu_inf->calculate(matrix_mtx);
+        else if (self->lib == GlynnInf) ret = self->calculator.cpu_inf->calculate(matrix_mtx);
 #endif
     
         return Py_BuildValue("D", &ret);
