@@ -53,12 +53,12 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
     }
-    if (photons < 1+BASEKERNPOW2 || (photons < 1+1+BASEKERNPOW2 && useDual)) { //compute with other method
+    if (photons < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       return;
     }
-    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t max_dim = dfe_mtx_size;
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
     for (size_t i = 0; i < output_state.size(); i++) {
       for (size_t j = output_state[i]; j != 0; j--) {
@@ -161,7 +161,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
     else if (input_state[i] > 1) mrows.push_back(i);
   }
   sort(mrows.begin(), mrows.end(), [&input_state](size_t i, size_t j) { return input_state[i] < input_state[j]; }); 
-  while (row_indices.size() < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
+  while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
     row_indices.push_back(mrows[0]);
     if (--input_state[mrows[0]] == 1) {
       row_indices.push_back(mrows[0]);
@@ -215,7 +215,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
     }
-    if (!calcPermanentGlynnRepDFE || photons < 1+BASEKERNPOW2+(useDual ? 1 : 0)) { //compute with other method
+    if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       unlock_lib();
@@ -255,11 +255,11 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
 
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
-    const size_t max_dim = useDual ? MAX_FPGA_DIM : MAX_SINGLE_FPGA_DIM;
+    const size_t max_dim = dfe_mtx_size;
     const size_t rows = matrix_mtx.rows;
-    const size_t max_fpga_cols = max_dim >> BASEKERNPOW2;
-    const size_t numinits = 1 << BASEKERNPOW2;
-    const size_t actualinits = (matrix_mtx.cols + 9) / 10;
+    const size_t numinits = 4;
+    const size_t max_fpga_cols = max_dim / numinits;
+    const size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
     for (size_t i = 0; i < actualinits; i++) {
