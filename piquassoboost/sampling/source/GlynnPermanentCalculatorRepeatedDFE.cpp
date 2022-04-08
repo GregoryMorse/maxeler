@@ -32,13 +32,23 @@ uint64_t binomial_gcode(uint64_t bc, int parity, uint64_t n, uint64_t k)
   return parity ? bc*k/(n-k+1) : bc*(n-k)/(k+1);
 }
 
-matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & rowchange_indices, std::vector<uint8_t> & colIndices)
+matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & rowchange_indices, std::vector<uint8_t> & colIndices, int transpose)
 {
     matrix matrix_rows(rowchange_indices.size(), colIndices.size());
-    for (size_t i = 0; i < colIndices.size(); i++) {
-        size_t offset = colIndices[i]*matrix_mtx.stride;
-        for (size_t j = 0; j < rowchange_indices.size(); j++) {
-            matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];
+    if (transpose) {
+        for (size_t i = 0; i < colIndices.size(); i++) {
+            size_t offset = colIndices[i]*matrix_mtx.stride;
+            for (size_t j = 0; j < rowchange_indices.size(); j++) {
+                matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];
+            }
+        }
+    } else {
+        for (size_t i = 0; i < rowchange_indices.size(); i++) {
+            size_t offset = rowchange_indices[i]*matrix_mtx.stride;
+            size_t newoffset = i*matrix_rows.stride;
+            for (size_t j = 0; j < colIndices.size(); j++) {
+                matrix_rows[newoffset+j] = matrix_mtx[offset+colIndices[j]];
+            }
         }
     }
     return matrix_rows;
@@ -50,23 +60,26 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     PicState_int64& output_state, Complex16& perm, int useDual)
 {
     int64_t photons = 0;
+    int transpose = 0;
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
+        transpose += ((input_state[i] != 0) ? 1 : 0) - ((output_state[i] != 0) ? 1 : 0);  
     }
     if (photons < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       return;
     }
+    transpose = transpose < 0;
     const size_t max_dim = dfe_mtx_size;
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
     for (size_t i = 0; i < output_state.size(); i++) {
-      for (size_t j = output_state[i]; j != 0; j--) {
+      for (size_t j = transpose ? output_state[i] : input_state[i]; j != 0; j--) {
         colIndices.push_back(i);
       }
     }  
     std::vector<uint8_t> rowchange_indices;
-    PicState_int64 adj_input_state = input_state.copy();  
+    PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();  
     std::vector<uint8_t> mrows;
     std::vector<uint8_t> row_indices;
     for (size_t i = 0; i < adj_input_state.size(); i++) {
@@ -81,7 +94,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
           mrows.erase(mrows.begin());
         }
     }
-    matrix matrix_rows = transpose_reorder_rows_cols(matrix_init, row_indices, colIndices);
+    matrix matrix_rows = transpose_reorder_rows_cols(matrix_init, row_indices, colIndices, transpose);
     uint8_t mulsum = 0;
     std::vector<uint64_t> curmp, inp;
     for (size_t i = 0; i < mrows.size(); i++) {
