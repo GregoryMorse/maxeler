@@ -126,7 +126,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         matrix_rows[i] = ToComplex16(adjRow[i]);
     Complex32 res;
     //int parity = 0;
-    uint64_t gcodeidx = 0, cur_multiplicity = 1;
+    uint64_t gcodeidx = 0, cur_multiplicity = 1, skipidx = (1ULL << curmp.size())-1;
     std::vector<matrix> matrices;
     std::vector<uint64_t> mplicity;
     while (true) {
@@ -136,40 +136,39 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         //else res += ToComplex32(p) * (long double)cur_multiplicity;
         //parity = !parity;
         matrices.push_back(matrix_rows.copy());
-        mplicity.push_back(cur_multiplicity);    
-        for (size_t i = curmp.size()-1; ; i--) {
-          bool curdir = (gcodeidx & (1ULL << i)) == 0;
-          if ((!curdir && curmp[i] != inp[i]) || (curdir && curmp[i] != -inp[i])) {
-            cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
-            curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
-            if (transpose) {
-                for (size_t j = 0; j < matrix_rows.cols; j++) {
-                    if (curdir) adjRow[j] -= 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
-                    else adjRow[j] += 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
-                }
-            } else {
-                size_t offset = mrows[i]*matrix_init.stride;
-                for (size_t j = 0; j < matrix_rows.cols; j++) {
-                    if (curdir) adjRow[j] -= 2 * matrix_init[offset+colIndices[j]];
-                    else adjRow[j] += 2 * matrix_init[offset+colIndices[j]];
-                }
+        mplicity.push_back(cur_multiplicity);
+        if (skipidx == 0) {
+            std::vector<Complex16> perms;
+            perms.resize(matrices.size());
+            GlynnPermanentCalculatorBatch_DFE(matrices, perms, useDual, false);
+            for (size_t i = 0; i < perms.size(); i++) {
+                if (i & 1) res -= ToComplex32(perms[i]) * (long double)mplicity[i]; 
+                else res += ToComplex32(perms[i]) * (long double)mplicity[i];
             }
-            for (size_t j = 0; j < matrix_rows.cols; j++)
-                matrix_rows[j] = ToComplex16(adjRow[j]);
-            gcodeidx ^= (1ULL << curmp.size()) - (1ULL << (i+1));        
-            break;
-          } else if (i == 0) {
-              std::vector<Complex16> perms;
-              perms.resize(matrices.size());
-              GlynnPermanentCalculatorBatch_DFE(matrices, perms, useDual, false);
-              for (size_t i = 0; i < perms.size(); i++) {
-                  if (i & 1) res -= ToComplex32(perms[i]) * (long double)mplicity[i]; 
-                  else res += ToComplex32(perms[i]) * (long double)mplicity[i];
-              }
-              perm = ToComplex16(res / (long double)(1ULL << mulsum));
-              return;
-          }
+            perm = ToComplex16(res / (long double)(1ULL << mulsum));
+            return;
         }
+        size_t i = __builtin_ctzll(skipidx);
+        bool curdir = (gcodeidx & (1ULL << i)) == 0;
+        cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
+        curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
+        if (transpose) {
+            for (size_t j = 0; j < matrix_rows.cols; j++) {
+                if (curdir) adjRow[j] -= 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
+                else adjRow[j] += 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
+            }
+        } else {
+            size_t offset = mrows[i]*matrix_init.stride;
+            for (size_t j = 0; j < matrix_rows.cols; j++) {
+                if (curdir) adjRow[j] -= 2 * matrix_init[offset+colIndices[j]];
+                else adjRow[j] += 2 * matrix_init[offset+colIndices[j]];
+            }
+        }
+        for (size_t j = 0; j < matrix_rows.cols; j++)
+            matrix_rows[j] = ToComplex16(adjRow[j]);
+        if ((!curdir && curmp[i] == inp[i]) || (curdir && curmp[i] == -inp[i])) skipidx ^= ((1ULL << (i+1)) - 1);
+        else skipidx ^= ((1ULL << i) - 1);
+        gcodeidx ^= (1ULL << i) - 1;       
     }
 }
 
@@ -217,21 +216,22 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   }
   if (mrows.size() == 0) { mplicity.push_back(1); return matrix_rows; }
   int parity = 0;
-  uint64_t gcodeidx = 0, cur_multiplicity = 1;
+  uint64_t gcodeidx = 0, cur_multiplicity = 1, skipidx = (1ULL << curmp.size())-1;
   while (true) {
     mplicity.push_back(cur_multiplicity);
-    parity = !parity;
-    for (size_t i = curmp.size()-1; ; i--) {
-      bool curdir = (gcodeidx & (1ULL << i)) == 0;
-      if ((!curdir && curmp[i] != inp[i]) || (curdir && curmp[i] != -inp[i])) {
-        cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
-        curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
-        rowchange_indices.push_back((onerows+i) | (curdir ? 0x80 : 0)); //high bit indicates subtraction
-        changecount++;
-        gcodeidx ^= (1ULL << curmp.size()) - (1ULL << (i+1));        
-        break;
-      } else if (i == 0) return matrix_rows;
+    if (skipidx == 0) {
+        return matrix_rows;
     }
+    parity = !parity;
+    size_t i = __builtin_ctzll(skipidx);
+    bool curdir = (gcodeidx & (1ULL << i)) == 0;
+    cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
+    curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
+    rowchange_indices.push_back((onerows+i) | (curdir ? 0x80 : 0)); //high bit indicates subtraction
+    changecount++;
+    if ((!curdir && curmp[i] == inp[i]) || (curdir && curmp[i] == -inp[i])) skipidx ^= ((1ULL << (i+1)) - 1);
+    else skipidx ^= ((1ULL << i) - 1);
+    gcodeidx ^= (1ULL << i) - 1;
   }
 }
 
