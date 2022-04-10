@@ -105,14 +105,25 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
     if (mrows.size() == 0) { GlynnPermanentCalculator_DFE(matrix_rows, perm, useDual, false); return; }
     matrix32 adjRow(matrix_rows.cols, 1);
-    for (size_t i = 0; i < matrix_rows.cols; i++) {
+    for (size_t i = 0; i < matrix_rows.cols; i++)
         adjRow[i] = ToComplex32(matrix_rows[i]);
-        size_t offset = colIndices[i]*matrix_init.stride;
-        for (size_t j = 0; j < mrows.size(); j++) {
-            adjRow[i] += curmp[j] * ToComplex32(matrix_init[offset+mrows[j]]);
+    if (transpose) {
+        for (size_t i = 0; i < matrix_rows.cols; i++) {
+            size_t offset = colIndices[i]*matrix_init.stride;
+            for (size_t j = 0; j < mrows.size(); j++) {
+                adjRow[i] += curmp[j] * ToComplex32(matrix_init[offset+mrows[j]]);
+            }
         }
-        matrix_rows[i] = ToComplex16(adjRow[i]);
+    } else {
+        for (size_t j = 0; j < mrows.size(); j++) {
+            size_t offset = mrows[j]*matrix_init.stride;
+            for (size_t i = 0; i < matrix_rows.cols; i++) {
+                adjRow[i] += curmp[j] * ToComplex32(matrix_init[offset+colIndices[i]]);
+            }
+        }
     }
+    for (size_t i = 0; i < matrix_rows.cols; i++)
+        matrix_rows[i] = ToComplex16(adjRow[i]);
     Complex32 res;
     //int parity = 0;
     uint64_t gcodeidx = 0, cur_multiplicity = 1;
@@ -131,11 +142,20 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
           if ((!curdir && curmp[i] != inp[i]) || (curdir && curmp[i] != -inp[i])) {
             cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
             curmp[i] = curdir ? curmp[i] - 2 : curmp[i] + 2;
-            for (size_t j = 0; j < matrix_rows.cols; j++) {
-                if (curdir) adjRow[j] -= 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
-                else adjRow[j] += 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
-                matrix_rows[j] = ToComplex16(adjRow[j]);
+            if (transpose) {
+                for (size_t j = 0; j < matrix_rows.cols; j++) {
+                    if (curdir) adjRow[j] -= 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
+                    else adjRow[j] += 2 * matrix_init[colIndices[j]*matrix_init.stride+mrows[i]];
+                }
+            } else {
+                size_t offset = mrows[i]*matrix_init.stride;
+                for (size_t j = 0; j < matrix_rows.cols; j++) {
+                    if (curdir) adjRow[j] -= 2 * matrix_init[offset+colIndices[j]];
+                    else adjRow[j] += 2 * matrix_init[offset+colIndices[j]];
+                }
             }
+            for (size_t j = 0; j < matrix_rows.cols; j++)
+                matrix_rows[j] = ToComplex16(adjRow[j]);
             gcodeidx ^= (1ULL << curmp.size()) - (1ULL << (i+1));        
             break;
           } else if (i == 0) {
