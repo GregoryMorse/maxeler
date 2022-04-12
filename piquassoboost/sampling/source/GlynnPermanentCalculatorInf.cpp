@@ -59,7 +59,7 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 
             size_t row_offset   = row_idx*mtx.stride;
             size_t row_offset_2 = row_idx*mtx2.stride;
-            for (size_t col_idx=0; col_idx<mtx.rows; ++col_idx) {
+            for (size_t col_idx=0; col_idx<mtx.cols; ++col_idx) {
                 mtx2_data[row_offset_2+col_idx] = 2*mtx_data[ row_offset + col_idx ];
             }
 
@@ -68,9 +68,9 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
 
 
     // calulate the initial sum of the columns
-    ComplexInf* colSum_data = new ComplexInf[mtx.rows];
+    ComplexInf* colSum_data = new ComplexInf[mtx.cols];
 
-    tbb::parallel_for( tbb::blocked_range<size_t>(0, mtx.rows), [&](tbb::blocked_range<size_t> r) {
+    tbb::parallel_for( tbb::blocked_range<size_t>(0, mtx.cols), [&](tbb::blocked_range<size_t> r) {
         for (size_t col_idx=r.begin(); col_idx<r.end(); ++col_idx){
             size_t row_offset = 0;
             for (size_t row_idx=0; row_idx<mtx.rows; ++row_idx) {
