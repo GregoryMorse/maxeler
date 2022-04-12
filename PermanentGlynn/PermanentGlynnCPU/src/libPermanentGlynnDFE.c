@@ -80,7 +80,10 @@ static RUNGROUPFUNC runFunc;
 #elif !defined(MAXELER_SIM)
 static max_group_t* group = NULL;
 typedef void(*RUNGROUPFUNC)(max_group_t*, void*);
-static RUNGROUPFUNC runFunc;
+static max_engine_t* mavDFE;
+static RUNGROUPFUNC runGroupFunc;
+static RUNFUNC runFunc;
+static bool useGroup = 1;
 #else
 static max_engine_t* mavDFE;
 static RUNFUNC runFunc;
@@ -95,9 +98,9 @@ void releive_DFE();
 @brief Interface function to initialize DFE array
 */
 #ifdef USE_FLOAT
-int initialize_DFEF(size_t* mtx_size, size_t* basekernpow2)
+int initialize_DFEF(int groupMode, size_t* mtx_size, size_t* basekernpow2)
 #else
-int initialize_DFE(size_t* mtx_size, size_t* basekernpow2)
+int initialize_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2)
 #endif
 {
 
@@ -112,9 +115,9 @@ int initialize_DFE(size_t* mtx_size, size_t* basekernpow2)
 #endif
 #else
 #ifdef USE_FLOAT
-    initFunc = PermanentGlynn_singleDFEF_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFEF_run_group, freeFunc = PermanentGlynn_singleDFEF_free;
+    initFunc = PermanentGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFEF_run, runGroupFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFEF_run_group, freeFunc = PermanentGlynn_singleDFEF_free;
 #else
-    initFunc = PermanentGlynn_singleDFE_init, runFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFE_run_group, freeFunc = PermanentGlynn_singleDFE_free;
+    initFunc = PermanentGlynn_singleDFE_init, runFunc = (RUNFUNC)PermanentGlynn_singleDFE_run, runGroupFunc = (RUNGROUPFUNC)PermanentGlynn_singleDFE_run_group, freeFunc = PermanentGlynn_singleDFE_free;
 #endif
 #endif  
 #else
@@ -145,9 +148,18 @@ int initialize_DFE(size_t* mtx_size, size_t* basekernpow2)
 //#if defined(DUAL) && !defined(MAXELER_SIM)
   //array = max_load_array(mavMaxFile, 2, "*");
   //if (!array) { max_file_free(mavMaxFile); return 0; }
-#if !defined(MAXELER_SIM)
+#if defined(DUAL) && !defined(MAXELER_SIM)
   group = max_load_group(mavMaxFile, MAXOS_EXCLUSIVE, "local:*", 2);
   if (!group) { max_file_free(mavMaxFile); return 0; }
+#elif !defined(MAXELER_SIM)
+  if (groupMode) {
+      group = max_load_group(mavMaxFile, MAXOS_EXCLUSIVE, "local:*", 2);
+      if (!group) { max_file_free(mavMaxFile); return 0; }
+  } else {
+      mavDFE = max_load(mavMaxFile, "local:*");
+      if (!mavDFE) { max_file_free(mavMaxFile); return 0; }
+  }
+  useGroup = groupMode;
 #else
   mavDFE = max_load(mavMaxFile, "local:*");
   if (!mavDFE) { max_file_free(mavMaxFile); return 0; }
@@ -184,8 +196,11 @@ void releive_DFE()
   initialized = false;
 //#if defined(DUAL) && !defined(MAXELER_SIM)
   //max_unload_array(array);
-#if !defined(MAXELER_SIM)
+#if defined(DUAL) && !defined(MAXELER_SIM)
   max_unload_group(group);
+#elif !defined(MAXELER_SIM)
+  if (useGroup) max_unload_group(group);
+  else max_unload(mavDFE);
 #else
   max_unload(mavDFE);
 #endif
@@ -314,7 +329,8 @@ union {
     //max_run_group_multi(group, dualactions);
     //max_actions_free(dualactions[0]), max_actions_free(dualactions[1]);
 #elif !defined(MAXELER_SIM)
-    runFunc(group, &actions);
+    if (useGroup) runGroupFunc(group, &actions);
+    else runFunc(mavDFE, &actions);
 #else
     runFunc(mavDFE, &actions);
 #endif
