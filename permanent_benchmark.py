@@ -64,6 +64,12 @@ def permanent_glynn(mat):
   if n == 0: return 1
   #return sum(dosign((sum(x < 0 for x in delta) & 1) != 0, multiprod((sum(delta[i] * mat[i][j] for i in range(n)) for j in range(n)))) for delta in [[1] + x for x in getDeltas(n-1)]) >> (n-1)
   return sum(dosign((sum(delta) & 1) != 0, multiprod((mat[n-1][j] + sum(dosign(delta[i]!=0, mat[i][j]) for i in range(n-1)) for j in range(n)))) for delta in getDeltas(n-1)) / (1 << (n-1))
+def permanent_glynn_rectangular(mat):
+  #Gray code order of deltas would yield reduction from n^2 to n similar to Ryser
+  n = len(mat); m = len(mat[0])
+  if n == 0: return 1
+  #return sum(dosign((sum(x < 0 for x in delta) & 1) != 0, multiprod((sum(delta[i] * mat[i][j] for i in range(n)) for j in range(n)))) for delta in [[1] + x for x in getDeltas(n-1)]) >> (n-1)
+  return sum(dosign((sum(delta) & 1) != 0, multiprod((mat[0][j] + sum(dosign(delta[i-1]!=0, mat[i][j]) for i in range(1, n)) for j in range(m)))) for delta in getDeltas(n-1)) / (1 << (n-1))
 """
   (64, -62) * (64, -62) = (128, -124)
 """
@@ -204,7 +210,7 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*wa
         return calculators[6].calculate()
     return batch_adapter(Arep, f)
 
-dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFEDual, permanent_Glynn_DFE))
 largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
 testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
@@ -365,7 +371,7 @@ def verify_timing(nmax, batchsize=1):
       for dim in xaxis:
         if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_Glynn_Cpp_Inf:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -438,7 +444,20 @@ def verify_timing(nmax, batchsize=1):
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
-        
+        plt.close(fig)
+# (a b) (c d) (e f) (g h) = (a+c+e+g)(b+d+f+h)-(a+c+e-g)(b+d+f-h)+(a+c-e-g)(b+d-f-h)-(a-c-e-g)(b-d-f-h)+(a-c-e+g)(b-d-f+h)-(a-c+e+g)(b-d+f+h)+(a-c+e-g)(b-d+f-h)-(a+c-e+g)(b+d-f+h)==0 according to WolframAlpha
+#nXm where m in [2..n-2] always is 0 due to cancellation of terms, however floating/fixed point cannot be relied upon in such cases
+def verify_rectangular(nmax):
+    for x in range(1, nmax+1):
+        for y in range(x, nmax+1):
+            print(x, y)
+            A = [np.random.random((x, y))+np.random.random((x, y))*1j for _ in range(10000)]
+            #r = permanent_Glynn_Cpp_Inf(A)
+            res1, res2 = permanent_Glynn_Cpp(A), permanent_Glynn_DFE(A)
+            assert all((abs(r1-r2) / abs(r1)) <= 1e-10 for r1, r2 in zip(res1, res2)), (x, y, r1, r2)
+            #print(x, y, r1, r2, "None" if abs(r1)==0 else (abs(r1-r2) / abs(r1)) <= 1e-10)
+            #if y>=2 and y <= x-2:
+#verify_rectangular(20)
 verify_timing(DEPTH, 1)
-for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
-    verify_timing(DEPTH if hasSim else 22, batch_size)
+#for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
+#    verify_timing(DEPTH if hasSim else 22, batch_size)
