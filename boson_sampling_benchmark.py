@@ -93,7 +93,8 @@ def get_bincoeff_magic():
     return magicmulshift
 #[(1, 0), (1, 1), (183251937963, 39), (1, 2), (54975581389, 38), (183251937963, 40), (157073089683, 40), (1, 3), (61083979321, 39), (54975581389, 39), (199911205051, 41), (183251937963, 41), (169155635043, 41), (157073089683, 41), (146601550371, 41), (1, 4), (129354309151, 41), (61083979321, 40), (57869033041, 40), (54975581389, 40), (52357696561, 40), (199911205051, 42), (191219413527, 42), (183251937963, 42), (175921860445, 42), (169155635043, 42), (162890611523, 42), (157073089683, 42), (75828388123, 41), (146601550371, 42), (141872468101, 42), (1, 5), (133274136701, 42), (129354309151, 42), (62829235873, 41), (61083979321, 41), (59433060961, 41), (57869033041, 41), (56385211681, 41), (54975581389, 41), (214538854201, 43)]
 #print(get_bincoeff_magic())
-
+bcm = get_bincoeff_magic()
+#print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
 #test_complex_sampling(print_histogram())
 
 DEPTH = 8 if hasSim else 30
@@ -144,19 +145,23 @@ def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repea
   #a=n!/(k!(n-k)!) and b=n!/((k-1)!(n-k+1)!) b/a=k/(n-k+1)
   #a=n!/(k!(n-k)!) and b=n!/((k+1)!(n-k-1)!) b/a=(n-k)/(k+1)
   cur_multiplicity = 1
+  skipidx = (1 << len(curmp))-1
+  print(inp)
   while True:
-    print(cur_multiplicity, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, curmp)))
     tot = plusminus(parity, tot, cur_multiplicity * permanent_glynn_rectangular(mat_mul_rows(matzones, matoutp, inpidx, curmp)))
     parity = not parity
-    for i in range(len(curmp)-1, -1, -1):
-      curdir = (gcodeidx & (1 << i)) == 0
-      if not curdir and curmp[i] != inp[i] or curdir and curmp[i] != -inp[i]:
+    print(gcodeidx, curmp)
+    for i in range(len(curmp)):
+      if (skipidx & (1 << i)) != 0:
+        curdir = (gcodeidx & (1 << i)) == 0
         cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) // 2)
         curmp[i] = plusminus(curdir, curmp[i], 2)
         #for j in range(i+1, len(curmp)): gcodeidx ^= (1 << j)
-        gcodeidx ^= ((1 << len(curmp)) - (1 << (i+1)))
+        if not curdir and curmp[i] == inp[i] or curdir and curmp[i] == -inp[i]: skipidx ^= ((1 << (i+1)) - 1)
+        else: skipidx ^= ((1 << i) - 1)
+        gcodeidx ^= (1 << i) - 1
         break
-    else: break 
+    else: break
   return tot / 2**(sum(inp)) #2**(sum(inp))==sum of all cur_multiplicity values
 
 def permanent_glynn_repeated(mat): pass
@@ -265,7 +270,7 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
 dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
-largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
+largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + (permanent_Glynn_MultiDFEDual,) #dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
 samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh) + dfeSamplingFuncs
@@ -318,7 +323,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs or True:
           mplier = 5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
@@ -331,12 +336,12 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
           else: res[key][func.__name__][dim] = v[0]
           if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
           else: results[key][func.__name__][dim] = r
-          if dim < 24: print(dim, v[0], r)
+          if dim < 24: print(dim, v[0], r, A[dim][1][photons], A[dim][2][photons] if shots is None else None)
           with open(os.path.join(saveFolder, verdata), "wb") as f:
             pickle.dump(res, f)
           with open(os.path.join(saveFolder, resdata), "wb") as f:
-            pickle.dump(results, f)        
-        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
+            pickle.dump(results, f)
+        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim], A[dim][1][photons], A[dim][2][photons] if shots is None else None)
     if shots is None:
       with open(os.path.join(saveFolder, "repverifydata.csv"), "w") as f:
           import csv
@@ -365,9 +370,9 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
       writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
       writer.writerows([[i] + [results[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
 
-    #for i in xaxis:
-    #  assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
-    #  assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
+    for i in xaxis:
+      #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
+      assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__), (i, list(res[key]), [abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__])
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
     verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
@@ -388,7 +393,9 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
+        plt.close(fig)
+for i in range(24):
+    verify_timing(DEPTH, i, None)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(DEPTH, 10, 10)
-verify_timing(DEPTH, 20, None)
-verify_timing(DEPTH, 20, 10)
+#verify_timing(DEPTH, 20, 10)
