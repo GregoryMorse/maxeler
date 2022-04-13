@@ -186,14 +186,16 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                 memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
                 for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
                     for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                        Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                        colSumMax[jdx].real(colSumMax[jdx].real() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].real()));
+                        colSumMax[jdx].imag(colSumMax[jdx].imag() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].imag()));
+                        /*Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
                         Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
                         if ( std::abs( value1 ) < std::abs( value2 ) ) {
                             colSumMax[jdx] = value2;
                         }
                         else {
                             colSumMax[jdx] = value1;
-                        }
+                        }*/
             
                     }
             
@@ -201,7 +203,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
             
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-                    renormalize_data[i*renormalize_data.stride+jdx] = std::max(1.0L, std::abs(colSumMax[jdx]));
+                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(colSumMax[jdx]);
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -281,14 +283,16 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
         for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
             for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
+                colSumMax[jdx].real(colSumMax[jdx].real() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].real()));
+                colSumMax[jdx].imag(colSumMax[jdx].imag() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].imag()));
+                /*Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
                 Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
                 if ( std::abs( value1 ) < std::abs( value2 ) ) {
                     colSumMax[jdx] = value2;
                 }
                 else {
                     colSumMax[jdx] = value1;
-                }
+                }*/
     
             }
     
@@ -296,7 +300,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-            renormalize_data[jdx] = std::max(1.0L, std::abs(colSumMax[jdx]));
+            renormalize_data[jdx] = std::abs(colSumMax[jdx]);
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
