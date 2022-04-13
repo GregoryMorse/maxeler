@@ -182,28 +182,33 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
             matrix& matrix_mtx = matrices[i];
             if (!useFloat) {
                 // calulate the maximal sum of the columns to normalize the matrix
-                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
+                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
                 memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
                 for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
                     for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                        colSumMax[jdx].real(colSumMax[jdx].real() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].real()));
-                        colSumMax[jdx].imag(colSumMax[jdx].imag() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].imag()));
-                        /*Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
-                        Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
-                        if ( std::abs( value1 ) < std::abs( value2 ) ) {
-                            colSumMax[jdx] = value2;
+                        size_t offset = idx*matrix_mtx.stride + jdx;
+                        std::vector<Complex32> values[4];
+                        for (size_t k = 0; k < 4; k++) {
+                            Complex32 value = colSumMax[4*jdx+k] + matrix_mtx[offset];
+                            values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                            value = colSumMax[4*jdx+k] - matrix_mtx[offset];
+                            values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                            value = -colSumMax[4*jdx+k] + matrix_mtx[offset];
+                            values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                            value = -colSumMax[4*jdx+k] - matrix_mtx[offset];
+                            values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
                         }
-                        else {
-                            colSumMax[jdx] = value1;
-                        }*/
-            
+                        for (size_t k = 0; k < 4; k++) {
+                            if (values[k].size() != 0) colSumMax[4*jdx+k] = *std::max_element(values[k].begin(), values[k].end(), [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); });
+                        }            
                     }
             
                 }
             
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(colSumMax[jdx]);
+                    //renormalize_data[i*renormalize_data.stride+jdx] = std::abs(colSumMax[jdx]);
+                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::max({colSumMax[4*jdx], colSumMax[4*jdx+1], colSumMax[4*jdx+2], colSumMax[4*jdx+3]}, [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); }));
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -279,28 +284,35 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     if (!useFloat) {
         // calulate the maximal sum of the columns to normalize the matrix
-        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 1);
+        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
         for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
             for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                colSumMax[jdx].real(colSumMax[jdx].real() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].real()));
-                colSumMax[jdx].imag(colSumMax[jdx].imag() + std::abs(matrix_mtx[idx*matrix_mtx.stride + jdx].imag()));
-                /*Complex32 value1 = colSumMax[jdx] + matrix_mtx[ idx*matrix_mtx.stride + jdx];
-                Complex32 value2 = colSumMax[jdx] - matrix_mtx[ idx*matrix_mtx.stride + jdx];
-                if ( std::abs( value1 ) < std::abs( value2 ) ) {
-                    colSumMax[jdx] = value2;
+                size_t offset = idx*matrix_mtx.stride + jdx;
+                //colSumMax[jdx].real(colSumMax[jdx].real() + std::abs(matrix_mtx[offset].real()));
+                //colSumMax[jdx].imag(colSumMax[jdx].imag() + std::abs(matrix_mtx[offset].imag()));
+                std::vector<Complex32> values[4];
+                for (size_t k = 0; k < 4; k++) {
+                    Complex32 value = colSumMax[4*jdx+k] + matrix_mtx[offset];
+                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                    value = colSumMax[4*jdx+k] - matrix_mtx[offset];
+                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                    value = -colSumMax[4*jdx+k] + matrix_mtx[offset];
+                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
+                    value = -colSumMax[4*jdx+k] - matrix_mtx[offset];
+                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
                 }
-                else {
-                    colSumMax[jdx] = value1;
-                }*/
-    
+                for (size_t k = 0; k < 4; k++) {
+                    if (values[k].size() != 0) colSumMax[4*jdx+k] = *std::max_element(values[k].begin(), values[k].end(), [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); });
+                }
             }
     
         }
     
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-            renormalize_data[jdx] = std::abs(colSumMax[jdx]);
+            //renormalize_data[jdx] = std::abs(colSumMax[jdx]);
+            renormalize_data[jdx] = std::abs(std::max({colSumMax[4*jdx], colSumMax[4*jdx+1], colSumMax[4*jdx+2], colSumMax[4*jdx+3]}, [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); }));
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
