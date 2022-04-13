@@ -54,6 +54,34 @@ matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & ro
     return matrix_rows;
 }
 
+inline void symmetricQuadrantNormalize(Complex32* sums, Complex16 val) {
+    Complex32 value1 = sums[0] + val;
+    Complex32 value2 = sums[0] - val;
+    Complex32 value3 = sums[1] + val;
+    Complex32 value4 = sums[1] - val;
+    int symQuad1 = (value1.real() < 0) == (value1.imag() < 0);                  
+    int symQuad2 = (value2.real() < 0) == (value2.imag() < 0);
+    int symQuad3 = (value3.real() < 0) == (value3.imag() < 0);
+    int symQuad4 = (value4.real() < 0) == (value4.imag() < 0);
+    if (symQuad1 == symQuad2) { 
+        sums[symQuad1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+        if (symQuad3 == symQuad2) {
+            sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];
+            if (symQuad4 == symQuad3) {
+                sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
+            } else sums[symQuad4] = value4;
+        } else {
+            sums[symQuad3] = value3;
+            sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
+        }
+    } else {
+        sums[symQuad1] = value1;
+        sums[symQuad2] = value2;
+        sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];  
+        sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
+    }
+}
+
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE;
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFEF;
@@ -130,27 +158,14 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
 
     // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( photons, 4);
+    matrix_base<Complex32> colSumMax( photons, 2);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
     for (size_t i=0; i<row_indices.size(); i++) {
         //size_t offset = (transpose ? colIndices[i] : row_indices[i]) * matrix_init.stride;
         for (int64_t idx = 0; idx < (i < onerows ? 1 : adj_input_state[row_indices[i]]); idx++) {
             for( size_t jdx=0; jdx<photons; jdx++) {
                 size_t offset = transpose ? colIndices[jdx]*matrix_init.stride+row_indices[i] : row_indices[i]*matrix_init.stride+colIndices[jdx];
-                std::vector<Complex32> values[4];
-                for (size_t k = 0; k < 4; k++) {
-                    Complex32 value = colSumMax[4*jdx+k] + matrix_init[offset];
-                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                    value = colSumMax[4*jdx+k] - matrix_init[offset];
-                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                    value = -colSumMax[4*jdx+k] + matrix_init[offset];
-                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                    value = -colSumMax[4*jdx+k] - matrix_init[offset];
-                    values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                }
-                for (size_t k = 0; k < 4; k++) {
-                    if (values[k].size() != 0) colSumMax[4*jdx+k] = *std::max_element(values[k].begin(), values[k].end(), [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); });
-                }
+                symmetricQuadrantNormalize(&colSumMax[2*jdx], matrix_init[offset]);
             }
         }
     }
@@ -158,7 +173,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(1, photons);
     for (size_t jdx=0; jdx<photons; jdx++ ) {
-        renormalize_data[jdx] = std::abs(std::max({colSumMax[4*jdx], colSumMax[4*jdx+1], colSumMax[4*jdx+2], colSumMax[4*jdx+3]}, [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); }));
+        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
     }
     
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -338,35 +353,20 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum); 
     
     // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
+    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
     for (size_t i=0; i<photons; i++) {
         size_t idx = rowchange_indices[i];
         for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
             size_t offset = idx*matrix_mtx.stride + jdx;
-            std::vector<Complex32> values[4];
-            for (size_t k = 0; k < 4; k++) {
-                Complex32 value = colSumMax[4*jdx+k] + matrix_mtx[offset];
-                values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                value = colSumMax[4*jdx+k] - matrix_mtx[offset];
-                values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                value = -colSumMax[4*jdx+k] + matrix_mtx[offset];
-                values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-                value = -colSumMax[4*jdx+k] - matrix_mtx[offset];
-                values[(value.real() < 0 ? 1 : 0) | (value.imag() < 0 ? 2 : 0)].push_back(value);
-            }
-            for (size_t k = 0; k < 4; k++) {
-                if (values[k].size() != 0) colSumMax[4*jdx+k] = *std::max_element(values[k].begin(), values[k].end(), [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); });
-            }
-
+            symmetricQuadrantNormalize(&colSumMax[2*jdx], matrix_mtx[offset]);
         }
     }
 
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        //renormalize_data[jdx] = std::abs(colSumMax[jdx]);
-        renormalize_data[jdx] = std::abs(std::max({colSumMax[4*jdx], colSumMax[4*jdx+1], colSumMax[4*jdx+2], colSumMax[4*jdx+3]}, [](const Complex32 v, const Complex32 w) { return std::norm(v) < std::norm(w); }));
+        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
         //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
 
