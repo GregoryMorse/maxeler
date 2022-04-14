@@ -24,7 +24,7 @@ GlynnPermanentCalculatorInf::GlynnPermanentCalculatorInf() {}
 */
 Complex16
 GlynnPermanentCalculatorInf::calculate(matrix &mtx) {
-    if (mtx.rows == 0)
+    if (mtx.rows == 0 || mtx.cols == 0)
         return Complex16(1.0, 0.0);
 
     GlynnPermanentCalculatorInfTask calculator;
