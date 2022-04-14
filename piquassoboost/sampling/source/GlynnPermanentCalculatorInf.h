@@ -24,7 +24,7 @@ public:
   FloatInf(const double d) { init = 1; mpfr_init2(this->f, IEEE_DBL_MANT_DIG); mpfr_set_d(this->f, d, MPFR_RNDN); }
   FloatInf(const long double ld) { init = 1; mpfr_init2(this->f, MPFR_LDBL_MANT_DIG); mpfr_set_ld(this->f, ld, MPFR_RNDN); }
   FloatInf(const mpfr_t& f) { init = 1; mpfr_init2(this->f, mpfr_get_prec(f)); mpfr_set(this->f, f, MPFR_RNDN); }
-  FloatInf(mpfr_prec_t prec) { init = 1; mpfr_init2(this->f, prec); mpfr_set(this->f, f, MPFR_RNDN); }
+  FloatInf(mpfr_prec_t prec) { init = 1; mpfr_init2(this->f, prec); }
   FloatInf(const FloatInf& f) : FloatInf(f.f) {}
   FloatInf(FloatInf&& f) { memcpy(&this->f, &f.f, sizeof(mpfr_t)); f.init = 0; } 
   FloatInf& operator=(const FloatInf& f) {
@@ -43,62 +43,70 @@ public:
     return *this;
   }
   void uninit() { if (init) mpfr_clear(this->f); init = 0; }
-  operator double() { return mpfr_get_d(this->f, MPFR_RNDN); }
+  //operator double() { return mpfr_get_d(this->f, MPFR_RNDN); } //dangerous as could cause problems with operator*, operator+
+  double toDouble() { return mpfr_get_d(this->f, MPFR_RNDN); }
   //https://github.com/BrianGladman/MPC/blob/master/src/fma.c
   static mpfr_prec_t
   bound_prec_addsub (const mpfr_t x, const mpfr_t y)
   {
     if (!mpfr_regular_p (x))
-      return mpfr_get_prec (y);
+      return mpfr_regular_p (y) ?  mpfr_min_prec (y) : mpfr_get_prec (y);
     else if (!mpfr_regular_p (y))
-      return mpfr_get_prec (x);
+      return mpfr_min_prec (x);
     else /* neither x nor y are NaN, Inf or zero */
       {
         mpfr_exp_t ex = mpfr_get_exp (x);
         mpfr_exp_t ey = mpfr_get_exp (y);
-        mpfr_exp_t ulpx = ex - mpfr_get_prec (x);
-        mpfr_exp_t ulpy = ey - mpfr_get_prec (y);
+        mpfr_exp_t ulpx = ex - mpfr_min_prec (x);
+        mpfr_exp_t ulpy = ey - mpfr_min_prec (y);
+        return ((ex >= ey) ? ex : ey) + 1 - ((ulpx <= ulpy) ? ulpx : ulpy);
+      }
+  }
+  static mpfr_prec_t
+  bound_prec_addsub (const mpfr_t x, const double y)
+  {
+    if (!mpfr_regular_p (x))
+      return IEEE_DBL_MANT_DIG;
+    else if (!std::isfinite(y) || y == 0)
+      return mpfr_min_prec (x);
+    else /* neither x nor y are NaN, Inf or zero */
+      {
+        mpfr_exp_t ex = mpfr_get_exp (x);
+        int exp; frexp(y, &exp);
+        mpfr_exp_t ey = exp;
+        mpfr_exp_t ulpx = ex - mpfr_min_prec (x);
+        mpfr_exp_t ulpy = ey - IEEE_DBL_MANT_DIG;
         return ((ex >= ey) ? ex : ey) + 1 - ((ulpx <= ulpy) ? ulpx : ulpy);
       }
   }
   static mpfr_prec_t
   bound_prec_mul(const mpfr_t x, const mpfr_t y) {
     if (!mpfr_regular_p (x))
-      return mpfr_get_prec (y);
+      return mpfr_regular_p (y) ?  mpfr_min_prec (y) : mpfr_get_prec (y);
     else if (!mpfr_regular_p (y))
-      return mpfr_get_prec (x);
-    return mpfr_get_prec (x) + mpfr_get_prec (y);
+      return mpfr_min_prec (x);
+    return mpfr_min_prec (x) + mpfr_min_prec (y);
   }
   FloatInf& operator+=(const double d) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, d), MPFR_RNDN);
     mpfr_add_d(this->f, this->f, d, MPFR_RNDN);
     return *this;
   }
   FloatInf& operator-=(const double d) { //subtracting only values added before, no precision change
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, d), MPFR_RNDN);
     mpfr_sub_d(this->f, this->f, d, MPFR_RNDN);
     return *this;
   }
   FloatInf& operator+=(const FloatInf& f) {
     mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
     mpfr_add(this->f, this->f, f.f, MPFR_RNDN);
-    if (mpfr_regular_p(this->f)) {
-        mpfr_prec_t minprec = mpfr_min_prec(this->f);
-        if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
-    }
     return *this;
   }
   FloatInf& operator-=(const FloatInf& f) {
     mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
     mpfr_sub(this->f, this->f, f.f, MPFR_RNDN);
-    if (mpfr_regular_p(this->f)) {
-        mpfr_prec_t minprec = mpfr_min_prec(this->f);
-        if (minprec != mpfr_get_prec(this->f)) mpfr_prec_round(this->f, minprec, MPFR_RNDN);
-    }
     return *this;
   }
-  /*FloatInf& operator*=(const double d) { //d=1 or -1, changing sign only, no precision change 
-    mpfr_mul_d(this->f, this->f, d, MPFR_RNDN);
-    return *this;
-  }*/
   FloatInf& operator*=(const FloatInf& f) {
     mpfr_prec_round(this->f, bound_prec_mul(this->f, f.f), MPFR_RNDN);
     mpfr_mul(this->f, this->f, f.f, MPFR_RNDN);
@@ -108,7 +116,7 @@ public:
     mpfr_div(this->f, this->f, f.f, MPFR_RNDN);
     return *this;
   }
-  /*FloatInf operator+(const FloatInf& f) {
+  FloatInf operator+(const FloatInf& f) {
     FloatInf newf(bound_prec_addsub(this->f, f.f));
     mpfr_add(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
@@ -122,7 +130,11 @@ public:
     FloatInf newf(bound_prec_mul(this->f, f.f));
     mpfr_mul(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
-  }*/
+  }
+  void print()
+  {
+    if (init) mpfr_out_str(stdout, 2, mpfr_min_prec(f), f, MPFR_RNDN); 
+  }
 private:
   int init;
   mpfr_t f;
