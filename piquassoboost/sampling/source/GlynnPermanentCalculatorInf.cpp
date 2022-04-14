@@ -60,7 +60,7 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
             size_t row_offset   = row_idx*mtx.stride;
             size_t row_offset_2 = row_idx*mtx2.stride;
             for (size_t col_idx=0; col_idx<mtx.cols; ++col_idx) {
-                mtx2_data[row_offset_2+col_idx] = 2*mtx_data[ row_offset + col_idx ];
+                mtx2_data[row_offset_2+col_idx] = 2 * mtx_data[ row_offset + col_idx ];
             }
 
         }
@@ -97,12 +97,12 @@ GlynnPermanentCalculatorInfTask::calculate(matrix &mtx) {
         IMAGPART(permanent) += IMAGPART(a);
     });
 
+    //REALPART(permanent).print(); printf("\n"); IMAGPART(permanent).print(); printf("\n");
     permanent /= (long double)power_of_2( (unsigned long long) (mtx.rows-1) );
 
     delete [] colSum_data;
 
-
-    return Complex16(REALPART(permanent), IMAGPART(permanent));
+    return Complex16(REALPART(permanent).toDouble(), IMAGPART(permanent).toDouble());
 
 
 }
@@ -123,7 +123,7 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data
     // Calculate the partial permanent
     pic::ComplexInf colSumProd(colSum_data[0]);
     for (int idx=1; idx<mtx2.cols; idx++) { //(a+bi)(c+di)=ac-bd+(bc+ad)i or (ac - bd)+((a+b)*(c+d)-ac-bd)i
-        //colSumProd *= colSum_data[idx];
+        //colSumProd *= colSum_data[idx]; continue;
         /*FloatInf acbd(REALPART(colSumProd) * REALPART(colSum_data[idx]));
         acbd -= IMAGPART(colSumProd) * IMAGPART(colSum_data[idx]);
         FloatInf bcad(IMAGPART(colSumProd) * REALPART(colSum_data[idx]));
@@ -148,7 +148,7 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data
         REALPART(permanent_priv) -= REALPART(colSumProd);
         IMAGPART(permanent_priv) -= IMAGPART(colSumProd);
     }
-    
+    //REALPART(colSumProd).print(); IMAGPART(colSumProd).print();
 
 
     tbb::parallel_for( tbb::blocked_range<int>(index_min,mtx2.rows), [&](tbb::blocked_range<int> r) {
@@ -163,7 +163,7 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data
 
             for (size_t jdx=0; jdx<mtx2.cols; jdx++) {
                 REALPART(colSum_new_data[jdx]) = REALPART(colSum_data[jdx]);
-                REALPART(colSum_new_data[jdx]) -= mtx2_data[row_offset+jdx].real(); 
+                REALPART(colSum_new_data[jdx]) -= mtx2_data[row_offset+jdx].real();
                 IMAGPART(colSum_new_data[jdx]) = IMAGPART(colSum_data[jdx]);
                 IMAGPART(colSum_new_data[jdx]) -= mtx2_data[row_offset+jdx].imag();
             }
