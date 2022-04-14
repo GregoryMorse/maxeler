@@ -37,7 +37,7 @@ FREEPERMGLYNNDFE releive_DFEF = NULL;
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
-typedef int(*INITPERMGLYNNREPDFE)(size_t*, size_t*);
+typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
 extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE;
@@ -80,7 +80,7 @@ int init_dfe_lib(int choice, int dual) {
     int useGroup = 1;
     if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return initialize_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
     if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return initialize_DFEF(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
-    if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return initializeRep_DFE(&dfe_mtx_size, &dfe_basekernpow2);
+    if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
     isLastDual = dual;
     unload_dfe_lib();
     const char* simLib = NULL, *lib = NULL;
@@ -116,7 +116,7 @@ int init_dfe_lib(int choice, int dual) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
-          if (initializeRep_DFE) return initializeRep_DFE(&dfe_mtx_size, &dfe_basekernpow2);
+          if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
       }
     }
     return 0;
