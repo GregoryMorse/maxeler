@@ -299,7 +299,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     if (!useFloat) {
         // calulate the maximal sum of the columns to normalize the matrix
-        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
+        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
         for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
             for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
