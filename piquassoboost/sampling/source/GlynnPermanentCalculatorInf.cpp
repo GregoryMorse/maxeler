@@ -122,7 +122,7 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data
 
     // Calculate the partial permanent
     pic::ComplexInf colSumProd(colSum_data[0]);
-    for (int idx=1; idx<mtx2.cols; idx++) { //(a+bi)(c+di)=ac-bd+(bc+ad)i or (ac - bd)+((a+b)*(c+d)-ac-bd)i
+    for (size_t idx=1; idx<mtx2.cols; idx++) { //(a+bi)(c+di)=ac-bd+(bc+ad)i or (ac - bd)+((a+b)*(c+d)-ac-bd)i
         //colSumProd *= colSum_data[idx]; continue;
         /*FloatInf acbd(REALPART(colSumProd) * REALPART(colSum_data[idx]));
         acbd -= IMAGPART(colSumProd) * IMAGPART(colSum_data[idx]);
@@ -151,7 +151,7 @@ GlynnPermanentCalculatorInfTask::IterateOverDeltas( pic::ComplexInf* colSum_data
     //REALPART(colSumProd).print(); IMAGPART(colSumProd).print();
 
 
-    tbb::parallel_for( tbb::blocked_range<int>(index_min,mtx2.rows), [&](tbb::blocked_range<int> r) {
+    tbb::parallel_for( tbb::blocked_range<size_t>(index_min,mtx2.rows), [&](tbb::blocked_range<size_t> r) {
         for (size_t idx=r.begin(); idx<r.end(); ++idx){
 
             // create an altered vector from the current delta
