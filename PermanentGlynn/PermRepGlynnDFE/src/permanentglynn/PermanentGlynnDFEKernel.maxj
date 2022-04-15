@@ -176,7 +176,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
         optimization.pushFixOpMode(Optimization.bitSizeExact(aType.getTotalBits() + bType.getTotalBits()),
             Optimization.offsetExact(-aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits()), MathOps.MUL);
-        DFEVar result = a * b;
+        DFEVar result = optimization.pipeline(a * b);
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
@@ -257,7 +257,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVector < DFEVar > colIndices = colIndexType.newInstance(this);
         for (int i = 0; i < cols; i++) {
             colIndicesCache[i] <== colIndOneHot[i] ? colIndex : stream.offset(colIndicesCache[i], -1);
-            colIndices[i] <== colIndFixOneHot[i] ? colIndicesCache[i] : constant.var(dfeUInt(6), i); 
+            colIndices[i] <== colIndFixOneHot[i] ? colIndicesCache[i] : constant.var(dfeUInt(6), cols); 
         }
 
         // multiply the elements in colSum over a tree reduction
@@ -275,11 +275,15 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 colSumPreFix[j * (cols / initKerns) + idx] <== colmnSumVector[idx];
             }
         }
-        colSumPreFix = optimization.limitFanout(colSumPreFix, 4);
+        colSumPreFix = optimization.limitFanout(colSumPreFix, 16);
+        List < DFEComplex > colSumPreList = new ArrayList < > ();
+        colSumPreList.addAll(colSumPreFix.getElementsAsList());
+        colSumPreList.add(DFEComplexType.newInstance(this, constant.var(dataTypeFix64, 1), constant.zero(dataTypeFix64)));
         DFEComplex[] colSumFix = new DFEComplex[cols];
         for (int j = 0; j < cols; j++) {
+            //if (j != 0 && (j % 2) == 0) colSumPreFix = optimization.pipeline(colSumPreFix);            
             colSumFix[j] = cplxFix64Type.newInstance(this);
-            colSumFix[j] <== control.mux(colIndices[j], colSumPreFix.getElementsAsList());
+            colSumFix[j] <== control.mux(colIndices[j], colSumPreList);
             //if (kernNum == 0) debug.simPrintf(isCalc, "%d %KObj%\n", colIndices[j], colSumPreFix); 
             /*if (j == cols-1)
                 colSumFix[j] <== control.mux(colIndices[j]-colIndices[j-1], colSumPreFix.getElementsAsList());
