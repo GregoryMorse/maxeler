@@ -307,11 +307,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
         real *= mplicity[i];
         imag *= mplicity[i];
     
-        // renormalize the result according to the normalization of the input matrix
-        for (int jdx=0; jdx<photons; jdx++ ) {
-            real *= renormalize_data[colIndices[jdx]];
-            imag *= renormalize_data[colIndices[jdx]];
-        }
         //printf("%llu, %Lf %Lf\n", mplicity[i], real, imag);
         if (parity) {
             perm->real -= real; perm->imag -= imag;
@@ -319,6 +314,11 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
             perm->real += real; perm->imag += imag;
         }
         parity = ~parity;
+    }
+    // renormalize the result according to the normalization of the input matrix
+    for (int jdx=0; jdx<photons; jdx++ ) {
+        perm->real *= renormalize_data[colIndices[jdx]];
+        perm->imag *= renormalize_data[colIndices[jdx]];
     }
     uint64_t mulSumPerms = 1ULL << mulsum;
     perm->real /= mulSumPerms, perm->imag /= mulSumPerms;
