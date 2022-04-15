@@ -8,7 +8,7 @@
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
-typedef int(*INITPERMGLYNNREPDFE)(size_t*, size_t*);
+typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
 CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE = NULL;
@@ -95,10 +95,10 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);    
     size_t photons = 0;
-    int transpose = 0;
+    uint64_t t1 = 1, t2 = 1;
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
-        transpose += ((input_state[i] != 0) ? 1 : 0) - ((output_state[i] != 0) ? 1 : 0);  
+        t1 *= (input_state[i]+1); t2 *= (output_state[i]+1);
     }
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
         photons < 1+dfe_basekernpow2) { //compute with other method
@@ -107,7 +107,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
       unlock_lib();
       return;
     }
-    transpose = transpose < 0; //transpose if needed to reduce complexity on rows direction
+    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
     const size_t max_dim = dfe_mtx_size;
     //convert multiplicities of rows and columns to indices
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
@@ -125,6 +125,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
     //sort multiplicity >=2 row indices since we need anchor rows, and complexity reduction greatest by using smallest multiplicities
     sort(mrows.begin(), mrows.end(), [&adj_input_state](size_t i, size_t j) { return adj_input_state[i] < adj_input_state[j]; }); 
+    //while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
     if (row_indices.size() < 1) { //Glynn anchor row
         row_indices.push_back(mrows[0]);
         if (--adj_input_state[mrows[0]] == 1) {
@@ -264,19 +265,29 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
 }
 
-matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchange_indices)
+matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchange_indices, int transpose)
 {
-    matrix matrix_rows(rowchange_indices.size(), matrix_mtx.rows);
-    for (size_t i = 0; i < matrix_mtx.rows; i++) {
-        size_t offset = i*matrix_mtx.stride;
-        for (size_t j = 0; j < rowchange_indices.size(); j++) {
-            matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];
+    matrix matrix_rows(rowchange_indices.size(), transpose ? matrix_mtx.rows : matrix_mtx.cols);
+    if (transpose) {
+        for (size_t i = 0; i < matrix_mtx.rows; i++) {
+            size_t offset = i*matrix_mtx.stride;
+            for (size_t j = 0; j < rowchange_indices.size(); j++) {
+                matrix_rows[j*matrix_rows.stride+i] = matrix_mtx[offset+rowchange_indices[j]];
+            }
+        }
+    } else {
+        for (size_t i = 0; i < rowchange_indices.size(); i++) {
+            size_t offset = rowchange_indices[i]*matrix_mtx.stride;
+            size_t newoffset = i*matrix_rows.stride;
+            for (size_t j = 0; j < matrix_mtx.cols; j++) {
+                matrix_rows[newoffset+j] = matrix_mtx[offset+j];
+            }
         }
     }
     return matrix_rows;
 }
 
-matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum)
+matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int transpose)
 {
   std::vector<uint8_t> mrows;
   std::vector<uint8_t> row_indices;
@@ -296,25 +307,43 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   std::vector<uint64_t> curmp, inp;
   for (size_t i = 0; i < mrows.size(); i++) {
     row_indices.push_back(mrows[i]);
-    curmp.push_back(input_state[mrows[i]]);
-    inp.push_back(input_state[mrows[i]]);
+    curmp.push_back(0); //curmp.push_back(input_state[mrows[i]]);
+    inp.push_back(input_state[mrows[i]]+1);
     mulsum += input_state[mrows[i]];
   }
-  matrix matrix_rows = transpose_reorder_rows(matrix_mtx, row_indices);
+  matrix matrix_rows = transpose_reorder_rows(matrix_mtx, row_indices, transpose);
   for (size_t i = 0; i < row_indices.size(); i++) {
       for (size_t j = i < onerows ? 1 : input_state[row_indices[i]]; j != 0; j--) {
         rowchange_indices.push_back(i);
       }
   }
   if (mrows.size() == 0) { mplicity.push_back(1); return matrix_rows; }
-  int parity = 0;
+  std::vector<uint8_t> k; k.resize(inp.size());
+  uint64_t cur_multiplicity = 1;
+  while (true) {
+      mplicity.push_back(cur_multiplicity);
+      size_t j = 0;
+      for (size_t i = 0; i < curmp.size(); i++) {
+          if (curmp[i] == inp[i]-1) { curmp[i] = 0; j++; }
+          else { curmp[i]++; break; }
+      }
+      if (j == inp.size()) {
+          return matrix_rows;
+      }
+      bool curdir =  k[j] < inp[j];
+      cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[j]-1, inp[j]-1-(k[j] < inp[j] ? k[j] : inp[j]*2-k[j]-1));
+      rowchange_indices.push_back((onerows+j) | (curdir ? 0x80 : 0)); //high bit indicates subtraction
+      changecount++;
+      for (size_t i = 0; i <= j; i++)
+          k[i] = (k[i] != (inp[i] << 1)-1) ? k[i] + 1 : 0;
+  }
+  /*
   uint64_t gcodeidx = 0, cur_multiplicity = 1, skipidx = (1ULL << curmp.size())-1;
   while (true) {
     mplicity.push_back(cur_multiplicity);
     if (skipidx == 0) {
         return matrix_rows;
     }
-    parity = !parity;
     size_t i = __builtin_ctzll(skipidx);
     bool curdir = (gcodeidx & (1ULL << i)) == 0;
     cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[i], (curmp[i] + inp[i]) / 2);
@@ -324,7 +353,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
     if ((!curdir && curmp[i] == inp[i]) || (curdir && curmp[i] == -inp[i])) skipidx ^= ((1ULL << (i+1)) - 1);
     else skipidx ^= ((1ULL << i) - 1);
     gcodeidx ^= (1ULL << i) - 1;
-  }
+  }*/
 }
 
 /**
@@ -337,8 +366,10 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     lock_lib();
     init_dfe_lib(DFE_REP, useDual);    
     size_t photons = 0;
+    uint64_t t1 = 1, t2 = 1;   
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
+        t1 *= (input_state[i]+1); t2 *= (output_state[i]+1);
     }
     if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
       GlynnPermanentCalculatorRepeated gpc;
@@ -346,11 +377,12 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       unlock_lib();
       return;
     }
+    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
     std::vector<uint8_t> rowchange_indices;
     std::vector<uint64_t> mplicity;
     uint8_t onerows, mulsum; uint64_t changecount;
-    PicState_int64 adj_input_state = input_state.copy();
-    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum); 
+    PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();
+    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum, transpose); 
     
     // calulate the maximal sum of the columns to normalize the matrix
     matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
@@ -403,7 +435,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
     for (size_t i = 0; i < output_state.size(); i++) {
-      for (size_t j = output_state[i]; j != 0; j--) {
+      for (size_t j = transpose ? output_state[i] : input_state[i]; j != 0; j--) {
         colIndices.push_back(i);
       }
     }
