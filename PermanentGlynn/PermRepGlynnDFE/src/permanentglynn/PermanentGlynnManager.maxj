@@ -33,7 +33,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         Fanout rowChangeIndicesFanout = fanout("rowChangeIndicesFanout");
         rowChangeIndicesFanout.getInput() <== rowChangeIndices;
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
-            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat));
+            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat, true));
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
             initColSumKernels[i].getInput("rowChangeIndices") <== rowChangeIndicesFanout.addOutput("rowChangeIndices" + i);
