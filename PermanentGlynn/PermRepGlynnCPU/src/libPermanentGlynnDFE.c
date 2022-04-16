@@ -229,7 +229,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_colIndex = colIndices;
       actions.glynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.glynnRowsGray.instream_rowChangeIndices = rowchange_indices;
-      actions.glynnRowsGray.instream_size_rowChangeIndices = photons + changecount + ((photons + changecount) % 16 == 0 ? 0 : (16 - (photons + changecount) % 16));
+      actions.glynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.glynnRowsGray.routing_string = "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
         "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout";
 #else
@@ -249,7 +249,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_colIndex = colIndices;
       actions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
-      actions.dualGlynnRowsGray.instream_size_rowChangeIndices = photons + changecount + ((photons + changecount) % 16 == 0 ? 0 : (16 - (photons + changecount) % 16));
+      actions.dualGlynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.dualGlynnRowsGray.routing_string = "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
                                                  "colIndex4 -> colIndexFanout, colIndex5 -> colIndexFanout, colIndex6 -> colIndexFanout, colIndex7 -> colIndexFanout, "
                                                  "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "
