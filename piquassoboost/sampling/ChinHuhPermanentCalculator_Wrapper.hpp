@@ -233,7 +233,7 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
             input_states.push_back(numpy2PicState_int64(o));
             PyObject* oOut = PyList_GetItem(self->output_state, i);
             Py_INCREF(oOut);
-            Py_ssize_t szOutput = PyList_Size(o);
+            Py_ssize_t szOutput = PyList_Size(oOut);
             output_states[i].reserve(szOutput);
             for (Py_ssize_t j = 0; j < szOutput; j++) {
                 o = PyList_GetItem(oOut, j);
