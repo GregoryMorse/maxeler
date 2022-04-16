@@ -231,7 +231,12 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.glynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.glynnRowsGray.routing_string = "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
-        "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout";
+        "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "
+        "curMplicity0 -> binCoeffFanout, curMplicity1 -> binCoeffFanout, curMplicity2 -> binCoeffFanout, curMplicity3 -> binCoeffFanout";
+      //max_actions_t* mat = PermRepGlynn_singleSIM_convert(mavMaxFile, &actions.glynnRowsGray);
+      //int loopLength = max_get_offset_auto_loop_size(mat, "InitializeColSumDFEKernel_0", "loopLength");
+      //printf("Loop Length: %d\n", loopLength);
+      //max_actions_free(mat);
 #else
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
@@ -253,7 +258,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.routing_string = "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
                                                  "colIndex4 -> colIndexFanout, colIndex5 -> colIndexFanout, colIndex6 -> colIndexFanout, colIndex7 -> colIndexFanout, "
                                                  "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "
-                                                 "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout";
+                                                 "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout, "
+                                                 "curMplicity0 -> binCoeffFanout, curMplicity1 -> binCoeffFanout, curMplicity2 -> binCoeffFanout, curMplicity3 -> binCoeffFanout, "
+                                                 "curMplicity4 -> binCoeffFanout2, curMplicity5 -> binCoeffFanout2, curMplicity6 -> binCoeffFanout2, curMplicity7 -> binCoeffFanout2";
 #else
       actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows;
