@@ -265,6 +265,19 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
 }
 
+void
+GlynnPermanentCalculatorRepeatedMultiBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+    std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual)
+{
+    for (size_t i = 0; i < input_states.size(); i++) {
+        perm[i].resize(output_states[i].size());
+        for (size_t j = 0; j < output_states[i].size(); j++) {
+            GlynnPermanentCalculatorRepeatedMulti_DFE(matrix_init, input_states[i], output_states[i][j], perm[i][j], useDual); 
+        }
+    }
+}
+
+
 matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchange_indices, int transpose)
 {
     matrix matrix_rows(rowchange_indices.size(), transpose ? matrix_mtx.rows : matrix_mtx.cols);
@@ -447,5 +460,18 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     unlock_lib();
     return;
 }
+
+void
+GlynnPermanentCalculatorRepeatedBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+    std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual)
+{
+    for (size_t i = 0; i < input_states.size(); i++) {
+        perm[i].resize(output_states[i].size());
+        for (size_t j = 0; j < output_states[i].size(); j++) {
+            GlynnPermanentCalculatorRepeated_DFE(matrix_init, input_states[i], output_states[i][j], perm[i][j], useDual); 
+        }
+    }
+}
+
 
 }
