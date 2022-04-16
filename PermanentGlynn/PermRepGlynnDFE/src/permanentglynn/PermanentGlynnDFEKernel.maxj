@@ -265,6 +265,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVector<DFEComplex> colSumPreFix = colType.newInstance(this);
         //DFEComplex[] colSumPreFix = new DFEComplex[cols];
         int limit = cols;
+        
+        DFEVar curMplicity = io.input("curMplicity", dfeUInt(38), isCalc);
 
         for (int j = 0; j < initKerns; j++) {
             DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
@@ -347,6 +349,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (extraprec > 62) extraprec = 62;
 
         }
+        colSumFix[0] = DFEComplexType.newInstance(this, mulExact(colSumFix[0].getReal(), curMplicity), mulExact(colSumFix[0].getImaginary(), curMplicity));
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
         DFEVar sign = ((tickCount.get(0) ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
