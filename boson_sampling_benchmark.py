@@ -130,6 +130,48 @@ def mat_mul_rows(matzones, mat, inpidx, mplicity):
   return np.array([[x[k] + sum(mat[y][k] * mplicity[j] for j, y in enumerate(inpidx)) for k in range(len(mat[0]))] if i == 0 else x for i, x in enumerate(matzones)])
 def binomial_gcode(bc, parity, n, k):
   return bc*k//(n-k+1) if parity else bc*(n-k)//(k+1)
+#https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.1067.6055&rep=rep1&type=pdf
+def cartesianProductGcode(counterChain, l, k):
+    if counterChain == [0] * len(l): return
+    for j in range(0, len(l)):
+        if all(counterChain[i] == 0 for i in range(j)):
+            k[j] = k[j]+1 if k[j] != (l[j] << 1)-1 else 0 #(k[j]+1) modulo 2*l[j]
+    #assert k == counterToGcode(counterChain, l), (k, counterToGcode(counterChain, l))
+def counterChainMplicity(l):
+    counterChain, k, term = [0] * len(l), [0] * len(l), [x-1 for x in l]
+    while True:
+        cartesianProductGcode(counterChain, l, k)
+        print(counterChain, k, [k[j] if k[j] < l[j] else l[j]*2-k[j]-1 for j in range(len(l))])
+        if counterChain == term: break
+        i = 0
+        while True:
+            if counterChain[i] == l[i]-1: counterChain[i] = 0; i+=1
+            else: counterChain[i] += 1; break
+def locationToCounter(l, loc):
+    g = []
+    for x in l:
+        loc, y = divmod(loc, x)
+        g.append(y)
+    return g
+def counterToGcode(counterChain, l):
+    g, parity = [x for x in counterChain], False
+    for j in range(len(l)-1, -1, -1):
+        if parity: g[j] += l[j]
+        if (counterChain[j] & 1) != 0 and ((l[j] & 1) != 0 or (l[j] & 1) == 0 and counterChain[j] < l[j]): parity = not parity
+    return g
+def divideGcode(l, p):
+    import functools
+    total = functools.reduce(lambda a, b: a * b, l)
+    segment, rem = divmod(total, p)
+    distribution = [segment + (1 if i < rem else 0) for i in range(p)]
+    cursum, locs, g = 0, [], []
+    for x in distribution:
+        locs.append(locationToCounter(l, cursum))
+        g.append(counterToGcode(locs[-1], l))
+        cursum += x
+    print(locs, g)
+#counterChainMplicity([2, 5, 4, 6, 7, 2])
+#divideGcode([2, 5, 4, 6, 7, 2], 20)
 def permanent_square_repeated(mat, inp, outp): #hybrid single multiplicity/repeated-Chin Huh method without proper Gray code, but one multiplicities using normal permanent
   #the Gray code anchor must be on the first row of the rectangular computation or this algorithm will be incorrect!
   matoutp = np.repeat(mat, outp, axis=0).transpose()
@@ -270,7 +312,7 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
 dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
-largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + (permanent_Glynn_MultiDFEDual,) #dfePermFuncs
+largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
 samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh) + dfeSamplingFuncs
@@ -394,7 +436,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
-for i in range(24):
+for i in range(13, 20):
     verify_timing(DEPTH, i, None)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(DEPTH, 10, 10)
