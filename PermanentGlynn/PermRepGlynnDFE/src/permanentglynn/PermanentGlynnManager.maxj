@@ -33,7 +33,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         Fanout rowChangeIndicesFanout = fanout("rowChangeIndicesFanout");
         rowChangeIndicesFanout.getInput() <== rowChangeIndices;
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
-            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat, true));
+            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat));
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
             initColSumKernels[i].getInput("rowChangeIndices") <== rowChangeIndicesFanout.addOutput("rowChangeIndices" + i);
@@ -41,9 +41,20 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         DFELink colIndex = addStreamFromCPU("colIndex");
         Fanout colIndexFanout = fanout("colIndexFanout");
         colIndexFanout.getInput() <== colIndex;
+        DFELink binCoeff = initColSumKernels[0].getOutput("bincoeff");
+        binCoeff.setAdditionalRegisters(1);
+        Fanout binCoeffFanout = fanout("binCoeffFanout"), binCoeffFanout2 = null;
+        binCoeffFanout.getInput() <== binCoeff;
+        if (dual && isSim) {
+            DFELink binCoeff2 = initColSumKernels[initKerns].getOutput("bincoeff");
+            binCoeff2.setAdditionalRegisters(1);
+            binCoeffFanout2 = fanout("binCoeffFanout2");
+            binCoeffFanout2.getInput() <== binCoeff2;
+        }
         for (int i = 0; i < numkernels; i++) {
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat));
             colSumKernels[i].getInput("colIndex") <== colIndexFanout.addOutput("colIndex" + i);
+            colSumKernels[i].getInput("curMplicity") <== (dual && isSim && i >= numkernels * numarrays / 2) ? binCoeffFanout2.addOutput("curMplicity" + i) : binCoeffFanout.addOutput("curMplicity" + i);
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
