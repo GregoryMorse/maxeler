@@ -18,6 +18,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.VectorMemory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -57,7 +58,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         return result;
     }
 
-    public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat, boolean bincoeff) {
+    public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
         DFEType IntType = dfeInt(64);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
@@ -152,11 +153,10 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar curmp = control.mux(storeRowIndex, curMultiplicities.getElementsAsList());
             DFEVar inpmp = control.mux(storeRowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
             rowChangeIsNeg = curmp < inpmp;
-            //debug.simPrintf(nextRowIdx, "%KObj% %KObj% %KObj% %x %d %d %d %d\n", rowMultiplicities, curMultiplicities, cpGC, countersZero.reinterpret(dfeUInt(rows-1-(basekernpow2+(dual ? 1 : 0)))), Bitops.onehotDecode(rowChangeMask), curmp < inpmp, storeRowIndex, rowChangeIsNeg);
-            /*
-            if (bincoeff && kernNum == 0) {
-                DFEVar num = rowChangeIsNeg ? curmp : inpmp - curmp;
-                DFEVar denom = rowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1;
+            if (kernNum == 0) {
+                curmp = rowChangeIsNeg ? inpmp-curmp-1 : curmp-inpmp;
+                DFEVar num = (rowChangeIsNeg ? curmp : inpmp - curmp).cast(dfeUInt(6));
+                DFEVar denom = (rowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1).cast(dfeUInt(6));
                 DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38), 40+1);
                 DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(6), 40+1);
                 DFEVector<DFEVar> magicDivisionMpliers = divisionMplierType.newInstance(this);
@@ -168,11 +168,12 @@ public class InitializeColSumDFEKernel extends Kernel {
                     magicDivisionShifts[i] <== constant.var(dfeUInt(6), shiftConsts[i]);
                 }
                 DFEVar cur_multiplicity = dfeUInt(38).newInstance(this);
-                cur_multiplicity <== isInit ? constant.var(dfeUInt(38), 1) : mulExact((mulExact(stream.offset(cur_multiplicity, -20), control.mux(denom-1, magicDivisionMpliers.getElementsAsList())) >> control.mux(denom-1, magicDivisionShifts.getElementsAsList())).cast(dfeUInt(38)), num).cast(dfeUInt(38));
-                for (int i = 0; i < kerns; i++) {
-                    io.output("bincoeff" + i, cur_multiplicity, dfeUInt(38), isCalc);
-                }
-            }*/
+                OffsetExpr loopLength = stream.makeOffsetAutoLoop("loopLength");
+                DFEVar divided = (mulExact(stream.offset(cur_multiplicity, -loopLength), control.mux(denom-1, magicDivisionMpliers.getElementsAsList())) >> control.mux(denom-1, magicDivisionShifts.getElementsAsList())).cast(dfeUInt(38));
+                DFEVar newMultiplicity = mulExact(divided, num).cast(dfeUInt(38));
+                cur_multiplicity <== isInit ? constant.var(dfeUInt(38), 1) : newMultiplicity;
+                io.output("bincoeff", cur_multiplicity, dfeUInt(38), isCalc);
+            }
         }
         
         List < DFEVector < DFEVar >> initAllRows = new ArrayList < > ();
