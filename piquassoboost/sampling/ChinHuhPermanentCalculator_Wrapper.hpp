@@ -174,7 +174,7 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
         self->matrix = PyArray_FROM_OTF(matrix_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
     }
 
-    if ( PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
+    if ( PyList_Check(input_state_arg) || PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
         self->input_state = input_state_arg;
         Py_INCREF(self->input_state);
     }
@@ -182,7 +182,7 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
         self->input_state = PyArray_FROM_OTF(input_state_arg, NPY_INT64, NPY_ARRAY_IN_ARRAY);
     }
 
-    if ( PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
+    if ( PyList_Check(output_state_arg) || PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
         self->output_state = output_state_arg;
         Py_INCREF(self->output_state);
     }
@@ -214,24 +214,84 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
 static PyObject *
 ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper *self)
 {
-
     // create PIC version of the input matrices
     pic::matrix matrix_mtx = numpy2matrix(self->matrix);
-    pic::PicState_int64 input_state_mtx = numpy2PicState_int64(self->input_state);
-    pic::PicState_int64 output_state_mtx = numpy2PicState_int64(self->output_state);
 
-    // start the calculation of the permanent
-    pic::Complex16 ret;
-#ifdef __DFE__    
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-        GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE);
-    else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
-        GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepMultiDualDFE);
-    else
+    if (PyList_Check(self->input_state)) {
+        Py_ssize_t sz = PyList_Size(self->input_state);
+        std::vector<pic::PicState_int64> input_states;
+        std::vector<std::vector<pic::PicState_int64>> output_states(sz);
+        input_states.reserve(sz);
+        for (Py_ssize_t i = 0; i < sz; i++) {
+            PyObject *o = PyList_GetItem(self->input_state, i);            
+            if ( PyArray_IS_C_CONTIGUOUS(o) ) {
+                Py_INCREF(o);
+            } else {
+                o = PyArray_FROM_OTF(o, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+            }
+            PyList_SetItem(self->input_state, i, o);
+            input_states.push_back(numpy2PicState_int64(o));
+            PyObject* oOut = PyList_GetItem(self->output_state, i);
+            Py_INCREF(oOut);
+            Py_ssize_t szOutput = PyList_Size(o);
+            output_states[i].reserve(szOutput);
+            for (Py_ssize_t j = 0; j < szOutput; j++) {
+                o = PyList_GetItem(oOut, j);
+                if ( PyArray_IS_C_CONTIGUOUS(o) ) {
+                    Py_INCREF(o);
+                } else {
+                    o = PyArray_FROM_OTF(o, NPY_INT64, NPY_ARRAY_IN_ARRAY);
+                }
+                PyList_SetItem(oOut, i, o);
+                output_states[i].push_back(numpy2PicState_int64(o));
+            }
+            PyList_SetItem(self->output_state, i, oOut);
+        }
+        std::vector<std::vector<pic::Complex16>> ret;
+        ret.resize(sz);
+#ifdef __DFE__        
+        if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
+            GlynnPermanentCalculatorRepeatedBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepDualDFE);
+        else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
+            GlynnPermanentCalculatorRepeatedMultiBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepMultiDualDFE);
+        else
 #endif
-    ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
-
-    return Py_BuildValue("D", &ret);
+        {
+            for (size_t i = 0; i < input_states.size(); i++) {
+                ret[i].resize(output_states[i].size());
+                for (size_t j = 0; j < output_states[i].size(); j++) {
+                    ret[i][j] = self->calculator->calculate(matrix_mtx, input_states[i], output_states[i][j]);
+                }
+            }
+        }    
+        
+        PyObject* list = PyList_New(0);
+        for (size_t i = 0; i < ret.size(); i++) {
+            PyObject* innerList = PyList_New(0);            
+            for (size_t j = 0; j < ret[i].size(); j++) {
+                PyObject* o = Py_BuildValue("D", &ret[i][j]);
+                PyList_Append(innerList, o);
+                Py_DECREF(o);
+            }
+            PyList_Append(list, innerList);
+            Py_DECREF(innerList);
+        }
+        return list;        
+    } else {
+        pic::PicState_int64 input_state_mtx = numpy2PicState_int64(self->input_state);
+        pic::PicState_int64 output_state_mtx = numpy2PicState_int64(self->output_state);
+        // start the calculation of the permanent
+        pic::Complex16 ret;
+#ifdef __DFE__    
+        if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
+            GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE);
+        else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
+            GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepMultiDualDFE);
+        else
+#endif
+        ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+        return Py_BuildValue("D", &ret);
+    }
 }
 
 
@@ -291,7 +351,7 @@ ChinHuhPermanentCalculator_wrapper_setinput_state(ChinHuhPermanentCalculator_wra
     // set the array on the Python side
     Py_DECREF(self->input_state);
 
-    if ( PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
+    if ( PyList_Check(input_state_arg) || PyArray_IS_C_CONTIGUOUS(input_state_arg) ) {
         self->input_state = input_state_arg;
         Py_INCREF(self->input_state);
     }
@@ -325,7 +385,7 @@ ChinHuhPermanentCalculator_wrapper_setoutput_state(ChinHuhPermanentCalculator_wr
     // set the array on the Python side
     Py_DECREF(self->output_state);
 
-    if ( PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
+    if ( PyList_Check(output_state_arg) || PyArray_IS_C_CONTIGUOUS(output_state_arg) ) {
         self->output_state = output_state_arg;
         Py_INCREF(self->output_state);
     }
