@@ -16,11 +16,20 @@ void
 GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual);
 
+void
+GlynnPermanentCalculatorRepeatedMultiBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+    std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
 void GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_mtx, PicState_int64& input_state,
     PicState_int64& output_state, Complex16& perm, int useDual);
+
+void
+GlynnPermanentCalculatorRepeatedBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+    std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
+
 
 }
 
