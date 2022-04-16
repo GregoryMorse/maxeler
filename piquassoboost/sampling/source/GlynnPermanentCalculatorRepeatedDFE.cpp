@@ -331,8 +331,8 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
           return matrix_rows;
       }
       bool curdir =  k[j] < inp[j];
-      cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[j]-1, inp[j]-1-(k[j] < inp[j] ? k[j] : inp[j]*2-k[j]-1));
-      rowchange_indices.push_back((onerows+j) | (curdir ? 0x80 : 0)); //high bit indicates subtraction
+      cur_multiplicity = binomial_gcode(cur_multiplicity, curdir, inp[j]-1, curdir ? inp[j]-1-k[j] : k[j]-inp[j]);
+      //rowchange_indices.push_back((onerows+j) | (curdir ? 0x80 : 0)); //high bit indicates subtraction
       changecount++;
       for (size_t i = 0; i <= j; i++)
           k[i] = (k[i] != (inp[i] << 1)-1) ? k[i] + 1 : 0;
