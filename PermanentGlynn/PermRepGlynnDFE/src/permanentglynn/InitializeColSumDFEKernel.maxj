@@ -115,8 +115,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         oneRow = control.mux(needData.cat(firstTick), initChoices);
         oneRow = optimization.limitFanout(oneRow, 4);
 
-        DFEVar rowChangeIndex = io.input("rowChangeIndices", dfeUInt(8), isInit | nextRowIdx);
-        DFEVar rowChangeIsNeg = rowChangeIndex.get(7).reinterpret(dfeBool()); //high bit indicates negative direction 
+        DFEVar rowChangeIndex = io.input("rowChangeIndices", dfeUInt(8), isInit);
+        DFEVar rowChangeIsNeg; 
         rowChangeIndex = rowChangeIndex.cast(dfeUInt(6));
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
         DFEVar storeCount = initCount > rowpowadj2 ? initCount - basekernpow2 - (dual ? 1 : 0) : initCount;
@@ -126,31 +126,35 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < rows - (basekernpow2 + (dual ? 1 : 0)) - 1; i++) {
             allRows[i] <== initOneHot[i] ? oneRow : stream.offset(allRows[i], -1);
         }
-        if (bincoeff && kernNum == 0 && !dual) {
+        {
             DFEVector<DFEVar> initMplicity = ((isInit & initCount > rowpowadj2).cast(dfeUInt(rows - (basekernpow2 + (dual ? 1 : 0)) - 1)) << storeRowIndex).reinterpret(initOneHotType); 
             DFEVectorType<DFEVar> mplicityType = new DFEVectorType<DFEVar>(dfeUInt(6), rows-1-(basekernpow2+(dual ? 1 : 0)));
             DFEVector<DFEVar> rowMultiplicities = mplicityType.newInstance(this);
             DFEVector<DFEVar> curRowMP = firstTick ? constant.zero(mplicityType) : stream.offset(rowMultiplicities, -1);
             rowMultiplicities <== curRowMP + initMplicity.cast(mplicityType);
-            CounterChain cpGrayCode = control.count.makeCounterChain(nextRowIdx);
+            CounterChain cpGrayCode = control.count.makeCounterChain(nextRowIdx | isTransition);
             DFEVector<DFEVar> countersZero = initOneHotType.newInstance(this);
-            for (int i = 0; i < rows-1-(basekernpow2+(dual ? 1 : 0)); i++) {
-                countersZero[i] <== cpGrayCode.addCounter(rowMultiplicities[i]+constant.var(dfeUInt(6), 1), 1) !== 0;
+            //DFEVector<DFEVar> cpGC = mplicityType.newInstance(this);
+            for (int i = rows-1-(basekernpow2+(dual ? 1 : 0))-1; i >= 0; i--) { //counts from innermost to outermost so must reverse if want counter 0...n to increment in that order
+                DFEVar counter = cpGrayCode.addCounter(rowMultiplicities[i]+1, 1);
+                //cpGC[i] <== counter;
+                countersZero[i] <== counter !== 0;
             }
-            DFEVar rowChangeMask = Bitops.leading1Detect(countersZero.reinterpret(dfeUInt(rows-1-(basekernpow2+(dual ? 1 : 0)))));
-            //rowChangeIndex = Bitops.onehotDecode(rowChangeMask);
+            DFEVar rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(rows-1-(basekernpow2+(dual ? 1 : 0)))));
+            rowChangeMask = rowChangeMask === 0 ? 1 : rowChangeMask;
+            storeRowIndex = isInit ? storeRowIndex : Bitops.onehotDecode(rowChangeMask);
             DFEVectorType<DFEVar> curMplicityType = new DFEVectorType<DFEVar>(dfeUInt(6+1), rows-1-(basekernpow2+(dual ? 1 : 0)));
             DFEVector<DFEVar> curMultiplicities = curMplicityType.newInstance(this);
-            DFEVar nextEnable = ~((rowChangeMask>>1)-1);
+            DFEVar nextEnable = (rowChangeMask<<1)-1;
             for (int i = 0; i < rows-1-(basekernpow2+(dual ? 1 : 0)); i++) {
-                curMultiplicities[i] <== control.count.makeCounter(control.count.makeParams(7).withMax(rowMultiplicities[i].cast(dfeUInt(7))<<1).withEnable(nextRowIdx & nextEnable.get(i))).getCount();
+                curMultiplicities[i] <== control.count.makeCounter(control.count.makeParams(7).withMax((rowMultiplicities[i]+1).cast(dfeUInt(7))<<1).withEnable(nextRowIdx & nextEnable.get(i))).getCount();
             }
-            DFEVar curmp = control.mux(rowChangeIndex, curMultiplicities.getElementsAsList());
-            DFEVar inpmp = control.mux(rowChangeIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
-            //rowChangeIsNeg = curmp > 0 & curmp <= inpmp; //curmp < inpmp;
-            debug.simPrintf(nextRowIdx, "%KObj% %KObj% %x %d %d %d %d\n", rowMultiplicities, curMultiplicities, countersZero.reinterpret(dfeUInt(rows-1-(basekernpow2+(dual ? 1 : 0)))), Bitops.onehotDecode(rowChangeMask), curmp > 0 & curmp <= inpmp, storeRowIndex, rowChangeIsNeg);
+            DFEVar curmp = control.mux(storeRowIndex, curMultiplicities.getElementsAsList());
+            DFEVar inpmp = control.mux(storeRowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
+            rowChangeIsNeg = curmp < inpmp;
+            //debug.simPrintf(nextRowIdx, "%KObj% %KObj% %KObj% %x %d %d %d %d\n", rowMultiplicities, curMultiplicities, cpGC, countersZero.reinterpret(dfeUInt(rows-1-(basekernpow2+(dual ? 1 : 0)))), Bitops.onehotDecode(rowChangeMask), curmp < inpmp, storeRowIndex, rowChangeIsNeg);
             /*
-            if (kernNum == 0) {
+            if (bincoeff && kernNum == 0) {
                 DFEVar num = rowChangeIsNeg ? curmp : inpmp - curmp;
                 DFEVar denom = rowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1;
                 DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38), 40+1);
