@@ -5,6 +5,7 @@
 #include <tbb/tbb.h>
 #endif
 #include <vector>
+#include "common_functionalities.h"
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
@@ -298,6 +299,53 @@ matrix transpose_reorder_rows(matrix& matrix_mtx, std::vector<uint8_t> & rowchan
         }
     }
     return matrix_rows;
+}
+void location_to_counter(std::vector<uint64_t>& count, std::vector<uint64_t>& inp, uint64_t loc)
+{
+    for (size_t i = 0; i < inp.size(); i++) {
+        count.push_back(loc % inp[i]);
+        loc = loc / inp[i]; 
+    }
+}
+void counter_to_gcode(std::vector<uint64_t>& gcode, std::vector<uint64_t>& counterChain, std::vector<uint64_t>& inp)
+{
+    gcode = counterChain;
+    int parity = 0;
+    for (size_t j = inp.size()-1; j != ~0ULL; j--) {
+        if (parity) gcode[j] += inp[j];
+        if (((counterChain[j] & 1) != 0) && (((inp[j] & 1) != 0) || (((inp[j] & 1) == 0) && (counterChain[j] < inp[j]))))
+            parity = !parity;
+    }
+}
+uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mplicity, std::vector<uint8_t> initDirections, uint8_t loopLength)
+{
+    uint64_t total = 1;
+    for (size_t i = 0; i < inp.size(); i++) total *= inp[i];
+    uint64_t segment = total / loopLength, rem = total % loopLength;
+    uint64_t cursum = 0;
+    initDirections.resize(loopLength * inp.size());
+    for (size_t i = 0; i < loopLength; i++) {
+        std::vector<uint64_t> loc, gcode;
+        location_to_counter(loc, inp, cursum);
+        counter_to_gcode(gcode, loc, inp);
+        uint64_t bincoeff = 1;
+        for (size_t j = 0; j < gcode.size(); j++) {
+            bool curdir =  gcode[j] < inp[j];
+            uint64_t curval = curdir ? inp[j]-1-gcode[j] : gcode[j]-inp[j];
+            bincoeff *= binomialCoeff(inp[j], curval);
+            int64_t curmp = (curval << 1) - inp[j];
+            uint64_t k = 0;
+            for (; k < (curmp < 0 ? -curmp : curmp); k++) { //expand Gray code into a bit vector, staggered by loopLength
+                initDirections[k*loopLength+i] = curval < 0 ? 1 : 0;
+            }
+            for (; k < inp[j]; k+=2) { //remaining pairs which sum to 0
+                initDirections[k*loopLength+i] = 1; initDirections[k*loopLength+i] = 0;
+            }
+        }
+        mplicity.push_back(bincoeff);
+        cursum += segment + ((i < rem) ? 1 : 0);
+    }
+    return total;
 }
 
 matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int transpose)
