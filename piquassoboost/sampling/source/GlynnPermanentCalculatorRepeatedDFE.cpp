@@ -109,6 +109,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
       return;
     }
     int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
+    if (!transpose) t1 = t2; 
     const size_t max_dim = dfe_mtx_size;
     //convert multiplicities of rows and columns to indices
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
@@ -127,12 +128,13 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     //sort multiplicity >=2 row indices since we need anchor rows, and complexity reduction greatest by using smallest multiplicities
     sort(mrows.begin(), mrows.end(), [&adj_input_state](size_t i, size_t j) { return adj_input_state[i] < adj_input_state[j]; }); 
     //while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
-    if (row_indices.size() < 1) { //Glynn anchor row
+    while (row_indices.size() < 1 || t1*(row_indices.size()+mrows.size())*(photons+((photons % 10 == 0) ? 0 : (10 - photons % 10)))*sizeof(uint64_t)*2 > (1ULL << 28)) { //Glynn anchor row, prevent streaming more than 256MB of data
         row_indices.push_back(mrows[0]);
         if (--adj_input_state[mrows[0]] == 1) {
+          t1 >>= 1; //divide by 2 since we eliminate a 2 multiplicity
           row_indices.push_back(mrows[0]);
           mrows.erase(mrows.begin());
-        }
+        } else t1 = (t1 / (adj_input_state[mrows[0]] + 1)) * adj_input_state[mrows[0]]; //divide (always evenly) by old multiplicity and remultiply by new
     }
     //construct multiplicity Gray code counters
     uint8_t mulsum = 0, onerows = row_indices.size();
@@ -438,7 +440,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       unlock_lib();
       return;
     }
-    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
+    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
     std::vector<uint8_t> rowchange_indices;
     std::vector<uint64_t> mplicity;
     uint8_t onerows, mulsum; uint64_t changecount;
