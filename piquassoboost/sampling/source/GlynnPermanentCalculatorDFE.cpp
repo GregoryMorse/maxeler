@@ -160,14 +160,6 @@ inline long long doubleToLLRaw(double d)
     return *pll;
 }
 
-inline void symmetricQuadrantNormalize(Complex32* sums, Complex16 val) {
-    int symQuad = (val.real() < 0) == (val.imag() < 0); //is upper-right or lower left quadrant    
-    Complex32 value1 = sums[symQuad] + val;
-    Complex32 value2 = sums[symQuad] - val;
-    sums[symQuad] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-}
-
-
 void
 GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Complex16>& perm, int useDual, int useFloat)
 {
@@ -190,20 +182,34 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
             matrix& matrix_mtx = matrices[i];
             if (!useFloat) {
                 // calulate the maximal sum of the columns to normalize the matrix
-                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
                 memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+                std::vector<std::vector<uint8_t>> sortedSlopes(matrix_mtx.cols);
+                for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                    sortedSlopes[jdx].resize(matrix_mtx.rows);
+                    std::iota(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), 0);         
+                    sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_mtx, jdx](uint8_t a, uint8_t b){
+                        return matrix_mtx[a*matrix_mtx.stride+jdx].real()*matrix_mtx[b*matrix_mtx.stride+jdx].imag() <
+                                matrix_mtx[b*matrix_mtx.stride+jdx].real()*matrix_mtx[a*matrix_mtx.stride+jdx].imag();
+                    }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
+                }            
                 for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
                     for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                        size_t offset = idx*matrix_mtx.stride + jdx;
-                        symmetricQuadrantNormalize(&colSumMax[2*jdx], matrix_mtx[offset]);
+                        size_t offset = sortedSlopes[jdx][idx]*matrix_mtx.stride + jdx;
+                        Complex32 value1 = colSumMax[2*jdx] + matrix_mtx[offset];
+                        Complex32 value2 = colSumMax[2*jdx] - matrix_mtx[offset];
+                        colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                        offset = sortedSlopes[jdx][matrix_mtx.rows-1-idx]*matrix_mtx.stride + jdx;
+                        value1 = colSumMax[2*jdx+1] + matrix_mtx[offset];
+                        value2 = colSumMax[2*jdx+1] - matrix_mtx[offset];
+                        colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
                     }
             
                 }
             
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-                    Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
-                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
+                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -281,18 +287,31 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
         // calulate the maximal sum of the columns to normalize the matrix
         matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-        for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+        std::vector<std::vector<uint8_t>> sortedSlopes(matrix_mtx.cols);
+        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+            sortedSlopes[jdx].resize(matrix_mtx.rows);
+            std::iota(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), 0);
+            sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_mtx, jdx](uint8_t a, uint8_t b){
+                return matrix_mtx[a*matrix_mtx.stride+jdx].real()*matrix_mtx[b*matrix_mtx.stride+jdx].imag() <
+                        matrix_mtx[b*matrix_mtx.stride+jdx].real()*matrix_mtx[a*matrix_mtx.stride+jdx].imag();
+            }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
+        }       
+        for (size_t idx=0; idx<matrix_mtx.rows; idx++) {            
             for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                size_t offset = idx*matrix_mtx.stride + jdx;              
-                symmetricQuadrantNormalize(&colSumMax[2*jdx], matrix_mtx[offset]);
-            }
-    
+                size_t offset = sortedSlopes[jdx][idx]*matrix_mtx.stride + jdx;
+                Complex32 value1 = colSumMax[2*jdx] + matrix_mtx[offset];
+                Complex32 value2 = colSumMax[2*jdx] - matrix_mtx[offset];
+                colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                offset = sortedSlopes[jdx][matrix_mtx.rows-1-idx]*matrix_mtx.stride + jdx;
+                value1 = colSumMax[2*jdx+1] + matrix_mtx[offset];
+                value2 = colSumMax[2*jdx+1] - matrix_mtx[offset];
+                colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+            }    
         }
     
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-            Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
-            renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
+            renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
