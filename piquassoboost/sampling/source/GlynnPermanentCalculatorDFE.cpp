@@ -161,31 +161,10 @@ inline long long doubleToLLRaw(double d)
 }
 
 inline void symmetricQuadrantNormalize(Complex32* sums, Complex16 val) {
-    Complex32 value1 = sums[0] + val;
-    Complex32 value2 = sums[0] - val;
-    Complex32 value3 = sums[1] + val;
-    Complex32 value4 = sums[1] - val;
-    int symQuad1 = (value1.real() < 0) == (value1.imag() < 0);                  
-    int symQuad2 = (value2.real() < 0) == (value2.imag() < 0);
-    int symQuad3 = (value3.real() < 0) == (value3.imag() < 0);
-    int symQuad4 = (value4.real() < 0) == (value4.imag() < 0);
-    if (symQuad1 == symQuad2) { 
-        sums[symQuad1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-        if (symQuad3 == symQuad2) {
-            sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];
-            if (symQuad4 == symQuad3) {
-                sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-            } else sums[symQuad4] = value4;
-        } else {
-            sums[symQuad3] = value3;
-            sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-        }
-    } else {
-        sums[symQuad1] = value1;
-        sums[symQuad2] = value2;
-        sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];  
-        sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-    }
+    int symQuad = (val.real() < 0) == (val.imag() < 0); //is upper-right or lower left quadrant    
+    Complex32 value1 = sums[symQuad] + val;
+    Complex32 value2 = sums[symQuad] - val;
+    sums[symQuad] = std::norm(value1) > std::norm(value2) ? value1 : value2;
 }
 
 
@@ -223,7 +202,8 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
             
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+                    Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
+                    renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -311,7 +291,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-            renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+            Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
+            renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
