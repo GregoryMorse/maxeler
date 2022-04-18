@@ -56,31 +56,10 @@ matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & ro
 }
 
 inline void symmetricQuadrantNormalize(Complex32* sums, Complex16 val) {
-    Complex32 value1 = sums[0] + val;
-    Complex32 value2 = sums[0] - val;
-    Complex32 value3 = sums[1] + val;
-    Complex32 value4 = sums[1] - val;
-    int symQuad1 = (value1.real() < 0) == (value1.imag() < 0);                  
-    int symQuad2 = (value2.real() < 0) == (value2.imag() < 0);
-    int symQuad3 = (value3.real() < 0) == (value3.imag() < 0);
-    int symQuad4 = (value4.real() < 0) == (value4.imag() < 0);
-    if (symQuad1 == symQuad2) { 
-        sums[symQuad1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-        if (symQuad3 == symQuad2) {
-            sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];
-            if (symQuad4 == symQuad3) {
-                sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-            } else sums[symQuad4] = value4;
-        } else {
-            sums[symQuad3] = value3;
-            sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-        }
-    } else {
-        sums[symQuad1] = value1;
-        sums[symQuad2] = value2;
-        sums[symQuad3] = std::norm(value3) > std::norm(sums[symQuad3]) ? value3 : sums[symQuad3];  
-        sums[symQuad4] = std::norm(value4) > std::norm(sums[symQuad4]) ? value4 : sums[symQuad4];
-    }
+    int symQuad = (val.real() < 0) == (val.imag() < 0); //is upper-right or lower left quadrant    
+    Complex32 value1 = sums[symQuad] + val;
+    Complex32 value2 = sums[symQuad] - val;
+    sums[symQuad] = std::norm(value1) > std::norm(value2) ? value1 : value2;
 }
 
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
@@ -108,7 +87,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
       unlock_lib();
       return;
     }
-    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
+    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
     const size_t max_dim = dfe_mtx_size;
     //convert multiplicities of rows and columns to indices
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
@@ -127,7 +106,8 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     //sort multiplicity >=2 row indices since we need anchor rows, and complexity reduction greatest by using smallest multiplicities
     sort(mrows.begin(), mrows.end(), [&adj_input_state](size_t i, size_t j) { return adj_input_state[i] < adj_input_state[j]; }); 
     //while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
-    while (row_indices.size() < 1) { //Glynn anchor row, prevent streaming more than 256MB of data
+    while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
+    //while (row_indices.size() < 1) { //Glynn anchor row, prevent streaming more than 256MB of data
         row_indices.push_back(mrows[0]);
         if (--adj_input_state[mrows[0]] == 1) {
           row_indices.push_back(mrows[0]);
@@ -175,7 +155,8 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(1, photons);
     for (size_t jdx=0; jdx<photons; jdx++ ) {
-        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+        Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
+        renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
     }
     
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -212,7 +193,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     for (size_t i = 0; i < actualinits; i++)
         mtxfix[i] = matrix_base<ComplexFix16>(onerows * totalPerms, max_fpga_cols);
   
-    Complex32 res;
+    Complex32 res(0.0, 0.0);
     uint64_t gcodeidx = 0, cur_multiplicity = 1, skipidx = (1ULL << curmp.size())-1; //gcodeidx is direction bit vector, skipidx set to not skip all indexes - technically "not skip index"
     std::vector<uint64_t> mplicity; //binomial coefficient multipliers
     size_t bytesPerMatrix = onerows*max_fpga_cols*sizeof(uint64_t)*2;
@@ -311,7 +292,7 @@ void location_to_counter(std::vector<uint64_t>& count, std::vector<uint64_t>& in
 {
     for (size_t i = 0; i < inp.size(); i++) {
         count.push_back(loc % inp[i]);
-        loc = loc / inp[i]; 
+        loc /= inp[i]; 
     }
 }
 void counter_to_gcode(std::vector<uint64_t>& gcode, std::vector<uint64_t>& counterChain, std::vector<uint64_t>& inp)
@@ -445,7 +426,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       unlock_lib();
       return;
     }
-    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
+    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
     std::vector<uint8_t> rowchange_indices;
     std::vector<uint64_t> mplicity;
     uint8_t onerows, mulsum; uint64_t changecount;
@@ -466,7 +447,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+        Complex32 a = colSumMax[2*jdx] + colSumMax[2*jdx+1], b = colSumMax[2*jdx] - colSumMax[2*jdx+1];
+        renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
         //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
 
