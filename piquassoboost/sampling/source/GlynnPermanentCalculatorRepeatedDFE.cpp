@@ -55,14 +55,6 @@ matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & ro
     return matrix_rows;
 }
 
-inline void symmetricQuadrantNormalize(Complex32* sums, Complex16 val) {
-    if (val.real() < 0) val = -val;
-    int symQuad = val.imag() < 0; //is upper-right or lower left quadrant    
-    sums[symQuad] += val; //most extremal point in quadrant, cannot add these as their individual components might contribute better if their sign were flipped
-    int slopeReal = val.real() >= (symQuad ? -val.imag() : val.imag());    
-    sums[2+symQuad] = slopeReal ? sums[2+symQuad] + val : sums[2+symQuad] - val; //real/imag >= 0 or not - so we can see which vector would increase opposite direction the most
-}
-
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE;
 extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFEF;
@@ -88,7 +80,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
       unlock_lib();
       return;
     }
-    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
+    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
     const size_t max_dim = dfe_mtx_size;
     //convert multiplicities of rows and columns to indices
     std::vector<unsigned char> colIndices; colIndices.reserve(max_dim);
@@ -140,14 +132,41 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
 
     // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( photons, 4);
+    matrix_base<Complex32> colSumMax( photons, 2);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+    std::vector<std::vector<uint8_t>> sortedSlopes(photons);
+    for( size_t jdx=0; jdx<photons; jdx++) {
+        sortedSlopes[jdx].resize(row_indices.size());
+        std::iota(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), 0);
+        if (transpose) {
+            sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_init, &row_indices, &colIndices, jdx](uint8_t a, uint8_t b){
+                return matrix_init[colIndices[jdx]*matrix_init.stride+row_indices[a]].real()*matrix_init[colIndices[jdx]*matrix_init.stride+row_indices[b]].imag() <
+                        matrix_init[colIndices[jdx]*matrix_init.stride+row_indices[b]].real()*matrix_init[colIndices[jdx]*matrix_init.stride+row_indices[a]].imag();
+            }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
+        } else {
+            sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_init, &row_indices, &colIndices, jdx](uint8_t a, uint8_t b){
+                return matrix_init[row_indices[a]*matrix_init.stride+colIndices[jdx]].real()*matrix_init[row_indices[b]*matrix_init.stride+colIndices[jdx]].imag() <
+                        matrix_init[row_indices[b]*matrix_init.stride+colIndices[jdx]].real()*matrix_init[row_indices[a]*matrix_init.stride+colIndices[jdx]].imag();
+            }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
+        }
+        }            
+
     for (size_t i=0; i<row_indices.size(); i++) {
         //size_t offset = (transpose ? colIndices[i] : row_indices[i]) * matrix_init.stride;
-        for (int64_t idx = 0; idx < (i < onerows ? 1 : adj_input_state[row_indices[i]]); idx++) {
-            for( size_t jdx=0; jdx<photons; jdx++) {
-                size_t offset = transpose ? colIndices[jdx]*matrix_init.stride+row_indices[i] : row_indices[i]*matrix_init.stride+colIndices[jdx];
-                symmetricQuadrantNormalize(&colSumMax[4*jdx], matrix_init[offset]);
+        for( size_t jdx=0; jdx<photons; jdx++) {
+            for (int64_t idx = 0; idx < (sortedSlopes[jdx][i] < onerows ? 1 : adj_input_state[row_indices[sortedSlopes[jdx][i]]]); idx++) {
+                size_t offset = transpose ? colIndices[jdx]*matrix_init.stride+row_indices[sortedSlopes[jdx][i]] : row_indices[sortedSlopes[jdx][i]]*matrix_init.stride+colIndices[jdx];
+                Complex32 value1 = colSumMax[2*jdx] + matrix_init[offset];
+                Complex32 value2 = colSumMax[2*jdx] - matrix_init[offset];
+                colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+            }
+        }
+        for( size_t jdx=0; jdx<photons; jdx++) {
+            for (int64_t idx = 0; idx < (sortedSlopes[jdx][row_indices.size()-1-i] < onerows ? 1 : adj_input_state[row_indices[sortedSlopes[jdx][row_indices.size()-1-i]]]); idx++) {
+                size_t offset = transpose ? colIndices[jdx]*matrix_init.stride+row_indices[sortedSlopes[jdx][row_indices.size()-1-i]] : row_indices[sortedSlopes[jdx][row_indices.size()-1-i]]*matrix_init.stride+colIndices[jdx];
+                Complex32 value1 = colSumMax[2*jdx+1] + matrix_init[offset];
+                Complex32 value2 = colSumMax[2*jdx+1] - matrix_init[offset];
+                colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
             }
         }
     }
@@ -155,13 +174,8 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(1, photons);
     for (size_t jdx=0; jdx<photons; jdx++ ) {
-        Complex32 a = colSumMax[4*jdx] + colSumMax[4*jdx+3],
-                  b = colSumMax[4*jdx] - colSumMax[4*jdx+3],
-                  c = colSumMax[4*jdx+1] + colSumMax[4*jdx+2],
-                  d = colSumMax[4*jdx+1] - colSumMax[4*jdx+2];
-        a = std::abs(std::norm(a) > std::norm(b) ? a : b);
-        b = std::abs(std::norm(c) > std::norm(d) ? c : d);
-        renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
+        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+        //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
     
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -431,7 +445,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       unlock_lib();
       return;
     }
-    int transpose = 1; //t1 < t2; //transpose if needed to reduce complexity on rows direction
+    int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
     std::vector<uint8_t> rowchange_indices;
     std::vector<uint64_t> mplicity;
     uint8_t onerows, mulsum; uint64_t changecount;
@@ -439,26 +453,34 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, onerows, changecount, mulsum, transpose); 
     
     // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
+    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+    std::vector<std::vector<uint8_t>> sortedSlopes(matrix_mtx.cols);
+    for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+        sortedSlopes[jdx] = rowchange_indices;         
+        sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_mtx, jdx](uint8_t a, uint8_t b){
+            return matrix_mtx[a*matrix_mtx.stride+jdx].real()*matrix_mtx[b*matrix_mtx.stride+jdx].imag() <
+                    matrix_mtx[b*matrix_mtx.stride+jdx].real()*matrix_mtx[a*matrix_mtx.stride+jdx].imag();
+        }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
+    }
     for (size_t i=0; i<photons; i++) {
-        size_t idx = rowchange_indices[i];
-        size_t offset = idx*matrix_mtx.stride;
         for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-            symmetricQuadrantNormalize(&colSumMax[4*jdx], matrix_mtx[offset+jdx]);
+            size_t offset = sortedSlopes[jdx][i]*matrix_mtx.stride + jdx;
+            Complex32 value1 = colSumMax[2*jdx] + matrix_mtx[offset];
+            Complex32 value2 = colSumMax[2*jdx] - matrix_mtx[offset];
+            colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+            offset = sortedSlopes[jdx][photons-1-i]*matrix_mtx.stride + jdx;
+            value1 = colSumMax[2*jdx+1] + matrix_mtx[offset];
+            value2 = colSumMax[2*jdx+1] - matrix_mtx[offset];
+            colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
         }
     }
 
     // calculate the renormalization coefficients
     matrix_base<long double> renormalize_data(matrix_mtx.cols, 1);
     for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        Complex32 a = colSumMax[4*jdx] + colSumMax[4*jdx+3],
-                  b = colSumMax[4*jdx] - colSumMax[4*jdx+3],
-                  c = colSumMax[4*jdx+1] + colSumMax[4*jdx+2],
-                  d = colSumMax[4*jdx+1] - colSumMax[4*jdx+2];
-        a = std::abs(std::norm(a) > std::norm(b) ? a : b);
-        b = std::abs(std::norm(c) > std::norm(d) ? c : d);
-        renormalize_data[jdx] = std::abs(std::norm(a) > std::norm(b) ? a : b);
+        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+        
         //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
 
