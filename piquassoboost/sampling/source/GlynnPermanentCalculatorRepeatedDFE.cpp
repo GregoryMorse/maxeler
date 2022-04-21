@@ -326,28 +326,31 @@ void counter_to_gcode(std::vector<uint64_t>& gcode, std::vector<uint64_t>& count
 }
 uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mplicity, std::vector<uint8_t>& initDirections, uint8_t loopLength)
 {
-    uint64_t total = 1;
-    for (size_t i = 0; i < inp.size(); i++) total *= inp[i];
+    uint64_t total = 1; /*uint64_t totrows = 0;*/
+    for (size_t i = 0; i < inp.size(); i++) { total *= inp[i]; /*totrows += inp[i];*/ }
     uint64_t segment = total / loopLength, rem = total % loopLength;
     uint64_t cursum = 0;
-    initDirections.resize(loopLength * inp.size());
+    initDirections.resize(loopLength * inp.size()); //for initDirections - * totrows
     for (size_t i = 0; i < loopLength; i++) {
         std::vector<uint64_t> loc, gcode;
         location_to_counter(loc, inp, cursum);
         counter_to_gcode(gcode, loc, inp);
         uint64_t bincoeff = 1;
+        //uint64_t k_base = 0;
         for (size_t j = 0; j < gcode.size(); j++) {
             bool curdir =  gcode[j] < inp[j];
             uint64_t curval = curdir ? inp[j]-1-gcode[j] : gcode[j]-inp[j];
             bincoeff *= binomialCoeff(inp[j], curval);
             int64_t curmp = (curval << 1) - inp[j];
-            uint64_t k = 0;            
+            initDirections[j*loopLength+i] = loc[j];
+            /*uint64_t k = 0;
             for (; k < (curmp < 0 ? -curmp : curmp); k++) { //expand Gray code into a bit vector, staggered by loopLength
-                initDirections[k*loopLength+i] = curval < 0 ? 1 : 0;
+                initDirections[(k_base+k)*loopLength+i] = curval < 0 ? 1 : 0;
             }
             for (; k < inp[j]; k+=2) { //remaining pairs which sum to 0
-                initDirections[k*loopLength+i] = 1; initDirections[k*loopLength+i] = 0;
+                initDirections[(k_base+k)*loopLength+i] = 0; initDirections[(k_base+k+1)*loopLength+i] = 1;
             }
+            k_base += inp[j]; */
             //initDirections XORed together gives the starting parity, computed on DFE
         }
         mplicity.push_back(bincoeff);
@@ -356,7 +359,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     return total;
 }
 
-matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, std::vector<uint8_t>& initDirections, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int transpose)
+matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, std::vector<uint8_t>& initDirections, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int transpose, int loopLength)
 {
   std::vector<uint8_t> mrows;
   std::vector<uint8_t> row_indices;
@@ -391,7 +394,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
       }
   }
   if (mrows.size() == 0) { mplicity.push_back(1); return matrix_rows; }
-  changecount = divide_gray_code(inp, mplicity, initDirections, 20) - 1;
+  changecount = divide_gray_code(inp, mplicity, initDirections, loopLength) - 1;
   return matrix_rows;
   /*std::vector<uint8_t> k; k.resize(inp.size());
   uint64_t cur_multiplicity = 1;
@@ -458,7 +461,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     std::vector<uint8_t> initDirections;
     uint8_t onerows, mulsum; uint64_t changecount;
     PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();
-    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, transpose); 
+    int loopLength = 20;
+    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, transpose, loopLength); 
     
     // calulate the maximal sum of the columns to normalize the matrix
     matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
