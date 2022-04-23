@@ -85,15 +85,15 @@ public class PermanentGlynnDFEKernel extends Kernel {
     }
     DFEVar mulKaratsuba(DFEVar a, DFEVar b) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
-        if ((aType.getTotalBits() % 27 == 0 ? 0 : (27 - aType.getTotalBits() % 27)) + (bType.getTotalBits() % 18 == 0 ? 0 : (18 - aType.getTotalBits() % 18)) <
-            (aType.getTotalBits() % 18 == 0 ? 0 : (18 - aType.getTotalBits() % 18)) + (bType.getTotalBits() % 27 == 0 ? 0 : (27 - aType.getTotalBits() % 27)))
+        if ((aType.getTotalBits() % 24 == 0 ? 0 : (24 - aType.getTotalBits() % 24)) + (bType.getTotalBits() % 17 == 0 ? 0 : (17 - aType.getTotalBits() % 17)) <
+            (aType.getTotalBits() % 17 == 0 ? 0 : (17 - aType.getTotalBits() % 17)) + (bType.getTotalBits() % 24 == 0 ? 0 : (24 - aType.getTotalBits() % 24)))
             return mulKaratsuba(b, a);
-        if (aType.getTotalBits() <= 36 || bType.getTotalBits() <= 54) {
-            return mulExact(a, b);
+        if (getDSPCount(aType.getTotalBits(), bType.getTotalBits()) <= 5) {
+            return mulExact(a, b, aType.getTotalBits() + bType.getTotalBits(), aType.getIntegerBits() + bType.getIntegerBits());
         }
         int aDiv = aType.getTotalBits() / 2, bDiv = bType.getTotalBits() / 2;
-        aDiv -= aDiv % 18; //ideally we want to round up/down to minimize abs(b-a)
-        bDiv -= bDiv % 27;
+        aDiv -= aDiv % 17; //ideally we want to round up/down to minimize abs(b-a)
+        bDiv -= bDiv % 24;
         //System.out.println(aType.getTotalBits() + " " + bType.getTotalBits() + " " + aDiv + " " + bDiv);
         DFEVar high1 = a.slice(aDiv, aType.getTotalBits() - aDiv).reinterpret(dfeUInt(aType.getTotalBits() - aDiv)), low1 = a.slice(0, aDiv).reinterpret(dfeUInt(aDiv));
         DFEVar high2 = b.slice(bDiv, bType.getTotalBits() - bDiv).reinterpret(dfeUInt(bType.getTotalBits() - bDiv)), low2 = b.slice(0, bDiv).reinterpret(dfeUInt(bDiv));
@@ -165,18 +165,18 @@ public class PermanentGlynnDFEKernel extends Kernel {
     }
     DFEVar addExact(DFEVar a, DFEVar b, boolean isSub) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
+        int fracBits = Math.max(aType.getFractionBits(), bType.getFractionBits());
         optimization.pushFixOpMode(Optimization.bitSizeExact(1 + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
-                Math.max(aType.getFractionBits(), bType.getFractionBits())),
-            Optimization.offsetExact(-Math.max(aType.getFractionBits(), bType.getFractionBits())), MathOps.ADD_SUB);
+                fracBits),
+            Optimization.offsetExact(-fracBits), MathOps.ADD_SUB);
         DFEVar result = isSub ? (a - b) : (a + b);
         optimization.popFixOpMode(MathOps.ADD_SUB);
         return result;
     }
-    DFEVar mulExact(DFEVar a, DFEVar b) {
-        DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
-        optimization.pushFixOpMode(Optimization.bitSizeExact(aType.getTotalBits() + bType.getTotalBits()),
-            Optimization.offsetExact(-aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits()), MathOps.MUL);
-        DFEVar result = a * b;
+    DFEVar mulExact(DFEVar a, DFEVar b, int bits, int intBits) {
+        optimization.pushFixOpMode(Optimization.bitSizeExact(bits),
+            Optimization.offsetExact(-bits + intBits), MathOps.MUL); 
+        DFEVar result = optimization.pipeline(a * b);
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
@@ -203,21 +203,22 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 return DFEComplexType.newInstance(owner, cab - b * (c + d), cab + a * (d - c));
             }
         } else {
-            DFEType dataTypeLeftFix = dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT);
-            DFEType dataTypeRightFix = dfeFixOffset(bits + (bits == 64 ? 1 : 0), -bits + 2 + (bits == 64 ? 0 : 1), SignMode.TWOSCOMPLEMENT);
-            int newBits = bits * 2 + (bits == 64 ? 1 : 0);
-            DFEType resultType = dfeFixOffset(newBits - 3, -newBits + 2 + 3, SignMode.TWOSCOMPLEMENT);
             if (useUngar) {
-                DFEVar ac = mulExact(a.cast(dataTypeLeftFix), c.cast(dataTypeLeftFix)).cast(resultType);
-                DFEVar bd = mulExact(b.cast(dataTypeLeftFix), d.cast(dataTypeLeftFix)).cast(resultType);
-                return DFEComplexType.newInstance(owner, ac - bd, addExact(mulExact(addExact(a, b, false).cast(dataTypeRightFix), addExact(c, d, false).cast(dataTypeRightFix)), addExact(ac, bd, false), true).cast(resultType));
+                DFEVar ac = mulExact(a, c, bits, 2);
+                DFEVar bd = mulExact(b, d, bits, 2);
+                return DFEComplexType.newInstance(owner, ac - bd, addExact(mulExact(addExact(a, b, false), addExact(c, d, false), bits, 4), addExact(ac, bd, false), true).cast(dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT)));
             } else {
-                DFEVar cab = mulExact(c.cast(dataTypeLeftFix), addExact(a, b, false).cast(dataTypeRightFix));
-                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(b.cast(dataTypeLeftFix), addExact(c, d, false).cast(dataTypeRightFix))).cast(resultType),
-                    (cab + mulExact(a.cast(dataTypeLeftFix), addExact(d, c, true).cast(dataTypeRightFix))).cast(resultType));
+                DFEVar cab = mulExact(optimization.pipeline(c), addExact(a, b, false), bits, 4); //2..-2 requires 3 integer bits
+                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(optimization.pipeline(b), addExact(c, d, false), bits, 4)),
+                    (cab + mulExact(optimization.pipeline(a), addExact(d, c, true), bits, 4)));
                 return ret;
             }
         }
+    }
+    int getDSPCount(int x, int y) //y > x
+    {   
+        int z = ((x-18)%17==0 || (x-18)%17>7) ? 1 : 0;
+        return 1-z+(1+(y-25+17-1)/17)*(z+(x-18+17-1)/17);
     }
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
@@ -263,7 +264,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
         //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
         //optimization.pushDSPFactor(0.0, MathOps.MUL);
-        int extraprec = 0; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
+        int extraprec = 16; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
         //DSP usage from maxeler optimization manual: "On MAX5 a DSP has input port widths of 18 and 27 bit." therefore a bits*b bits requires ceil(a/18)*ceil(b/27)
         //however it is unclear if an approximation algorithm is used for example with dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT)
         //multiplying 2 64-bit numbers should give a 128-bit result, which is then rounded truncating most of the bits
@@ -274,14 +275,18 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //but many papers on hardware multipliers give more efficient approximation algorithms 
         //also dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT) multiplications seem to have a much higher DSP usage which should not be the case - needed for the Gaussian/Karatsuba complex multiplication formulas intermediate addtions/subtractions
         //Gaussian and Karatsuba formulas use 75% of the DSPs of the normal complex multiplication however, and can allow increased resource usage
-        //import math; bd={x:math.ceil(x/18)*math.ceil(x/27) for x in range(64, 128+1)}
-        //{64: 12, 65: 12, 66: 12, 67: 12, 68: 12, 69: 12, 70: 12, 71: 12, 72: 12, 73: 15, 74: 15, 75: 15, 76: 15, 77: 15, 78: 15, 79: 15, 80: 15, 81: 15, 82: 20, 83: 20, 84: 20, 85: 20, 86: 20, 87: 20, 88: 20, 89: 20, 90: 20, 91: 24, 92: 24, 93: 24, 94: 24, 95: 24, 96: 24, 97: 24, 98: 24, 99: 24, 100: 24, 101: 24, 102: 24, 103: 24, 104: 24, 105: 24, 106: 24, 107: 24, 108: 24, 109: 35, 110: 35, 111: 35, 112: 35, 113: 35, 114: 35, 115: 35, 116: 35, 117: 35, 118: 35, 119: 35, 120: 35, 121: 35, 122: 35, 123: 35, 124: 35, 125: 35, 126: 35, 127: 40, 128: 40}
-        //[bd[64+x+2]*20*4*3+bd[64+x+4]*10*4*3+bd[64+x+8]*5*4*3+bd[64+x+16]*2*4*3+bd[64+x+32]*1*4*3+bd[64+x+40]*1*4*3 for x in range(21)]
-        //[5976, 6156, 6276, 6276, 6276, 6768, 6768, 7488, 7488, 7488, 7788, 7884, 7884, 8016, 8616, 8616, 9816, 9816, 9816, 10056, 10056]
-        while (limit > 1) { //20 at 64x65, 10 at 80x81, 5 at 107x108, 2 at 125x126, 1 at 125x126, 1 at 125x126  
+        //bd={(x,y):((x-18)%17!=0 and (x-18)%17<=7)+(1+(y-25+17-1)//17)*(((x-18)%17==0 or (x-18)%17>7)+(x-18+17-1)//17) for x in range(1, 40+1) for y in range(1, 40+1) if y > x}
+        //bd={x:((x-18)%17!=0 and (x-18)%17<=7)+(1+(x-25+17-1)//17)*(((x-18)%17==0 or (x-18)%17>7)+(x-18+17-1)//17) for x in range(1, 128+1)}
+        //{64: 16, 65: 16, 66: 16, 67: 16, 68: 16, 69: 16, 70: 17, 71: 17, 72: 17, 73: 17, 74: 17, 75: 17, 76: 17, 77: 25, 78: 25, 79: 25, 80: 25, 81: 25, 82: 25, 83: 25, 84: 25, 85: 25, 86: 25, 87: 26, 88: 26, 89: 26, 90: 26, 91: 26, 92: 26, 93: 26, 94: 36, 95: 36, 96: 36, 97: 36, 98: 36, 99: 36, 100: 36, 101: 36, 102: 36, 103: 36, 104: 37, 105: 37, 106: 37, 107: 37, 108: 37, 109: 37, 110: 37, 111: 49, 112: 49, 113: 49, 114: 49, 115: 49, 116: 49, 117: 49, 118: 49, 119: 49, 120: 49, 121: 50, 122: 50, 123: 50, 124: 50, 125: 50, 126: 50, 127: 50, 128: 64}
+        //bd={x:((y-18)%17!=0 and (y-18)%17<=7)+(1+(x-25+17-1)//17)*(((y-18)%17==0 or (y-18)%17>7)+(y-18+17-1)//17) for x, y in ((65, 64), (93, 93), (110, 110), (127, 127))}
+        //(bd[65]*20+bd[81]*10+bd[108]*5+bd[126]*4)*3*4
+        while (limit > 1) { //20 at 64x65, 10 at 93x93, 5 at 110x110, 2 at 127x127, 1 at 127x127, 1 at 127x127  
             //extra leading bit needed with Gauss or Karatsuba as the addition/subtraction of real/imaginary components maybe be between -2 and 2
             int totalprec = 64 + extraprec;
-            if (extraprec != 0) totalprec += Math.min(totalprec % 18 == 0 ? 0 : 18 - (totalprec % 18), totalprec % 27 == 0 ? 0 : (27 - totalprec % 27)); //round up to the smaller distance to next multiple of 18 or 27 to maximize DSP usage!!!
+            if (extraprec != 0) {
+                int dsps = getDSPCount(totalprec, totalprec);
+                while (getDSPCount(totalprec+1, totalprec+1) <= dsps+1) totalprec++; 
+            }
             //DFEType dataTypeFixCur     = dfeFixOffset(totalprec, -totalprec+2, SignMode.TWOSCOMPLEMENT);
             //DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
 
@@ -299,11 +304,14 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (2 * limitNew < limit) {
                 limitNew++;
                 colSumFix[limitNew - 1] = colSumFix[limit - 1];
+                for (int i = 0; i < 9; i++) {
+                    colSumFix[limitNew - 1] = optimization.pipeline(colSumFix[limitNew - 1]);
+                }
             }
 
             limit = limitNew;
-            extraprec = extraprec == 0 ? 16 : extraprec * 2;
-            if (extraprec > 62) extraprec = 62;
+            extraprec *= 2;
+            if (extraprec > 63) extraprec = 63;
 
         }
         //optimization.popDSPFactor();
