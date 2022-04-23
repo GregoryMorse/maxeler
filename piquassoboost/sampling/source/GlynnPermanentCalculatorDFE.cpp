@@ -44,8 +44,10 @@ extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE;
 extern "C" INITPERMGLYNNREPDFE initializeRep_DFE;
 extern "C" FREEPERMGLYNNREPDFE releiveRep_DFE;
 
-size_t dfe_mtx_size;
-size_t dfe_basekernpow2;
+size_t dfe_mtx_size = 0;
+size_t dfe_basekernpow2 = 0;
+//size_t dfe_num_inits = 0;
+//size_t dfe_loop_length = 0;
 
 void* handle = NULL;
 int isLastDual = 0;
@@ -184,28 +186,29 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                 // calulate the maximal sum of the columns to normalize the matrix
                 matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
                 memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-                std::vector<std::vector<uint8_t>> sortedSlopes(matrix_mtx.cols);
-                for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                    sortedSlopes[jdx].resize(matrix_mtx.rows);
-                    std::iota(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), 0);         
-                    sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_mtx, jdx](uint8_t a, uint8_t b){
-                        return matrix_mtx[a*matrix_mtx.stride+jdx].real()*matrix_mtx[b*matrix_mtx.stride+jdx].imag() <
-                                matrix_mtx[b*matrix_mtx.stride+jdx].real()*matrix_mtx[a*matrix_mtx.stride+jdx].imag();
-                    }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
-                }            
+
+                //sum up vectors in first/upper-left and fourth/lower-right quadrants
                 for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
                     for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                        size_t offset = sortedSlopes[jdx][idx]*matrix_mtx.stride + jdx;
-                        Complex32 value1 = colSumMax[2*jdx] + matrix_mtx[offset];
-                        Complex32 value2 = colSumMax[2*jdx] - matrix_mtx[offset];
-                        colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-                        offset = sortedSlopes[jdx][matrix_mtx.rows-1-idx]*matrix_mtx.stride + jdx;
-                        value1 = colSumMax[2*jdx+1] + matrix_mtx[offset];
-                        value2 = colSumMax[2*jdx+1] - matrix_mtx[offset];
-                        colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                        size_t offset = idx*matrix_mtx.stride + jdx;
+                        int realPos = matrix_mtx[offset].real() > 0;
+                        int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                        if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
+                        else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
                     }
             
                 }
+                //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
+                for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+                    for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                        size_t offset = idx*matrix_mtx.stride + jdx;
+                        int realPos = matrix_mtx[offset].real() > 0;
+                        int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                        Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
+                        Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
+                        colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                    } 
+                }   
             
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
@@ -287,26 +290,26 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
         // calulate the maximal sum of the columns to normalize the matrix
         matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-        std::vector<std::vector<uint8_t>> sortedSlopes(matrix_mtx.cols);
-        for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-            sortedSlopes[jdx].resize(matrix_mtx.rows);
-            std::iota(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), 0);
-            sort(sortedSlopes[jdx].begin(), sortedSlopes[jdx].end(), [&matrix_mtx, jdx](uint8_t a, uint8_t b){
-                return matrix_mtx[a*matrix_mtx.stride+jdx].real()*matrix_mtx[b*matrix_mtx.stride+jdx].imag() <
-                        matrix_mtx[b*matrix_mtx.stride+jdx].real()*matrix_mtx[a*matrix_mtx.stride+jdx].imag();
-            }); //real1/imag1 < real2/imag2 -> real1*imag2<real2*imag1, also std::arg but more expensive
-        }       
+        //sum up vectors in first/upper-left and fourth/lower-right quadrants
         for (size_t idx=0; idx<matrix_mtx.rows; idx++) {            
             for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                size_t offset = sortedSlopes[jdx][idx]*matrix_mtx.stride + jdx;
-                Complex32 value1 = colSumMax[2*jdx] + matrix_mtx[offset];
-                Complex32 value2 = colSumMax[2*jdx] - matrix_mtx[offset];
-                colSumMax[2*jdx] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-                offset = sortedSlopes[jdx][matrix_mtx.rows-1-idx]*matrix_mtx.stride + jdx;
-                value1 = colSumMax[2*jdx+1] + matrix_mtx[offset];
-                value2 = colSumMax[2*jdx+1] - matrix_mtx[offset];
-                colSumMax[2*jdx+1] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                size_t offset = idx*matrix_mtx.stride + jdx;
+                int realPos = matrix_mtx[offset].real() > 0;
+                int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
+                else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
             }    
+        }
+        //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
+        for (size_t idx=0; idx<matrix_mtx.rows; idx++) {
+            for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                size_t offset = idx*matrix_mtx.stride + jdx;
+                int realPos = matrix_mtx[offset].real() > 0;
+                int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
+                Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
+                colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+            } 
         }
     
         // calculate the renormalization coefficients
