@@ -3,6 +3,7 @@ package permanentglynn;
 import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.platform.max5.manager.ImplementationStrategy;
+import com.maxeler.platform.max5.manager.SynthesisStrategy;
 import com.maxeler.platform.max5.manager.BuildConfig;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 
@@ -47,11 +48,32 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
 
         BuildConfig conf = manager.getBuildConfig();
+        
+        //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
+        //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
+        //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
+        conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
+                
+        //Ranking best to worst: PERFORMANCE_EXTRA_TIMING_OPT, MAXELER3, MAXELER1, MAXELER2, MAXELER4, PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, PERFORMANCE_EXPLORE, VIVADO_DEFAULT
+        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT, ImplementationStrategy.MAXELER3
+            //ImplementationStrategy.VIVADO_DEFAULT,
+            //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP,
+            //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
+            //ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW,  
+            //ImplementationStrategy.FLOW_QUICK, ImplementationStrategy.FLOW_RUN_PHYS_OPT, ImplementationStrategy.FLOW_RUN_POST_ROUTE_PHYS_OPT, ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED,
+            //ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
+            //ImplementationStrategy.MAXELER4,
+            //ImplementationStrategy.PERFORMANCE_BALANCE_SLLS, ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
+            //ImplementationStrategy.PERFORMANCE_EXPLORE, ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,            
+            //ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
+            //ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
+            //ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_SPREAD_SLLS,
+            //ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT
+            //ImplementationStrategy.POWER_DEFAULT_OPTS,ImplementationStrategy.POWER_EXPLORE_AREA 
+            );
+        conf.setParallelism(4);
 
-        conf.setImplementationStrategies(ImplementationStrategy.MAXELER3);
-        conf.setParallelism(64);
-
-        manager.setDefaultStreamClockFrequency(200);
+        manager.setDefaultStreamClockFrequency(300); //200
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
