@@ -43,7 +43,7 @@ public class SumUpPermDFEKernel extends Kernel {
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
         if (useFloat) optimization.pushNoPipelining();
-        DFEComplex cursum = stream.offset(sum, -1, constant.zero(cplxFix128Type));
+        DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
         sum <== cursum + colProdVals[0];
         if (useFloat) optimization.popNoPipelining();
         if (useFloat) {
