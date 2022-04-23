@@ -153,6 +153,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (dual) for (int i = 0; i < 2; i++) isInit = optimization.pipeline(isInit); 
         for (int i = 0; i < 8; i++) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
         if (dual) for (int i = 0; i < 7; i++) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
+        DFEVar isNeg = null;
+	    if (!dual) isNeg = (changePosIsZero ^ grayCounter.changeValue) & ~isInit; //isInit 3+2+4+1 delay
         
         if (!dual) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
         DFEVar isNegEven = dual ? null : (grayCounter.changeValue & ~isInit); //isInit 3+2+4+1
@@ -178,7 +180,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         choices.add(oneRowCplx);
         choices.add(oneRowNeg);
         if (dual) for (int i = 0; i < 3; i++) isInit = optimization.pipeline(isInit); 
-        DFEVar isNeg = ((dual ? (isLocal & changePosIsZero) : changePosIsZero) ^ grayCounter.changeValue) & ~isInit; //isInit 3+2+4+1 delay
+        if (dual) isNeg = ((isLocal & changePosIsZero) ^ grayCounter.changeValue) & ~isInit; //isInit 3+2+4+1 delay
         for (int i = 0; i < 2; i++) isInit = optimization.pipeline(isInit);
         for (int kern = 0; kern < kerns; kern++) {
             int gcode = (kern << 1) ^ kern; //000, 011, 110, 101, 00isLocal, 01~isLocal, 11isLocal, 10~isLocal 
