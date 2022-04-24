@@ -23,9 +23,11 @@ public class SumUpPermDFEKernel extends Kernel {
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
         // tick count
-        DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
+        //DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar ticksmax = io.scalarInput("changeCount", dfeUInt(64));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
 
+        DFEVar lastTick = tickCount === ticksmax - 1;
         DFEComplex colProdVals[] = new DFEComplex[n];
         for (int i = 0; i < n; i++)
             colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
@@ -40,17 +42,17 @@ public class SumUpPermDFEKernel extends Kernel {
                 sumsleft = sumsleft / 2 + 1;
             } else sumsleft /= 2;
         }
-
+        //colProdVals[0] = tickCount.get(0) ? -colProdVals[0] : colProdVals[0]; //parity
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
-        optimization.pushNoPipelining();
+        if (useFloat) optimization.pushNoPipelining();
         DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
         sum <== cursum + colProdVals[0];
-        optimization.popNoPipelining();
+        if (useFloat) optimization.popNoPipelining();
         if (useFloat) {
-            io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), tickCount === ticksmax - 1);
+            io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), lastTick);
         } else
-            io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
+            io.output("res", sum, cplxFix128Type, lastTick);
 
     }
 
