@@ -49,7 +49,7 @@ public class SumUpPermDFEKernel extends Kernel {
         if (useFloat) {
             io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), tickCount === ticksmax - 1);
         } else
-            io.output("res", sum, cplxFix128Type, tickCount === ticksmax - 1);
+            io.output("res", sum, cplxFix128Type, optimization.pipeline(tickCount === ticksmax - 1));
 
     }
 
