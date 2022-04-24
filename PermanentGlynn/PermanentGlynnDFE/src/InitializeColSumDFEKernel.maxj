@@ -192,7 +192,14 @@ public class InitializeColSumDFEKernel extends Kernel {
             toAdd[kern] <== control.mux(isInit.cat((dual || ((kern & 1) != 0) ? isNeg : isNegEven) | isInitNeg), choices); //isInit delay 3+2+4+1+2 
         }
         if (useFloat) optimization.pushNoPipelining();
-        DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = firstTick ? constant.zero(allKernsType) : stream.offset(allColSums, -1);
+        for (int i = 0; i < 6; i++) firstTick = optimization.pipeline(firstTick); //firstTick will fanout to cols*kerns*2=10*4*2=80 so it must split into max of 32 or 32+32+16
+        DFEVar[] firstTicks = new DFEVar[] { optimization.pipeline(firstTick), optimization.pipeline(firstTick), optimization.pipeline(firstTick) };
+        DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = allKernsType.newInstance(this);
+        for (int kern = 0; kern < kerns; kern++) {
+            for (int j = 0; j < cols; j++) {     
+                prevColmnSumVector[kern][j] <== firstTicks[((kern * cols + j) * 2) / 32] ? constant.zero(cplxFixCommonAddType) : stream.offset(allColSums[kern][j], -1);
+            }
+        }
         allColSums <== prevColmnSumVector + toAdd;
         if (useFloat) optimization.popNoPipelining();
 
