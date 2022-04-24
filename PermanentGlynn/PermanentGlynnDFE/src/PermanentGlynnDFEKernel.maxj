@@ -208,9 +208,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 DFEVar bd = mulExact(b, d, bits, 2);
                 return DFEComplexType.newInstance(owner, ac - bd, addExact(mulExact(addExact(a, b, false), addExact(c, d, false), bits, 4), addExact(ac, bd, false), true).cast(dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT)));
             } else {
-                DFEVar cab = mulExact(optimization.pipeline(c), addExact(a, b, false), bits, 4); //2..-2 requires 3 integer bits
-                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(optimization.pipeline(b), addExact(c, d, false), bits, 4)),
-                    (cab + mulExact(optimization.pipeline(a), addExact(d, c, true), bits, 4)));
+                DFEVar cab = mulExact(optimization.pipeline(c), addExact(a, b, false), bits, 3); //2..-2 requires 3 integer bits
+                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulExact(optimization.pipeline(b), addExact(c, d, false), bits, 3)),
+                    (cab + mulExact(optimization.pipeline(a), addExact(d, c, true), bits, 3)));
                 return ret;
             }
         }
