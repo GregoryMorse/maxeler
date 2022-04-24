@@ -331,7 +331,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
         for (size_t j = 0; j < gcode.size(); j++) {
             bool curdir =  gcode[j] < inp[j];
             uint64_t curval = curdir ? inp[j]-1-gcode[j] : gcode[j]-inp[j];
-            bincoeff *= binomialCoeff(inp[j], curval);
+            bincoeff *= binomialCoeff(inp[j]-1, curval);
             initDirections[j*loopLength+i] = loc[j];
             /*int64_t curmp = (curval << 1) - inp[j];
             uint64_t k = 0;
@@ -532,7 +532,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     }
     for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
-    for (size_t i = (renormalize_data.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
+    for (size_t i = (mplicity.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
     calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
       rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, &perm);
