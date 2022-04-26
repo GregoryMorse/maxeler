@@ -79,7 +79,7 @@ void unload_dfe_lib()
 
 int init_dfe_lib(int choice, int dual) {
     const std::lock_guard<std::recursive_mutex> lock(libmutex);
-    int useGroup = 1;
+    int useGroup = 0;
     if (choice == DFE_MAIN && initialize_DFE && dual == isLastDual) return initialize_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
     if (choice == DFE_FLOAT && initialize_DFEF && dual == isLastDual) return initialize_DFEF(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
     if (choice == DFE_REP && initializeRep_DFE && dual == isLastDual) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
@@ -244,8 +244,8 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                 size_t offset = idx * matrix_mtx.stride + basecol;
                 size_t offset_small = (rowbase + idx)*mtxfix[i].stride;
                 for (size_t jdx = 0; jdx < lastcol; jdx++) {
-                  mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
-                  mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
+                  mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
+                  mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[j*renormalize_data.stride+basecol+jdx]);
                   //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
                 }
                 memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
@@ -337,8 +337,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
         size_t offset = idx * matrix_mtx.stride + basecol;
         size_t offset_small = idx*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-          mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
-          mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
           //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
