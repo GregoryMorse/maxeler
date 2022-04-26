@@ -187,7 +187,7 @@ long double dfeFloatToLD(__int128 res)
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
 void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, const unsigned char* colIndices,
-  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, Complex16* perm)
+  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, const int initParities, Complex16* perm)
 {
     if (!initialized) return;
     
@@ -234,7 +234,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     // simulation
 #ifndef DUAL
       actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res; //, actions.glynnRowsGray.outstream_size_res = resbytes;
-      actions.glynnRowsGray.param_rows = rows, actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
+      actions.glynnRowsGray.param_initParities = initParities,
+      //actions.glynnRowsGray.param_rows = rows,
+      actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
       actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows;
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.glynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.glynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
@@ -257,7 +259,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #ifdef MAXELER_SIM
       actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res; //, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.outstream_res2 = res2; //, actions.dualGlynnRowsGray.outstream_size_res2 = resbytes;
-      actions.dualGlynnRowsGray.param_rows = rows, actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
+      actions.dualGlynnRowsGray.param_initParities = initParities,
+      //actions.dualGlynnRowsGray.param_rows = rows,
+      actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
@@ -269,13 +273,13 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_colIndex = colIndices;
       actions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
-      actions.dualGlynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+      actions.dualGlynnRowsGray.instream_size_rowChangeIndices = rows + (rows % 16 == 0 ? 0 : (16 - rows % 16));
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
       actions.dualGlynnRowsGray.instream_size_initBinCoeff = sizeof(uint64_t) * (LOOPLENGTH+(LOOPLENGTH % 2 == 0 ? 0 : 1));
       actions.dualGlynnRowsGray.instream_initBinCoeff2 = mplicity;
       actions.dualGlynnRowsGray.instream_size_initBinCoeff2 = sizeof(uint64_t) * (LOOPLENGTH+(LOOPLENGTH % 2 == 0 ? 0 : 1));
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
-      actions.dualGlynnRowsGray.instream_size_initDirections = LOOPLENGTH*((photons-onerows) + ((photons-onerows) % 4 == 0 ? 0 : (4 - (photons-onerows) % 4)));      
+      actions.dualGlynnRowsGray.instream_size_initDirections = LOOPLENGTH*(rows + (rows % 4 == 0 ? 0 : (4 - rows % 4)));      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING ", "
                                                  "colIndex4 -> colIndexFanout, colIndex5 -> colIndexFanout, colIndex6 -> colIndexFanout, colIndex7 -> colIndexFanout, "
                                                  "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout, "
@@ -283,6 +287,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
                                                  "initDirections4 -> initDirectionsFanout, initDirections5 -> initDirectionsFanout, initDirections6 -> initDirectionsFanout, initDirections7 -> initDirectionsFanout";
 #else
       actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res; //, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
+      actions.dualGlynnRowsGray.param_initParities = initParities,
+      //actions.dualGlynnRowsGray.param_rows = rows,
+      actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
@@ -297,6 +304,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_size_initDirections = LOOPLENGTH*((photons-onerows) + ((photons-onerows) % 4 == 0 ? 0 : (4 - (photons-onerows) % 4)));      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
       dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.outstream_res = res2; //, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
+      dualactions.dualGlynnRowsGray.param_initParities = initParities,
+      //dualactions.dualGlynnRowsGray.param_rows = rows,
+      dualactions.dualGlynnRowsGray.param_msize = cols, dualactions.dualGlynnRowsGray.param_photons = photons, dualactions.dualGlynnRowsGray.param_changeCount = changecount+1;
       dualactions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; dualactions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows;
       dualactions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; dualactions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; dualactions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
