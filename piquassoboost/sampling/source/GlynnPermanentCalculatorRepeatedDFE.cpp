@@ -185,8 +185,8 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         size_t offset_small = idx*mtxprefix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
           size_t offset = transpose ? colIndices[basecol+jdx]*matrix_init.stride+row_indices[idx] : row_indices[idx]*matrix_init.stride+colIndices[basecol+jdx];
-          mtxprefix[i][offset_small+jdx].real = llrint((long double)matrix_init[offset].real() * fixpow / renormalize_data[basecol+jdx]);
-          mtxprefix[i][offset_small+jdx].imag = llrint((long double)matrix_init[offset].imag() * fixpow / renormalize_data[basecol+jdx]);
+          mtxprefix[i][offset_small+jdx].real = llrintl((long double)matrix_init[offset].real() * fixpow / renormalize_data[basecol+jdx]);
+          mtxprefix[i][offset_small+jdx].imag = llrintl((long double)matrix_init[offset].imag() * fixpow / renormalize_data[basecol+jdx]);
           if (idx >= onerows) { //start with all positive Gray codes, so sum everything onto the adjust row
               for (int64_t j = 0; j < adj_input_state[row_indices[idx]]; j++) {
                   mtxprefix[i][jdx].real += mtxprefix[i][offset_small+jdx].real;
@@ -199,18 +199,20 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
       for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxprefix[i][jdx].real = fixpow;
     }
     
+    size_t bytesPerMatrix = onerows*max_fpga_cols*sizeof(uint64_t)*2;
+    size_t maxmatrices = (1ULL << 28) / bytesPerMatrix;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     for (size_t i = 0; i < actualinits; i++)
-        mtxfix[i] = matrix_base<ComplexFix16>(onerows * totalPerms, max_fpga_cols);
+        mtxfix[i] = matrix_base<ComplexFix16>(onerows * maxmatrices, max_fpga_cols);
   
     Complex32 res(0.0, 0.0);
     uint64_t gcodeidx = 0, cur_multiplicity = 1, skipidx = (1ULL << curmp.size())-1; //gcodeidx is direction bit vector, skipidx set to not skip all indexes - technically "not skip index"
     std::vector<uint64_t> mplicity; //binomial coefficient multipliers
-    size_t bytesPerMatrix = onerows*max_fpga_cols*sizeof(uint64_t)*2;
-    size_t maxmatrices = (1ULL << 28) / bytesPerMatrix;
     size_t permBase = 0;
     ComplexFix16* mtx_fix_data[numinits];
     matrix_base<long double> renormalize_data_all(maxmatrices, photons);            
+    for (size_t i = 0; i < maxmatrices; i++) memcpy(renormalize_data_all.get_data()+photons*i, renormalize_data.get_data(), photons * sizeof(long double));
+    for (size_t j = 0; j < numinits; j++) mtx_fix_data[j] = mtxfix[j].get_data();
     std::vector<Complex16> perms;
     perms.resize(totalPerms);
     while (true) {
@@ -224,8 +226,6 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
             //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
             size_t numPerms = std::min(maxmatrices, totalPerms - permBase);
             //assert(mtxfix[i].stride == mtxfix[i].cols);
-            for (size_t i = 0; i < maxmatrices; i++) memcpy(renormalize_data_all.get_data()+photons*i, renormalize_data.get_data(), photons * sizeof(long double));
-            for (size_t j = 0; j < numinits; j++) mtx_fix_data[j] = mtxfix[j].get_data();
             if (useFloat)
                 calcPermanentGlynnDFEF( (const ComplexFix16**)mtx_fix_data, renormalize_data_all.get_data(), onerows, photons, numPerms, perms.data()+permBase);
             else
@@ -336,7 +336,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
             /*int64_t curmp = (curval << 1) - inp[j];
             uint64_t k = 0;
             for (k = 0; k < inp[j]; k++) { //expand Gray code into a bit vector, staggered by loopLength
-                initDirections[(k_base+k)*loopLength+i] = k < curval ? 1 : 0;
+                initDirections[(k_base+k)*loopLength+i] = k >= curval ? 1 : 0;
             }
             k_base += inp[j]; */
             //initDirections XORed together gives the starting parity, computed on DFE
@@ -510,8 +510,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         size_t offset = idx * matrix_mtx.stride + basecol;
         size_t offset_small = idx*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-          mtxfix[i][offset_small+jdx].real = llrint((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
-          mtxfix[i][offset_small+jdx].imag = llrint((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].real = llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].imag = llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
           //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
