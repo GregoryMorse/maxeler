@@ -139,10 +139,11 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         InterfaceParam msizeadj = origRows - 1 - basekernpow2;
         InterfaceParam ticksmax = 1L << msizeadj;
         InterfaceParam msize = ei.addParam("msize", CPUTypes.UINT8);
-        InterfaceParam nonZeroRows = ei.addParam("rows", CPUTypes.UINT8);
+        //InterfaceParam nonZeroRows = ei.addParam("rows", CPUTypes.UINT8);
         InterfaceParam photons = ei.addParam("photons", CPUTypes.UINT8);
         //InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT8);
         InterfaceParam changeCount = ei.addParam("changeCount", CPUTypes.UINT64);
+        InterfaceParam initParities = ei.addParam("initParities", CPUTypes.UINT32);
         
         if (dual && !isSim) {
             InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
@@ -159,8 +160,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
             ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + loopLength * (photons - 1));
             if (i != 0) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
-            ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
+            //ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
             ei.setScalar("InitializeColSumDFEKernel_" + i, "photonsm1", photons - 1);
+            if (i == 0) ei.setScalar("InitializeColSumDFEKernel_" + i, "initParities", initParities);
         }
         if (dual && isSim) {
             for (int kernel_n = 0; kernel_n < numkernels * numarrays / 2; kernel_n++)
@@ -175,9 +177,10 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
                 ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + loopLength * (photons - 1));
                 if (i != initKerns) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
-                ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
+                //ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "photonsm1", photons - 1);                
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", 0);
+                if (i == initKerns) ei.setScalar("InitializeColSumDFEKernel_" + i, "initParities", initParities);
             }
             //ei.setScalar("SumUpPermDFEKernel2", "msizeadj", msizeadj);
             ei.setScalar("SumUpPermDFEKernel2", "changeCount", ticksmax * changeCount);
