@@ -36,7 +36,7 @@ INITPERMGLYNNDFE initialize_DFEF = NULL;
 FREEPERMGLYNNDFE releive_DFEF = NULL;
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
-  const uint8_t*, const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, pic::Complex16*);
+  const uint8_t*, const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, const int, pic::Complex16*);
 typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
