@@ -8,7 +8,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
@@ -50,11 +50,10 @@ public class InitializeColSumDFEKernel extends Kernel {
             changePosition = Bitops.onehotDecode(bitDiffMask);
         }
     }
-    DFEVar mulExact(DFEVar a, DFEVar b) {
-        DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
-        optimization.pushFixOpMode(Optimization.bitSizeExact(aType.getTotalBits() + bType.getTotalBits()),
-            Optimization.offsetExact(-aType.getTotalBits() - bType.getTotalBits() + aType.getIntegerBits() + bType.getIntegerBits()), MathOps.MUL);
-        DFEVar result = optimization.pipeline(optimization.pipeline(a) * optimization.pipeline(b));
+    DFEVar mulExact(DFEVar a, DFEVar b, int bits, int intBits) {
+        optimization.pushFixOpMode(Optimization.bitSizeExact(bits),
+            Optimization.offsetExact(-bits + intBits), MathOps.MUL); 
+        DFEVar result = optimization.pipeline(a * b);
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
@@ -66,9 +65,10 @@ public class InitializeColSumDFEKernel extends Kernel {
         //Addition-based method
         DFEVar count = dfeUInt(bit_width).newInstance(owner);
         DFEVar wrap = dfeBool().newInstance(owner);
-        DFEVar lastCount = userReset ? initValue : stream.offset(count, -loopLength, initValue);
         DFEVar maxWrap = max-1;
-        DFEVar lastWrap = userReset ? initValue === maxWrap : stream.offset(wrap, -loopLength, initValue === maxWrap);
+        //DFEVar lastCount = userReset ? initValue + ((enable & (initValue !== maxWrap)) ? constant.var(dfeUInt(bit_width), inc) : constant.zero(dfeUInt(bit_width))) : stream.offset(count, -loopLength, initValue);
+        DFEVar lastCount = userReset ? initValue : stream.offset(count, -loopLength, initValue);
+        DFEVar lastWrap = userReset ? lastCount === maxWrap : stream.offset(wrap, -loopLength, initValue === maxWrap);
         //optimization.pushNoPipelining(); //conditional addition=1, double mux=1, >= is 1, so loop offset too 3 not 1...
         count <== lastCount + (enable ? (lastWrap ? initValue-maxWrap : constant.var(dfeUInt(bit_width), inc)) : constant.zero(dfeUInt(bit_width)));
         //optimization.popNoPipelining();
@@ -210,23 +210,24 @@ public class InitializeColSumDFEKernel extends Kernel {
         //DFEVar mplicityCount = control.count.makeCounter(control.count.makeParams(6).withMax(rowChangeIndex)).getCount();
         DFEVar curdir = dfeUInt(8).newInstance(this);
         curdir <== initLoop ? io.input("initDirections", dfeUInt(8), initLoop) : stream.offset(curdir, -loopLength);
-        DFEVar counterInit = curdir.cast(dfeUInt(6));
+        DFEVar counterInit = curdir.slice(0, 6).reinterpret(dfeUInt(6));
         curdir = curdir.get(7); //high bit is the initial curdir
         DFEVar gcodeCounter = counterInit.cast(dfeUInt(7)) + (curdir ? constant.zero(dfeUInt(7)) : inpmp.cast(dfeUInt(7)));
-        DFEVar initDirection = mplicityCount >= (rowChangeIndex - counterInit);
+        DFEVar initDirection = mplicityCount >= (curdir ? (rowChangeIndex - counterInit) : counterInit);
         DFEVar rowChangeIsNeg;
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
         DFEVar storeRowIndex = dfeUInt(6).newInstance(this);
         DFEVar prevStoreRowIdx = firstTick ? constant.zero(dfeUInt(6)) : stream.offset(storeRowIndex, -loopLength);
-        storeRowIndex <== prevStoreRowIdx + initLoop.cast(dfeUInt(6)); 
+        storeRowIndex <== prevStoreRowIdx + initLoop.cast(dfeUInt(6));
+        storeRowIndex = storeRowIndex - 1;
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), mplicityRows);
-        DFEVector<DFEVar> initOneHot = ((isRowInit & loopCount === 0).cast(dfeUInt(mplicityRows)) << prevStoreRowIdx).reinterpret(initOneHotType);        
+        DFEVector<DFEVar> initOneHot = ((isRowInit & loopCount === 0).cast(dfeUInt(mplicityRows)) << storeRowIndex).reinterpret(initOneHotType);        
         for (int i = 0; i < mplicityRows; i++) {
             allRows[i] <== initOneHot[i] ? oneRow : stream.offset(allRows[i], -1);
         }
-        if (kernNum == 1) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, prevStoreRowIdx);
+        if (kernNum == 1) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
         
-        DFEVector<DFEVar> initMplicity = (initLoop.cast(dfeUInt(mplicityRows)) << prevStoreRowIdx).reinterpret(initOneHotType); 
+        DFEVector<DFEVar> initMplicity = (initLoop.cast(dfeUInt(mplicityRows)) << storeRowIndex).reinterpret(initOneHotType); 
         DFEVectorType<DFEVar> mplicityType = new DFEVectorType<DFEVar>(dfeUInt(6), mplicityRows);
         DFEVector<DFEVar> rowMultiplicities = mplicityType.newInstance(this);
         DFEVector<DFEVar> initCounters = mplicityType.newInstance(this);
@@ -240,7 +241,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector<DFEVar> countersZero = cpInitGrayCode !== 0;
         DFEVar rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
         rowChangeMask = rowChangeMask === 0 ? 1 : rowChangeMask;
-        storeRowIndex = isInit ? storeRowIndex-1 : Bitops.onehotDecode(rowChangeMask);
+        storeRowIndex = ~isInit ? Bitops.onehotDecode(rowChangeMask) : storeRowIndex;
         DFEVectorType<DFEVar> curMplicityType = new DFEVectorType<DFEVar>(dfeUInt(6+1), mplicityRows);
         DFEVector<DFEVar> curMultiplicities = curMplicityType.newInstance(this);
         DFEVar nextEnable = (rowChangeMask<<1)-1;
@@ -251,29 +252,33 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar curmp = control.mux(storeRowIndex, curMultiplicities.getElementsAsList());
         inpmp = control.mux(storeRowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
         rowChangeIsNeg = curmp < inpmp;
-        if (kernNum == 0) {
+        if (kernNum == 0) { //now we need the next multiplicities
+            countersZero = cpInitGrayCode !== rowMultiplicities;
+            rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
+            DFEVar rowIndex = Bitops.onehotDecode(rowChangeMask);
+            curmp = control.mux(rowIndex, curMultiplicities.getElementsAsList());
+            inpmp = control.mux(rowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
             DFEVar initParities = io.scalarInput("initParities", dfeUInt(32)).cast(dfeUInt(loopLength));
             DFEVar parity = (initParities >> loopCount).get(0);
-            curmp = rowChangeIsNeg ? inpmp-curmp-1 : curmp-inpmp;
-            DFEVar num = (rowChangeIsNeg ? curmp : inpmp - curmp).cast(dfeUInt(6));
-            DFEVar denom = (rowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1).cast(dfeUInt(6));
-            DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38), 40+1);
+            DFEVar nextRowChangeIsNeg = curmp < inpmp;
+            curmp = nextRowChangeIsNeg ? inpmp-curmp : curmp-inpmp-1;
+            DFEVar num = (nextRowChangeIsNeg ? curmp : inpmp - curmp).cast(dfeUInt(6));
+            DFEVar denom = (nextRowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1).cast(dfeUInt(6));
+            DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38+4), 40+1);
             DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(6), 40+1);
             DFEVector<DFEVar> magicDivisionMpliers = divisionMplierType.newInstance(this);
             DFEVector<DFEVar> magicDivisionShifts = divisionShiftType.newInstance(this);
-            long mplierConsts[] = new long[] {1L, 1L, 183251937963L, 1L, 54975581389L, 183251937963L, 157073089683L, 1L, 61083979321L, 54975581389L, 199911205051L, 183251937963L, 169155635043L, 157073089683L, 146601550371L, 1L, 129354309151L, 61083979321L, 57869033041L, 54975581389L, 52357696561L, 199911205051L, 191219413527L, 183251937963L, 175921860445L, 169155635043L, 162890611523L, 157073089683L, 75828388123L, 146601550371L, 141872468101L, 1L, 133274136701L, 129354309151L, 62829235873L, 61083979321L, 59433060961L, 57869033041L, 56385211681L, 54975581389L, 214538854201L};
-            char shiftConsts[] = new char[] {0, 1, 39, 2, 38, 40, 40, 3, 39, 39, 41, 41, 41, 41, 41, 4, 41, 40, 40, 40, 40, 42, 42, 42, 42, 42, 42, 42, 41, 42, 42, 5, 42, 42, 41, 41, 41, 41, 41, 41, 43};
+            long mplierConsts[] = new long[] {1L, 1L, 2932031007403L, 1L, 879609302221L, 2932031007403L, 2513169434917L, 1L, 1954687338269L, 879609302221L, 799644820201L, 2932031007403L, 338311270085L, 2513169434917L, 4691249611845L, 1L, 1034834473201L, 1954687338269L, 1851809057307L, 879609302221L, 3350892579889L, 799644820201L, 3059510616421L, 2932031007403L, 2814749767107L, 338311270085L, 1303124892179L, 2513169434917L, 151656776245L, 4691249611845L, 4539918979205L, 1L, 1066193093601L, 1034834473201L, 4021071095867L, 1954687338269L, 475464487687L, 1851809057307L, 3608653547573L, 879609302221L, 858155416801L};
+            char shiftConsts[] = new char[] {0, 1, 43, 2, 42, 44, 44, 3, 44, 43, 43, 45, 42, 45, 46, 4, 44, 45, 45, 44, 46, 44, 46, 46, 46, 43, 45, 46, 42, 47, 47, 5, 45, 45, 47, 46, 44, 46, 47, 45, 45};
             for (int i = 0; i < 40+1; i++) {
-                magicDivisionMpliers[i] <== constant.var(dfeUInt(38), mplierConsts[i]);
+                magicDivisionMpliers[i] <== constant.var(dfeUInt(38+4), mplierConsts[i]);
                 magicDivisionShifts[i] <== constant.var(dfeUInt(6), shiftConsts[i]);
             }
             DFEVar cur_multiplicity = dfeUInt(38).newInstance(this);
-            DFEVar divided = (mulExact(stream.offset(cur_multiplicity, -loopLength), control.mux(denom-1, magicDivisionMpliers.getElementsAsList())) >> control.mux(denom-1, magicDivisionShifts.getElementsAsList())).cast(dfeUInt(38));
-            DFEVar newMultiplicity = mulExact(divided, num).cast(dfeUInt(38));
-                            
-            cur_multiplicity <== isTransition ? io.input("initBinCoeff", dfeUInt(64), isTransition).cast(dfeUInt(38)) : newMultiplicity;
-            if (kernNum == 0) debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, curmp, inpmp, num, denom, cur_multiplicity, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
-            io.output("bincoeff", (parity ^ repTickCount.get(0)).cat(cur_multiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), isCalc);
+            DFEVar lastMultiplicity = isTransition ? io.input("initBinCoeff", dfeUInt(64), isTransition).cast(dfeUInt(38)) : stream.offset(cur_multiplicity, -loopLength);
+            cur_multiplicity <== (mulExact(mulExact(lastMultiplicity, num, 38+4, 38+4), control.mux(denom-1, magicDivisionMpliers.getElementsAsList()), 38+4+38+4, 38+4+38+4) >> control.mux(denom-1, magicDivisionShifts.getElementsAsList())).cast(dfeUInt(38));
+            debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, lastMultiplicity, rowIndex, rowChangeMask, curmp, inpmp, num, denom, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
+            io.output("bincoeff", (parity ^ repTickCount.get(0)).cat(lastMultiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), isCalc);
         }       
 
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);
