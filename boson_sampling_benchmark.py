@@ -4,6 +4,8 @@ import itertools
 import numpy as np
 
 import piquasso as pq
+import piquassoboost as pqb
+from piquassoboost.sampling.simulator import BoostedSamplingSimulator
 from piquassoboost.sampling.BosonSamplingSimulator import BosonSamplingSimulator
 from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE, GeneralizedCliffordsSimulationStrategyMultiSingleDFE, GeneralizedCliffordsSimulationStrategyMultiDualDFE
 
@@ -85,19 +87,19 @@ def mathcomb(n, k): #binomial coefficients
   return math.factorial(n) // (math.factorial(k) * math.factorial(n-k)) 
 def get_bincoeff_magic():
     import random
-    largestbincoeff = mathcomb(40, 20)
-    assert largestbincoeff.bit_length() == 38 #38 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
+    largestbincoeff = mathcomb(40, 20)*21
+    assert largestbincoeff.bit_length() == 42 #38+4 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
     magicmulshift = [magicgu(largestbincoeff, d) for d in range(1, 41+1)]
-    for _ in range(10000):
+    for _ in range(100000):
         assert all(random.randint(0, largestbincoeff // (d+1)) * x[0] >> x[1] for d, x in enumerate(magicmulshift))
     return magicmulshift
 #[(1, 0), (1, 1), (183251937963, 39), (1, 2), (54975581389, 38), (183251937963, 40), (157073089683, 40), (1, 3), (61083979321, 39), (54975581389, 39), (199911205051, 41), (183251937963, 41), (169155635043, 41), (157073089683, 41), (146601550371, 41), (1, 4), (129354309151, 41), (61083979321, 40), (57869033041, 40), (54975581389, 40), (52357696561, 40), (199911205051, 42), (191219413527, 42), (183251937963, 42), (175921860445, 42), (169155635043, 42), (162890611523, 42), (157073089683, 42), (75828388123, 41), (146601550371, 42), (141872468101, 42), (1, 5), (133274136701, 42), (129354309151, 42), (62829235873, 41), (61083979321, 41), (59433060961, 41), (57869033041, 41), (56385211681, 41), (54975581389, 41), (214538854201, 43)]
 #print(get_bincoeff_magic())
 bcm = get_bincoeff_magic()
-#print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
+print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
 #test_complex_sampling(print_histogram())
 
-DEPTH = 8 if hasSim else 30
+DEPTH = 40 if hasSim else 40
 saveFolder = "resultsbs"
 
 
@@ -138,10 +140,13 @@ def cartesianProductGcode(counterChain, l, k):
             k[j] = k[j]+1 if k[j] != (l[j] << 1)-1 else 0 #(k[j]+1) modulo 2*l[j]
     #assert k == counterToGcode(counterChain, l), (k, counterToGcode(counterChain, l))
 def counterChainMplicity(l):
+    import math, functools
     counterChain, k, term = [0] * len(l), [0] * len(l), [x-1 for x in l]
     while True:
         cartesianProductGcode(counterChain, l, k)
-        print(counterChain, k, [k[j] if k[j] < l[j] else l[j]*2-k[j]-1 for j in range(len(l))])
+        assert k == counterToGcode(counterChain, l), (counterToGcode(counterChain, l), k, counterChain, l)
+        print(counterChain, k, [k[j] if k[j] < l[j] else l[j]*2-k[j]-1 for j in range(len(l))],
+            functools.reduce(lambda a, b: a * b, [math.comb(l[j]-1, l[j]-1-k[j] if k[j] < l[j] else k[j]-l[j]) for j in range(len(l))]))
         if counterChain == term: break
         i = 0
         while True:
@@ -157,7 +162,7 @@ def counterToGcode(counterChain, l):
     g, parity = [x for x in counterChain], False
     for j in range(len(l)-1, -1, -1):
         if parity: g[j] += l[j]
-        if (counterChain[j] & 1) != 0 and ((l[j] & 1) != 0 or (l[j] & 1) == 0 and counterChain[j] < l[j]): parity = not parity
+        parity = (g[j] & 1) != 0
     return g
 def divideGcode(l, p):
     import functools
@@ -280,38 +285,38 @@ def permanent_Glynn_MultiDFEDual(Arep, input_state, output_state):
 samplers = [None, None, None, None, None, None]
 seed = 0x123456789ABCDEF
 def boson_sampling_Clifford_GlynnRep(Arep, input_state, shots):
-  if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategy(Arep))
+  if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategy(Arep, seed))
   else: samplers[0].simulation_strategy.interferometer_matrix = Arep
   samplers[0].simulation_strategy.seed(seed)  
   return samplers[0].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_ChinHuh(Arep, input_state, shots):
-  if samplers[1] is None: samplers[1] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyChinHuh(Arep))
+  if samplers[1] is None: samplers[1] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyChinHuh(Arep, seed))
   else: samplers[1].simulation_strategy.interferometer_matrix = Arep
   samplers[1].simulation_strategy.seed(seed)  
   return samplers[1].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepSingleDFE(Arep, input_state, shots):
-  if samplers[2] is None: samplers[2] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategySingleDFE(Arep))
+  if samplers[2] is None: samplers[2] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategySingleDFE(Arep, seed))
   else: samplers[2].simulation_strategy.interferometer_matrix = Arep
   samplers[2].simulation_strategy.seed(seed)
   return samplers[2].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepDualDFE(Arep, input_state, shots):
-  if samplers[3] is None: samplers[3] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDualDFE(Arep))
+  if samplers[3] is None: samplers[3] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDualDFE(Arep, seed))
   else: samplers[3].simulation_strategy.interferometer_matrix = Arep
   samplers[3].simulation_strategy.seed(seed)
   return samplers[3].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepMultiSingleDFE(Arep, input_state, shots):
-  if samplers[4] is None: samplers[4] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiSingleDFE(Arep))
+  if samplers[4] is None: samplers[4] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiSingleDFE(Arep, seed))
   else: samplers[4].simulation_strategy.interferometer_matrix = Arep
   samplers[4].simulation_strategy.seed(seed)
   return samplers[4].get_classical_simulation_results(input_state, shots)
 def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
-  if samplers[5] is None: samplers[5] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiDualDFE(Arep))
+  if samplers[5] is None: samplers[5] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyMultiDualDFE(Arep, seed))
   else: samplers[5].simulation_strategy.interferometer_matrix = Arep
   samplers[5].simulation_strategy.seed(seed)
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
-dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
+dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, ) #permanent_Glynn_MultiDFEDual, permanent_Glynn_DFEDual
 largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
@@ -333,8 +338,37 @@ def load_test_data():
     with open(os.path.join(saveFolder, "repmatrices.bin"), "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
+def random_realistic_input_states(photons, dim):
+    indexes = set(np.random.choice(range(dim), photons, False))
+    return np.array([1 if i in indexes else 0 for i in range(dim)])
+def stability(nmax, photons, times=1000):
+    for dim in range(nmax+20, nmax*2+1):
+        print("Stability testing", dim)
+        for _ in range(times):
+            arr = np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else unitary_group.rvs(dim)
+            if dim >= photons: input_state = random_realistic_input_states(photons, dim)
+            else: input_state = np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(photons, [1/dim]*dim)
+            output_state = np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(photons, [1/dim]*dim)
+            assert sum(input_state) == sum(output_state)
+            print(input_state, output_state)        
+            permanent_Glynn_MultiDFE(arr, input_state, output_state)
+            permanent_Glynn_MultiDFE(arr, output_state, input_state)
+def other_stability(nmax, photons, times=1):
+    shots = 100
+    for dim in range(nmax+20, nmax*2+1):
+        print(dim)
+        if dim >= photons: input_state = random_realistic_input_states(photons, dim)
+        else: input_state = np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(photons, [1/dim]*dim)
+        U = np.random.random((dim, dim))+np.random.random((dim, dim))*1j if dim <= 1 else unitary_group.rvs(dim)
+        with pq.Program() as program:
+            pq.Q() | pq.StateVector(input_state)
+            pq.Q() | pq.Interferometer(U)
+    
+            pq.Q() | pq.Sampling()
+        simulator = BoostedSamplingSimulator(d=dim)
+        result = simulator.execute(program=program, shots=shots)
 def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column testing
-  ERRBOUND = 1e-10
+  ERRBOUND = 1e-8 #1e-10
   testFuncs = testPermFuncs if shots is None else testSamplingFuncs
   dfeFuncs = dfePermFuncs if shots is None else dfeSamplingFuncs
   largeFuncs = largePermFuncs if shots is None else samplingFuncs
@@ -361,16 +395,17 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
     for func in largeFuncs:
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       if not func.__name__ in results[key]: results[key][func.__name__] = []
-      print("Verifying and Testing", func.__name__)
+      print("Verifying and Testing", func.__name__, "Photons", photons)
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs or True:
-          mplier = 5 if photons < 8 else 1
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+          mplier = 1#5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
+          print(A[dim][1][photons], A[dim][2][photons])
           def save_result():
-              if shots is None: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+              if shots is None: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) #v[0] = func(A[dim][0], [A[dim][1][photons]], [[A[dim][2][photons] for _ in range(3)]])
               else: v[0] = func(A[dim][0], A[dim][1][photons], shots)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfeFuncs: print(check_power())
@@ -378,12 +413,12 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
           else: res[key][func.__name__][dim] = v[0]
           if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
           else: results[key][func.__name__][dim] = r
-          if dim < 24: print(dim, v[0], r, A[dim][1][photons], A[dim][2][photons] if shots is None else None)
+          if dim < 24: print(photons, dim, v[0], r, A[dim][1][photons], A[dim][2][photons] if shots is None else None)
           with open(os.path.join(saveFolder, verdata), "wb") as f:
             pickle.dump(res, f)
           with open(os.path.join(saveFolder, resdata), "wb") as f:
             pickle.dump(results, f)
-        if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim], A[dim][1][photons], A[dim][2][photons] if shots is None else None)
+        if dim >= 24: print(photons, dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim], A[dim][1][photons], A[dim][2][photons] if shots is None else None)
     if shots is None:
       with open(os.path.join(saveFolder, "repverifydata.csv"), "w") as f:
           import csv
@@ -414,7 +449,8 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
 
     for i in xaxis:
       #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
-      assert all(abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__), (i, list(res[key]), [abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__])
+      failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
+      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); assert False, failures
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
     verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
@@ -423,8 +459,9 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
+        lines = []        
         for i, val in enumerate(vals):
-          ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
+          lines.append(ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size (n=|A|)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
@@ -434,10 +471,15 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
+        for line in lines:
+            for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
+        ax1.legend()
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
-for i in range(13, 20):
+#other_stability(40, 30)
+#stability(40, 30)
+for i in range(8 if hasSim else 30, 40+1):
     verify_timing(DEPTH, i, None)
 #verify_timing(DEPTH, 10, None)
-#verify_timing(DEPTH, 10, 10)
+#verify_timing(30, 10, 10)
 #verify_timing(DEPTH, 20, 10)
