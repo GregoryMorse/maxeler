@@ -319,7 +319,6 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     uint64_t total = 1;
     for (size_t i = 0; i < inp.size(); i++) { total *= inp[i]; }
     uint64_t segment = total / loopLength, rem = total % loopLength;
-    printf("%lld %lld %lld\n", total, segment, rem);
     uint64_t cursum = 0;
     initDirections.resize(loopLength * inp.size()); //for initDirections - * mulsum
     initParities = 0;
