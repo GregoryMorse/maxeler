@@ -239,25 +239,34 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar photonsm1cast = photonsm1.cast(dfeUInt(64));
         DFEVar mainCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeCols + photonsm1cast)).getCount();
         DFEVar initCount = mainCount.slice(0, 6).cast(dfeUInt(6));
+        for (int i = 0; i < (dual ? 7 : 6); i++) initCount = optimization.pipeline(initCount);
 
         DFEVar tickCount = mainCount - photonsm1cast;
         DFEVar isTransition = tickCount === 0;
-        DFEVar isInit = tickCount.get(tickCount.getType().getTotalBits()-1).cast(dfeBool()) | isTransition;
-        DFEVar isCalc = ~isInit | isTransition;
+        DFEVar isInit = optimization.pipeline(tickCount.get(tickCount.getType().getTotalBits()-1).reinterpret(dfeBool())) | isTransition;
 
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
-        DFEVar gcodeDir = (tickCount >> msizeadj).get(0);
+        DFEVar gcodeDir = optimization.pipeline(optimization.pipeline((tickCount >> msizeadj).get(0)));
 
         DFEVectorType < DFEVar > colIndexType = new DFEVectorType < DFEVar > (dfeUInt(6), cols);
+        isInit = optimization.pipeline(isInit);
+        for (int i = 0; i < 3; i++) isTransition = optimization.pipeline(isTransition); 
+        DFEVar isCalc = optimization.pipeline(~optimization.pipeline(isInit) | isTransition);
+        if (dual) isCalc = optimization.pipeline(isCalc);
+        for (int i = 0; i < (dual ? 2 : 1); i++) isInit = optimization.pipeline(isInit);
         DFEVar colIndex = io.input("colIndex", dfeUInt(8), isInit).cast(dfeUInt(6));
+        DFEVar[] colIndexFanout = new DFEVar[] { optimization.pipeline(colIndex), optimization.pipeline(colIndex), optimization.pipeline(colIndex), optimization.pipeline(colIndex) };
         DFEVectorType<DFEVar> colIndOneHotType = new DFEVectorType<DFEVar>(dfeBool(), cols);
-        DFEVector<DFEVar> colIndOneHot = (isInit.cast(dfeUInt(cols)) << initCount).reinterpret(colIndOneHotType);
+        isInit = optimization.pipeline(isInit);
+        DFEVar oneHotInit = isInit.cast(dfeUInt(cols)) << initCount;
+        oneHotInit = optimization.pipeline(oneHotInit.slice(cols / 2, cols / 2)).cat(optimization.pipeline(oneHotInit.slice(0, cols / 2)));
+        DFEVector<DFEVar> colIndOneHot = oneHotInit.reinterpret(colIndOneHotType);
         DFEVector<DFEVar> colIndFixOneHot = (((constant.var(dfeUInt(cols+1), 1) << (photonsm1+1)) - 1).cast(dfeUInt(cols))).reinterpret(colIndOneHotType);
         DFEVector < DFEVar > colIndicesCache = colIndexType.newInstance(this);
         DFEVector < DFEVar > colIndices = colIndexType.newInstance(this);
         for (int i = 0; i < cols; i++) {
-            colIndicesCache[i] <== colIndOneHot[i] ? colIndex : stream.offset(colIndicesCache[i], -1);
+            colIndicesCache[i] <== colIndOneHot[i] ? colIndexFanout[i / (cols / initKerns)] : stream.offset(colIndicesCache[i], -1);
             colIndices[i] <== colIndFixOneHot[i] ? colIndicesCache[i] : constant.var(dfeUInt(6), cols); 
         }
 
@@ -267,10 +276,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //DFEComplex[] colSumPreFix = new DFEComplex[cols];
         int limit = cols;
         
-        DFEVar parity = io.input("curMplicity", dfeUInt(1+38), isCalc);
-        DFEVar curMplicity = parity.slice(0, 38).reinterpret(dfeUInt(38));
-        parity = parity.get(38).reinterpret(dfeBool());
-
         for (int j = 0; j < initKerns; j++) {
             DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
             colmnSumVector <== io.input("colSums" + j, colSumType, isCalc);
@@ -282,14 +287,16 @@ public class PermanentGlynnDFEKernel extends Kernel {
         }
         //colSumPreFix = optimization.limitFanout(colSumPreFix, 16);
         List < DFEComplex > colSumPreList = new ArrayList < > ();
-        colSumPreList.addAll(colSumPreFix.getElementsAsList());
-        colSumPreList.add(DFEComplexType.newInstance(this, constant.var(dataTypeFix64, 1), constant.zero(dataTypeFix64)));
+       
         DFEComplex[] colSumFix = new DFEComplex[cols];
         for (int j = 0; j < cols; j++) {
-            //if (j != 0 && (j % 2) == 0) colSumPreFix = optimization.pipeline(colSumPreFix);            
+            if (j % (cols / initKerns) == 0) {
+                colSumPreList.clear();
+                colSumPreList.addAll(optimization.pipeline(colSumPreFix).getElementsAsList());
+                colSumPreList.add(DFEComplexType.newInstance(this, constant.var(dataTypeFix64, 1), constant.zero(dataTypeFix64)));
+            }
             colSumFix[j] = cplxFix64Type.newInstance(this);
             colSumFix[j] <== control.mux(colIndices[j], colSumPreList);
-            //if (kernNum == 0) debug.simPrintf(isCalc, "%d %KObj%\n", colIndices[j], colSumPreFix); 
             /*if (j == cols-1)
                 colSumFix[j] <== control.mux(colIndices[j]-colIndices[j-1], colSumPreFix.getElementsAsList());
             else {
@@ -309,7 +316,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
         //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
         //optimization.pushDSPFactor(0.0, MathOps.MUL);
-        int extraprec = 0; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
+        int extraprec = 16; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
         //DSP usage from maxeler optimization manual: "On MAX5 a DSP has input port widths of 18 and 27 bit." therefore a bits*b bits requires ceil(a/18)*ceil(b/27)
         //however it is unclear if an approximation algorithm is used for example with dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT)
         //multiplying 2 64-bit numbers should give a 128-bit result, which is then rounded truncating most of the bits
@@ -349,6 +356,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (2 * limitNew < limit) {
                 limitNew++;
                 colSumFix[limitNew - 1] = colSumFix[limit - 1];
+                for (int i = 0; i < 9; i++) {
+                    colSumFix[limitNew - 1] = optimization.pipeline(colSumFix[limitNew - 1]);
+                }
             }
 
             limit = limitNew;
@@ -356,14 +366,23 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (extraprec > 63) extraprec = 63;
 
         }
+        for (int i = 0; i < 46; i++) isCalc = optimization.pipeline(isCalc);
+        DFEVar parity = io.input("curMplicity", dfeUInt(1+38), isCalc);
+        DFEVar curMplicity = parity.slice(0, 38).reinterpret(dfeUInt(38));
+        for (int i = 0; i < 9; i++) curMplicity = optimization.pipeline(curMplicity);
+        parity = parity.get(38).reinterpret(dfeBool());
         colSumFix[0] = DFEComplexType.newInstance(this, mulExact(colSumFix[0].getReal(), curMplicity, 127, 2), mulExact(colSumFix[0].getImaginary(), curMplicity, 127, 2));
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
-        DFEVar sign = ((tickCount.get(0) ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        DFEVar tickParity = tickCount.get(0);
+        for (int i = 0; i < 6; i++) tickParity = optimization.pipeline(tickParity); 
+        DFEVar sign = ((tickParity ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        for (int i = 0; i < 49; i++) sign = optimization.pipeline(sign);
         sign = sign ^ parity;
+        for (int i = 0; i < 10; i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
-
+        for (int i = 0; i < 18; i++) isCalc = optimization.pipeline(isCalc);
         io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type, isCalc);
         //optimization.popFanoutLimit();
     }
