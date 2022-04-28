@@ -1,11 +1,17 @@
 import xml.etree.ElementTree as ET
 import os
+#project = "PermanentGlynnDFE"
+#builds = ["PermanentGlynn_singleSIM-", "PermanentGlynn_dualSIM-"]
 project = "PermRepGlynnDFE"
+builds = ["PermRepGlynn_singleSIM-", "PermRepGlynn_dualSIM-"]
+filepats = ["SumUpPermDFEKernel", "PermanentGlynnDFEKernel_0"]#, "InitializeColSumDFEKernel_1", "InitializeColSumDFEKernel_0"]
 pxgpath = os.path.join(project, "builds", "simulation", "*.pxg")
 import glob
 import re
 pxgfiles = glob.glob(pxgpath)
 for pxgfile in pxgfiles:
+    if not "-final-simulation" in pxgfile: continue
+    if not any(build in pxgfile for build in builds) or not any(filepat in pxgfile for filepat in filepats): continue 
     print("Analyzing", pxgfile)
     tree = ET.parse(pxgfile)
     root = tree.getroot()
