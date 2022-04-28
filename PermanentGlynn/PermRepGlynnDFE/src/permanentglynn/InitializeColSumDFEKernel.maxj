@@ -225,7 +225,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < mplicityRows; i++) {
             allRows[i] <== initOneHot[i] ? oneRow : stream.offset(allRows[i], -1);
         }
-        if (kernNum == 1) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
+        //if (kernNum == 1) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
         
         DFEVector<DFEVar> initMplicity = (initLoop.cast(dfeUInt(mplicityRows)) << storeRowIndex).reinterpret(initOneHotType); 
         DFEVectorType<DFEVar> mplicityType = new DFEVectorType<DFEVar>(dfeUInt(6), mplicityRows);
@@ -279,7 +279,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar cur_multiplicity = dfeUInt(38).newInstance(this);
             DFEVar lastMultiplicity = isTransition ? io.input("initBinCoeff", dfeUInt(64), isTransition).cast(dfeUInt(38)) : stream.offset(cur_multiplicity, -loopLength);
             cur_multiplicity <== (mulExact(mulExact(lastMultiplicity, num, 38+4, 38+4), control.mux(denom-1, magicDivisionMpliers.getElementsAsList()), 38+4+38+4, 38+4+38+4) >> control.mux(denom-1, magicDivisionShifts.getElementsAsList())).cast(dfeUInt(38));
-            debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, lastMultiplicity, rowIndex, rowChangeMask, curmp, inpmp, num, denom, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
+            //debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, lastMultiplicity, rowIndex, rowChangeMask, curmp, inpmp, num, denom, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
             io.output("bincoeff", (parity ^ repTickCount.get(0)).cat(lastMultiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), isCalc);
         }       
 
