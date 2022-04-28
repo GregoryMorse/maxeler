@@ -27,7 +27,7 @@ public class SumUpPermDFEKernel extends Kernel {
         DFEVar ticksmax = io.scalarInput("changeCount", dfeUInt(64));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
 
-        DFEVar lastTick = tickCount === ticksmax - 1;
+        DFEVar lastTick = optimization.pipeline(tickCount === ticksmax - 1);
         DFEComplex colProdVals[] = new DFEComplex[n];
         for (int i = 0; i < n; i++)
             colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
