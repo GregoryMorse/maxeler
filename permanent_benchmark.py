@@ -17,7 +17,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 12 if hasSim else 40
+DEPTH = 12 if hasSim else 39
 saveFolder = "results"
 
 def pairwise(t):
@@ -210,123 +210,10 @@ def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*wa
         return calculators[6].calculate()
     return batch_adapter(Arep, f)
 
-dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFEDual, permanent_Glynn_DFE))
-largePermFuncs = (permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_Glynn_Cpp_Inf, permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
 permFuncs = testPermFuncs + largePermFuncs
-
-#np.save("mtx", A )
-#A = np.load("mtx.npy")
-#Arep = A
-
-#Arep = np.zeros((dim,dim), dtype=np.complex128)
-#for idx in range(dim):
-#    Arep[:,idx] = A[:,0]
-        
-# calculate the permanent using walrus library
-"""
-iter_loops = 2
-time_walrus = 1000000000        
-for idx in range(iter_loops):
-    start = time.time()   
-    permanent_walrus_quad_Ryser = perm_complex(Arep, quad=True)
-    time_loc = time.time() - start
-    start = time.time()   
-       
-    if time_walrus > time_loc:
-        time_walrus = time_loc
-
-    time_walrus_BBFG = 1000000        
-    for idx in range(iter_loops):
-        start = time.time()   
-        permanent_walrus_quad_BBFG = 0#perm_BBFG_complex(Arep)
-        time_loc = time.time() - start
-        start = time.time()   
-       
-        if time_walrus_BBFG > time_loc:
-            time_walrus_BBFG = time_loc
-
-        
-        # calculate the hafnian with the power trace method using the piquasso library
-        input_state = np.ones(dim, np.int64)
-#        input_state = np.zeros(dim, np.int64)
-#        input_state[0] = dim
-        output_state = np.ones(dim, np.int64)
-
-
-permanent_ChinHuh_calculator = ChinHuhPermanentCalculator( A, input_state, output_state )
-time_Cpp = 1000000
-for idx in range(iter_loops):
-    start = time.time()   
-
-    permanent_ChinHuh_Cpp = 0#permanent_ChinHuh_calculator.calculate()
-
-    time_loc = time.time() - start
-    start = time.time()   
-       
-    if time_Cpp > time_loc:
-        time_Cpp = time_loc
-
-
-
-
-
-permanent_Glynn_calculator = GlynnPermanent( )
-time_Glynn_Cpp = 1000000000
-for idx in range(iter_loops):
-    start = time.time()   
-
-    permanent_Glynn_Cpp = 0#permanent_Glynn_calculator.calculate(Arep)
-
-    time_loc = time.time() - start
-    start = time.time()   
-       
-    if time_Glynn_Cpp > time_loc:
-        time_Glynn_Cpp = time_loc
-
-
-
-#permanent_Glynn_calculator = GlynnPermanent(  )
-time_Glynn_DFE = 1000000000
-for idx in range(iter_loops):
-    start = time.time()   
-
-    permanent_Glynn_DFE = 0#permanent_Glynn_calculator.calculateDFE(Arep)
-    #print( permanent_Glynn_DFE )
-    time_loc = time.time() - start
-    start = time.time()   
-       
-    if time_Glynn_DFE > time_loc:
-        time_Glynn_DFE = time_loc
-
-
-        
-print(' ')
-print( permanent_walrus_quad_Ryser )
-print( permanent_walrus_quad_BBFG )
-print( permanent_ChinHuh_Cpp )
-print( permanent_Glynn_Cpp )
-print( permanent_Glynn_DFE )
-
-
-print(' ')
-print('*******************************************')
-print('Time elapsed with walrus: ' + str(time_walrus))
-print('Time elapsed with walrus BBFG : ' + str(time_walrus_BBFG))
-print('Time elapsed with piquasso: ' + str(time_Cpp))
-print('Time elapsed with piquasso Glynn: ' + str(time_Glynn_Cpp))
-print('Time elapsed with DFE Glynn: ' + str(time_Glynn_DFE))
-#print( "speedup: " + str(time_walrus/time_Cpp) )
-#print( "speedup Glynn: " + str(time_walrus/time_Glynn_Cpp) )
-print(' ')
-print(' ')
-
-
-#print( 'Relative difference between quad walrus and piquasso result: ' + str(abs(permanent_walrus_quad_Ryser-permanent_ChinHuh_Cpp)/abs(permanent_ChinHuh_Cpp)*100) + '%')
-#print( 'Relative difference between quad walrus and piquasso Glynn result: ' + str(abs(permanent_walrus_quad_Ryser-permanent_Glynn_Cpp)/abs(permanent_Glynn_Cpp)*100) + '%')
-
-
-"""
 
 def load_test_data():
   nmax = 40
@@ -369,9 +256,9 @@ def verify_timing(nmax, batchsize=1):
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
-        if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
-          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
+        #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
+        #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim:# or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -418,8 +305,8 @@ def verify_timing(nmax, batchsize=1):
     with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs if f != permanent_Glynn_Cpp_Inf])
-      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs if x != permanent_Glynn_Cpp_Inf] for i in xaxis])
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
 
     #for i in xaxis:
     #  assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
@@ -432,8 +319,9 @@ def verify_timing(nmax, batchsize=1):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
+        lines = []
         for i, val in enumerate(vals):
-          ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' ')
+          lines.append(ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size (n=|A|)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
@@ -443,18 +331,24 @@ def verify_timing(nmax, batchsize=1):
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
+        for line in lines:
+            for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
+        ax1.legend()
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
 # (a b) (c d) (e f) (g h) = (a+c+e+g)(b+d+f+h)-(a+c+e-g)(b+d+f-h)+(a+c-e-g)(b+d-f-h)-(a-c-e-g)(b-d-f-h)+(a-c-e+g)(b-d-f+h)-(a-c+e+g)(b-d+f+h)+(a-c+e-g)(b-d+f-h)-(a+c-e+g)(b+d-f+h)==0 according to WolframAlpha
 #nXm where m in [2..n-2] always is 0 due to cancellation of terms, however floating/fixed point cannot be relied upon in such cases
 def verify_rectangular(nmax):
-    for x in range(1, nmax+1):
-        for y in range(x, nmax+1):
-            print(x, y)
-            A = [np.random.random((x, y))+np.random.random((x, y))*1j for _ in range(10000)]
-            #r = permanent_Glynn_Cpp_Inf(A)
+    for x in range(0, nmax+1):
+        for y in range(0, nmax+1):
+            #A = [np.random.random((x, y))+np.random.random((x, y))*1j for _ in range(10000)]
+            A = np.random.random((x, y))+np.random.random((x, y))*1j
+            r = permanent_Glynn_Cpp_Inf(A)
             res1, res2 = permanent_Glynn_Cpp(A), permanent_Glynn_DFE(A)
-            assert all((abs(r1-r2) / abs(r1)) <= 1e-10 for r1, r2 in zip(res1, res2)), (x, y, r1, r2)
+            if x == 0 or y == 0: assert res1 == 1 and res2 == 1 and r == 1, (res1, res2, r)
+            elif x >= y + 2: assert res1 == 0 and res2 == 0 and r == 0, (res1, res2, r)
+            #assert all((abs(r1-r2) / abs(r1)) <= 1e-10 for r1, r2 in zip(res1, res2)), (x, y, r1, r2)
+            else: assert (abs(res1-res2) / abs(res1)) <= 1e-10, (x, y, res1, res2)
             #print(x, y, r1, r2, "None" if abs(r1)==0 else (abs(r1-r2) / abs(r1)) <= 1e-10)
             #if y>=2 and y <= x-2:
 #verify_rectangular(20)
