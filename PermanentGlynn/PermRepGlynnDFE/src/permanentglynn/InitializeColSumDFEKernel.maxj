@@ -256,9 +256,10 @@ public class InitializeColSumDFEKernel extends Kernel {
             countersZero = cpInitGrayCode !== rowMultiplicities;
             rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
             DFEVar rowIndex = Bitops.onehotDecode(rowChangeMask);
-            curmp = control.mux(rowIndex, curMultiplicities.getElementsAsList())+nextRowIdx.cast(dfeUInt(7)); //curMultiplicities lags by 1
+            curmp = control.mux(rowIndex, curMultiplicities.getElementsAsList())+(nextRowIdx & rowIndex <= storeRowIndex).cast(dfeUInt(7)); //curMultiplicities lags by 1 except on transition
             inpmp = control.mux(rowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
-            //curmp can never be 0 or inpmp+1 
+            //curmp can never have just wrapped to 0 or inpmp+1 which is why adding is okay
+            curmp = curmp === ((inpmp+1)<<1) ? constant.zero(dfeUInt(7)) : ((curmp === inpmp) ? curmp+1 : curmp); 
             DFEVar initParities = io.scalarInput("initParities", dfeUInt(32)).cast(dfeUInt(loopLength));
             DFEVar parity = (initParities >> loopCount).get(0);
             DFEVar nextRowChangeIsNeg = curmp <= inpmp;
