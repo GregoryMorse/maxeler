@@ -320,6 +320,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     uint64_t total = 1;
     for (size_t i = 0; i < inp.size(); i++) { total *= inp[i]; }
     uint64_t segment = total / loopLength, rem = total % loopLength;
+    printf("%lld %lld %lld\n", total, segment, rem);
     uint64_t cursum = 0;
     initDirections.resize(loopLength * inp.size()); //for initDirections - * mulsum
     initParities = 0;
@@ -357,7 +358,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   for (size_t i = 0; i < input_state.size(); i++) {
     //for binomial coefficients to work we must fix onerows to one tick on the kernel per the Gray code fixed rows, so exactly onerows == 1+dfe_basekernpow2
     if (input_state[i] == 1 && row_indices.size() < 1+dfe_basekernpow2) row_indices.push_back(i);
-    else if (input_state[i] > 1) mrows.push_back(i);
+    else if (input_state[i] != 0) mrows.push_back(i);
   }
   sort(mrows.begin(), mrows.end(), [&input_state](size_t i, size_t j) { return input_state[i] < input_state[j]; }); 
   while (row_indices.size() < 1+dfe_basekernpow2) { //Glynn anchor row, plus 2/3 anchor rows needed for binary Gray code in kernel
