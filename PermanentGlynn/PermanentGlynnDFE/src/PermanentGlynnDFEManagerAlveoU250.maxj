@@ -55,16 +55,19 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
                 
         //Ranking best to worst: PERFORMANCE_EXTRA_TIMING_OPT, MAXELER3, MAXELER1, MAXELER2, MAXELER4, PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, PERFORMANCE_EXPLORE, VIVADO_DEFAULT
-        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT, ImplementationStrategy.MAXELER3
+        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, ImplementationStrategy.MAXELER3
+            //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
+            //ImplementationStrategy.FLOW_RUN_POST_ROUTE_PHYS_OPT, 
+            //ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT
             //ImplementationStrategy.VIVADO_DEFAULT,
             //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP,
-            //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
+            //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
             //ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW,  
-            //ImplementationStrategy.FLOW_QUICK, ImplementationStrategy.FLOW_RUN_PHYS_OPT, ImplementationStrategy.FLOW_RUN_POST_ROUTE_PHYS_OPT, ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED,
+            //ImplementationStrategy.FLOW_QUICK, ImplementationStrategy.FLOW_RUN_PHYS_OPT, ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED,
             //ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
             //ImplementationStrategy.MAXELER4,
             //ImplementationStrategy.PERFORMANCE_BALANCE_SLLS, ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
-            //ImplementationStrategy.PERFORMANCE_EXPLORE, ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,            
+            //ImplementationStrategy.PERFORMANCE_EXPLORE,            
             //ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
             //ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
             //ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_SPREAD_SLLS,
@@ -73,7 +76,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             );
         conf.setParallelism(4);
 
-        manager.setDefaultStreamClockFrequency(300); //200
+        manager.setDefaultStreamClockFrequency(240); //200
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
