@@ -70,7 +70,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar lastCount = userReset ? initValue : stream.offset(count, -loopLength, initValue);
         DFEVar lastWrap = userReset ? lastCount === maxWrap : stream.offset(wrap, -loopLength, initValue === maxWrap);
         //optimization.pushNoPipelining(); //conditional addition=1, double mux=1, >= is 1, so loop offset too 3 not 1...
-        count <== lastCount + (enable ? (lastWrap ? initValue-maxWrap : constant.var(dfeUInt(bit_width), inc)) : constant.zero(dfeUInt(bit_width)));
+        count <== lastCount + (enable ? (lastWrap ? ~maxWrap+1 : constant.var(dfeUInt(bit_width), inc)) : constant.zero(dfeUInt(bit_width)));
         //optimization.popNoPipelining();
         wrap <== count >= maxWrap;
         return new DFEVar[] {lastCount, needWrap ? enable & lastWrap : null};
@@ -241,7 +241,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector<DFEVar> countersZero = cpInitGrayCode !== 0;
         DFEVar rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
         rowChangeMask = rowChangeMask === 0 ? 1 : rowChangeMask;
-        storeRowIndex = ~isInit ? Bitops.onehotDecode(rowChangeMask) : storeRowIndex;
+        storeRowIndex = isInit ? storeRowIndex : Bitops.onehotDecode(rowChangeMask);
         DFEVectorType<DFEVar> curMplicityType = new DFEVectorType<DFEVar>(dfeUInt(6+1), mplicityRows);
         DFEVector<DFEVar> curMultiplicities = curMplicityType.newInstance(this);
         DFEVar nextEnable = (rowChangeMask<<1)-1;
@@ -256,14 +256,15 @@ public class InitializeColSumDFEKernel extends Kernel {
             countersZero = cpInitGrayCode !== rowMultiplicities;
             rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
             DFEVar rowIndex = Bitops.onehotDecode(rowChangeMask);
-            curmp = control.mux(rowIndex, curMultiplicities.getElementsAsList());
+            curmp = control.mux(rowIndex, curMultiplicities.getElementsAsList())+nextRowIdx.cast(dfeUInt(7)); //curMultiplicities lags by 1
             inpmp = control.mux(rowIndex, rowMultiplicities.getElementsAsList()).cast(dfeUInt(7));
+            //curmp can never be 0 or inpmp+1 
             DFEVar initParities = io.scalarInput("initParities", dfeUInt(32)).cast(dfeUInt(loopLength));
             DFEVar parity = (initParities >> loopCount).get(0);
-            DFEVar nextRowChangeIsNeg = curmp < inpmp;
-            curmp = nextRowChangeIsNeg ? inpmp-curmp : curmp-inpmp-1;
-            DFEVar num = (nextRowChangeIsNeg ? curmp : inpmp - curmp).cast(dfeUInt(6));
-            DFEVar denom = (nextRowChangeIsNeg ? inpmp - curmp + 1 : curmp + 1).cast(dfeUInt(6));
+            DFEVar nextRowChangeIsNeg = curmp <= inpmp;
+            //n=i+1, n=n-1, k=k<n ? n-1-k : k-n, k<n ? bc*k/(n-k+1) : bc*(n-k)/(k+1) -> k<n ? (n-1-k)/(n-1-(n-1-k)+1) : (n-1-(k-n))/(k-n+1)
+            DFEVar num = (nextRowChangeIsNeg ? inpmp - curmp : (inpmp<<1) - curmp + 1).cast(dfeUInt(6));
+            DFEVar denom = (nextRowChangeIsNeg ? curmp + 1 : curmp-inpmp).cast(dfeUInt(6));
             DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38+4), 40+1);
             DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(6), 40+1);
             DFEVector<DFEVar> magicDivisionMpliers = divisionMplierType.newInstance(this);
