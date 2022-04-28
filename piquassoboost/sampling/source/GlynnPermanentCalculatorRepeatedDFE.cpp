@@ -305,14 +305,13 @@ void location_to_counter(std::vector<uint64_t>& count, std::vector<uint64_t>& in
         loc /= inp[i]; 
     }
 }
-void counter_to_gcode(std::vector<uint64_t>& gcode, std::vector<uint64_t>& counterChain, std::vector<uint64_t>& inp)
+void counter_to_gcode(std::vector<uint64_t>& gcode, const std::vector<uint64_t>& counterChain, const std::vector<uint64_t>& inp)
 {
-    gcode = counterChain;
+    gcode.resize(inp.size());
     int parity = 0;
     for (size_t j = inp.size()-1; j != ~0ULL; j--) {
-        if (parity) gcode[j] += inp[j];
-        if (((counterChain[j] & 1) != 0) && (((inp[j] & 1) != 0) || (counterChain[j] < inp[j])))
-            parity = !parity;
+        gcode[j] = counterChain[j] + (parity ? inp[j] : 0);
+        parity = gcode[j] & 1;
     }
 }
 uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mplicity, std::vector<uint8_t>& initDirections, int& initParities, uint8_t loopLength)
