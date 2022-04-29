@@ -3,8 +3,8 @@ import os
 #project = "PermanentGlynnDFE"
 #builds = ["PermanentGlynn_singleSIM-", "PermanentGlynn_dualSIM-"]
 project = "PermRepGlynnDFE"
-builds = ["PermRepGlynn_singleSIM-", "PermRepGlynn_dualSIM-"]
-filepats = ["SumUpPermDFEKernel", "PermanentGlynnDFEKernel_0"]#, "InitializeColSumDFEKernel_1", "InitializeColSumDFEKernel_0"]
+builds = ["PermRepGlynn_singleSIM-"]#, "PermRepGlynn_dualSIM-"]
+filepats = ["SumUpPermDFEKernel", "PermanentGlynnDFEKernel_0", "InitializeColSumDFEKernel_1"]#, "InitializeColSumDFEKernel_0"]
 pxgpath = os.path.join(project, "builds", "simulation", "*.pxg")
 import glob
 import re
@@ -15,17 +15,27 @@ for pxgfile in pxgfiles:
     print("Analyzing", pxgfile)
     tree = ET.parse(pxgfile)
     root = tree.getroot()
+    nodedict, srcdict, destdict = {}, {}, {}
+    for node in root.findall("./Node"):
+        nodedict[node.attrib["id"]] = node 
+    for edge in root.findall("./Edge"):
+        if "src_node_id" in edge.attrib:
+            if not edge.attrib["src_node_id"] in srcdict: srcdict[edge.attrib["src_node_id"]] = [] 
+            srcdict[edge.attrib["src_node_id"]].append(edge)
+        if "dst_node_id" in edge.attrib:
+            if not edge.attrib["dst_node_id"] in destdict: destdict[edge.attrib["dst_node_id"]] = []
+            destdict[edge.attrib["dst_node_id"]].append(edge)
     for fifo in root.findall("./Node[@type='NodeFIFO']"):
         print(fifo.find("Text").text + " Found", "ID:", fifo.attrib["id"])
-        for edge in root.findall("./Edge[@dst_node_id='" + fifo.attrib["id"] + "']"):
-            source = root.find("./Node[@id='" + edge.attrib["src_node_id"] + "']")
+        for edge in destdict[fifo.attrib["id"]]:
+            source = nodedict[edge.attrib["src_node_id"]]
             for st in source.find("OriginStackTrace").text.splitlines():
                 m = re.match(r".*\((.*)\.maxj:([0-9]*)\)", st)
                 if not m is None and m.group(1) in pxgfile:                
                     print(m.group(1) + ":" + m.group(2), "Source:", source.attrib["type"])
             if source.attrib["type"] == "NodeFIFO":
                 print("Source FIFO", "ID:", source.attrib["id"]) 
-            for e in root.findall("./Edge[@src_node_id='" + source.attrib["id"] + "']"):
+            for e in srcdict[source.attrib["id"]]:
                 dest = root.find("./Node[@id='" + e.attrib["dst_node_id"] + "']")
                 if dest.attrib["id"] == fifo.attrib["id"]: continue
                 inp = e.attrib["dst_node_input"]
@@ -35,7 +45,7 @@ for pxgfile in pxgfiles:
                         print(m.group(1) + ":" + m.group(2), "NOT DESTINATION:", dest.attrib["type"], "Input:", inp)
                 if dest.attrib["type"] == "NodeFIFO":
                     print("NOT DESTINATION FIFO", "ID:", dest.attrib["id"]) 
-        for edge in root.findall("./Edge[@src_node_id='" + fifo.attrib["id"] + "']"):
+        for edge in srcdict[fifo.attrib["id"]]:
             dest = root.find("./Node[@id='" + edge.attrib["dst_node_id"] + "']")
             inp = edge.attrib["dst_node_input"]       
             for st in dest.find("OriginStackTrace").text.splitlines():
