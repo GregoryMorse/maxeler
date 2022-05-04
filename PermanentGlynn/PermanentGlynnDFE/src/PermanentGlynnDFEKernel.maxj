@@ -183,7 +183,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar aSign = getSignBit(a), bSign = getSignBit(b);
         DFEVar resSign = aSign ^ bSign;
         DFEVar result = uToSigned(mulKaratsubaRectangular(sToUnsigned(aSign ? -a : a), sToUnsigned(bSign ? -b : b), aType.getTotalBits() <= 112 && bType.getTotalBits() <= 120 ? 0 : 2, totalDelay)).reinterpret(dfeFixOffset(aType.getTotalBits() + bType.getTotalBits() - 1, -(aType.getTotalBits() + bType.getTotalBits() - 1) + aType.getIntegerBits() + bType.getIntegerBits() - 1, SignMode.TWOSCOMPLEMENT));
-        for (int i = 0; i < totalDelay[0]; i++) resSign = optimization.pipeline(resSign);
+        for (int i = 0; i < totalDelay[0]+1; i++) resSign = optimization.pipeline(resSign);
         return resSign ? -result : result;
     }
     int getMulInpBits(DFEFix type) { return type.getTotalBits() + (type.getSignMode() == SignMode.UNSIGNED ? 1 : 0); }
