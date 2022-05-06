@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import os
 project = "PermanentGlynnDFE"
-builds = ["PermanentGlynn_singleSIM-", "PermanentGlynn_dualSIM-"]
+builds = ["PermanentGlynn_singleSIM-"]#, "PermanentGlynn_dualSIM-"]
 #project = "PermRepGlynnDFE"
 #builds = ["PermRepGlynn_singleSIM-"]#, "PermRepGlynn_dualSIM-"]
 filepats = ["SumUpPermDFEKernel", "PermanentGlynnDFEKernel_0", "InitializeColSumDFEKernel_1", "InitializeColSumDFEKernel_0"]
@@ -31,9 +31,9 @@ for pxgfile in pxgfiles:
             source = nodedict[edge.attrib["src_node_id"]]
             s = []
             for st in source.find("OriginStackTrace").text.splitlines():
-                m = re.match(r".*\((.*)\.maxj:([0-9]*)\)", st)
-                if not m is None and m.group(1) in pxgfile:                
-                    s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(2))
+                m = re.match(r".*\.(.*)\((.*)\.maxj:([0-9]*)\)", st)
+                if not m is None and m.group(2) in pxgfile:                
+                    s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(3))
             if source.attrib["type"] == "NodeFIFO":
                 print("Source FIFO", "ID:", source.attrib["id"])
             else: 
@@ -44,9 +44,9 @@ for pxgfile in pxgfiles:
                 inp = e.attrib["dst_node_input"]
                 s = []
                 for st in dest.find("OriginStackTrace").text.splitlines():
-                    m = re.match(r".*\((.*)\.maxj:([0-9]*)\)", st)
-                    if not m is None and m.group(1) in pxgfile:                
-                        s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(2))
+                    m = re.match(r".*\.(.*)\((.*)\.maxj:([0-9]*)\)", st)
+                    if not m is None and m.group(2) in pxgfile:                
+                        s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(3))
                 if dest.attrib["type"] == "NodeFIFO":
                     print("NOT DESTINATION FIFO", "ID:", dest.attrib["id"])
                 else: 
@@ -56,9 +56,9 @@ for pxgfile in pxgfiles:
             inp = edge.attrib["dst_node_input"]
             s = []       
             for st in dest.find("OriginStackTrace").text.splitlines():
-                m = re.match(r".*\((.*)\.maxj:([0-9]*)\)", st)
-                if not m is None and m.group(1) in pxgfile:                
-                    s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(2))
+                m = re.match(r".*\.(.*)\((.*)\.maxj:([0-9]*)\)", st)
+                if not m is None and m.group(2) in pxgfile:                
+                    s.append((m.group(1) + ":" if len(s) == 0 else "") + m.group(3))
             if dest.attrib["type"] == "NodeFIFO":
                 print("Destination FIFO", "ID:", dest.attrib["id"]) 
             else: print(",".join(s), "Destination:", dest.attrib["type"], "Input:", inp)            
