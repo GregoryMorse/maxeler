@@ -82,8 +82,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
     {
         int limit = vars.length;
         while (limit > 2) {
-            int limitNew = limit / 3;
-            for (int i = 0; i < limitNew; i++) {
+            int limitNew = limit / 3, i;
+            for (i = 0; i < limitNew; i++) {
+                //if (i != 0 && pipelineDelay[i-1] <= pipelineDelay[i*3] && (pipelineDelay[i*3] != pipelineDelay[i*3+1] || pipelineDelay[i*3+1] != pipelineDelay[i*3+2])) break; 
                 int maxDelay = Math.max(Math.max(pipelineDelay[i*3], pipelineDelay[i*3+1]), pipelineDelay[i*3+2]);
                 for (int j = 0; j < maxDelay - pipelineDelay[i*3]; j++) vars[i*3] = optimization.pipeline(vars[i*3]);
                 for (int j = 0; j < maxDelay - pipelineDelay[i*3+1]; j++) vars[i*3+1] = optimization.pipeline(vars[i*3+1]);
@@ -103,19 +104,14 @@ public class PermanentGlynnDFEKernel extends Kernel {
                     issub[i] = true;
                 }
             }
-            if (3 * limitNew + 1 == limit) {
-                limitNew++;
-                vars[limitNew - 1] = vars[limit - 1];
-                issub[limitNew - 1] = issub[limit - 1];
-                pipelineDelay[limitNew - 1] = pipelineDelay[limit - 1];
-            } else if (3 * limitNew + 2 == limit) {
-                limitNew += 2;
-                vars[limitNew - 2] = vars[limit - 2];
-                issub[limitNew - 2] = issub[limit - 2];
-                pipelineDelay[limitNew - 2] = pipelineDelay[limit - 2];
-                vars[limitNew - 1] = vars[limit - 1];
-                issub[limitNew - 1] = issub[limit - 1];
-                pipelineDelay[limitNew - 1] = pipelineDelay[limit - 1];
+            if (3 * i != limit) {
+                limitNew = i;
+                i *= 3;
+                for (; i < limit; i++, limitNew++) {
+                    vars[limitNew] = vars[i];
+                    issub[limitNew] = issub[i];
+                    pipelineDelay[limitNew] = pipelineDelay[i];
+                }
             }
             limit = limitNew;
         }
@@ -293,8 +289,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
             int splitPoint = W * M * N - (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && bType.getSignMode() == SignMode.TWOSCOMPLEMENT ? (tileMode == 2 ? 2 : 1) : 0);
             DFEVar[] aSplit = new DFEVar[] { a.slice(0, splitPoint).reinterpret(dfeUInt(splitPoint)), a.slice(splitPoint, aType.getTotalBits() - splitPoint).reinterpret(dfeFixOffset(aType.getTotalBits() - splitPoint, 0, aType.getSignMode())) };
             DFEVar[] bSplit = new DFEVar[] { b.slice(0, splitPoint).reinterpret(dfeUInt(splitPoint)), b.slice(splitPoint, bType.getTotalBits() - splitPoint).reinterpret(dfeFixOffset(bType.getTotalBits() - splitPoint, 0, bType.getSignMode())) };
-            for (int i = 0; i < aSplit.length; i++) aSplit[i] = optimization.pipeline(aSplit[i]);
-            for (int i = 0; i < bSplit.length; i++) bSplit[i] = optimization.pipeline(bSplit[i]);
+            if (tileMode == 2) {
+                for (int i = 0; i < aSplit.length; i++) aSplit[i] = optimization.pipeline(aSplit[i]);
+                for (int i = 0; i < bSplit.length; i++) bSplit[i] = optimization.pipeline(bSplit[i]);
+            }
             Object[] z0 = mulKaratsubaRectangularInner(aSplit[0], bSplit[0], tileMode);
             DFEVar[] c0 = (DFEVar[])z0[0]; int[] shift0 = (int[])z0[1]; boolean[] issub0 = (boolean[])z0[2]; int[] pipelineDelay0 = (int[])z0[3]; 
             Object[] z1 = mulKaratsubaRectangularInner(addExact(aSplit[0], aSplit[1], true), addExact(bSplit[1], bSplit[0], true), tileMode); //take care for the mistake in the paper on subtracting high-low vs low-high
