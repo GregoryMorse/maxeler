@@ -659,7 +659,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         rowchange_indices.resize(rows * input_states[outp].size());
         mplicity.resize(loopLength * input_states[outp].size());
         initDirections.resize(loopLength * (rows - onerows) * input_states[outp].size());
-        size_t mtxsize = sizeof(ComplexFix16)*rows * input_states[outp].size()*max_fpga_cols;
+        size_t mtxsize = rows * max_fpga_cols;
         matrix_base<ComplexFix16> mtxmuxed[numinits] = {};
         if (!colMux) {
             actualinits = (photons + max_fpga_cols-1) / max_fpga_cols;
@@ -675,7 +675,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
             }
             for (size_t j = 0; j < actualinits; j++) {
                 if (colMux) {
-                    if (i != 0) memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], mtxsize);
+                    if (i != 0) memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], sizeof(ComplexFix16)*mtxsize);
                 } else { //mux the columns on CPU
                     size_t basecol = max_fpga_cols * j;
                     size_t lastcol = photons<=basecol ? 0 : std::min(max_fpga_cols, photons-basecol);
@@ -705,6 +705,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, colMux ? matrix_mtx.cols : photons, colIndices.data(),
           rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, input_states[outp].size(), perm[outp].data());
     }
+    unlock_lib();
 }
 
 
