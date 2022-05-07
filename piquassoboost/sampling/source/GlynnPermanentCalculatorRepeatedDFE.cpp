@@ -677,7 +677,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
     }
 }
 
-/*
+
 void
 GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
     std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual)
@@ -689,19 +689,20 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
     for (size_t i = 0; i < input_states[0].size(); i++) {
         photons += input_states[0][i];
     }
-    if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
+    if (1 || !calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
         GlynnPermanentCalculatorRepeated gpc;
         for (size_t i = 0; i < input_states.size(); i++) {
             perm[i].resize(output_states[i].size());
             for (size_t j = 0; j < output_states[i].size(); j++) {
-                //GlynnPermanentCalculatorRepeated_DFE(matrix_init, input_states[i], output_states[i][j], perm[i][j], useDual); 
-                perm[i][j] = gpc.calculate(matrix_init, input_states[i], output_states[i][j]);
+                GlynnPermanentCalculatorRepeated_DFE(matrix_init, input_states[i], output_states[i][j], perm[i][j], useDual); 
+                //perm[i][j] = gpc.calculate(matrix_init, input_states[i], output_states[i][j]);
             }
         }
         unlock_lib();
         return;
     }
     for (size_t inp = 0; inp < input_states.size(); inp++) {
+    /*
         std::vector<uint8_t> allOneRows; allOneRows.reserve(output_states[inp].size());
         std::vector<uint8_t> allMulSums; allMulSums.reserve(output_states[inp].size());
         std::vector<uint64_t> allChangeCounts; allChangeCounts.reserve(output_states[inp].size());
@@ -795,11 +796,11 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
     
         calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
           rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, output_states[inp].size(), perm[inp].data());
-        
-    } 
+        */
+    }
 
     unlock_lib();
 }
-*/
+
 
 }
