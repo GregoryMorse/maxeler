@@ -19,7 +19,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
 
     //40x40 is a large enough limit in all cases
     final int loopLength = 20; //based on 2 fixed point multiplications + a barrel shifter for multiplicities
-    final boolean colMux = true; //column multiplexing is very resource expensive and causes heavy congestion
+    final boolean colMux = false; //column multiplexing is very resource expensive and causes heavy congestion
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
 
         int numarrays = dual && !isSim ? 2 : 1;
@@ -159,6 +159,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", isLocal);
         }
         //ei.setScalar("SumUpPermDFEKernel", "msizeadj", msizeadj);
+        //InterfaceParam changeCountParts = (((changeCount + loopLength - 1) / loopLength) << 5) | ((changeCount % loopLength) ? changeCount % loopLength : ei.addConstant(loopLength));
         ei.setScalar("SumUpPermDFEKernel", "changeCount", ticksmax * changeCount);
         ei.setTicks("SumUpPermDFEKernel", totalPerms * ticksmax * changeCount);
         for (int i = 0; i < initKerns; i++) {
