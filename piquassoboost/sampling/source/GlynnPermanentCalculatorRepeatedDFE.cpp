@@ -685,7 +685,9 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                             size_t idxmtxfix = colIndices[photons*i+basecol+jdx] / max_fpga_cols;
                             mtxmuxed[j][offset+jdx] = mtxfix[idxmtxfix][idx*mtxfix[idxmtxfix].stride+colIndices[photons*i+basecol+jdx] % max_fpga_cols];
                         }
+                        memset(&mtxmuxed[j][offset+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
                     }
+                    for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxmuxed[j][jdx].real = fixpow; 
                 }
             }
         }
