@@ -542,7 +542,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     //assert(mtxfix[i].stride == mtxfix[i].cols);
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     
-    for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
+    if (colMux) for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (mplicity.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
@@ -682,15 +682,15 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                     for (size_t idx=0; idx < rows; idx++) {
                         size_t offset = i * mtxsize + idx * mtxmuxed[j].stride;
                         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-                            size_t idxmtxfix = colIndices[basecol+jdx] / max_fpga_cols;
-                            mtxmuxed[j][offset+basecol+jdx] = mtxfix[idxmtxfix][idx*mtxfix[idxmtxfix].stride+colIndices[basecol+jdx] % max_fpga_cols];
+                            size_t idxmtxfix = colIndices[photons*i+basecol+jdx] / max_fpga_cols;
+                            mtxmuxed[j][offset+jdx] = mtxfix[idxmtxfix][idx*mtxfix[idxmtxfix].stride+colIndices[photons*i+basecol+jdx] % max_fpga_cols];
                         }
                     }
                 }
             }
         }
         
-        for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
+        if (colMux) for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (mplicity.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
