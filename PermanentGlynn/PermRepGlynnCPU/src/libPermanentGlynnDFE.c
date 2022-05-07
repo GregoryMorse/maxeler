@@ -182,7 +182,7 @@ long double dfeFloatToLD(__int128 res)
 }
 
 #define COLDIV (MTX_SIZE / INITS)
-#define USECOLMUX 1
+#define USECOLMUX 0
 
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
