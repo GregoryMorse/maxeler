@@ -316,7 +316,7 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
-dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, ) #permanent_Glynn_MultiDFEDual, permanent_Glynn_DFEDual
+dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
 largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
@@ -399,13 +399,14 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs or True:
           mplier = 1#5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
           print(A[dim][1][photons], A[dim][2][photons])
           def save_result():
-              if shots is None: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) #v[0] = func(A[dim][0], [A[dim][1][photons]], [[A[dim][2][photons] for _ in range(3)]])
+              #v[0] = func(A[dim][0], [A[dim][1][photons]], [[A[dim][2][photons] for _ in range(3)]])
+              if shots is None: v[0] = func(A[dim][0], [[A[dim][1][photons] for _ in range(3)]], [A[dim][2][photons]]) #v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
               else: v[0] = func(A[dim][0], A[dim][1][photons], shots)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfeFuncs: print(check_power())
@@ -478,7 +479,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         plt.close(fig)
 #other_stability(40, 30)
 #stability(40, 30)
-for i in range(8 if hasSim else 30, 40+1):
+for i in range(19 if hasSim else 0, 40+1):
     verify_timing(DEPTH, i, None)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
