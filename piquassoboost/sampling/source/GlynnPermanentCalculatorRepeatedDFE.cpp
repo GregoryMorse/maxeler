@@ -435,7 +435,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
 }
 
 int loopLength = 20;
-bool colMux = false;
+bool colMux = true;
 
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
@@ -667,14 +667,16 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                 mtxmuxed[i] = matrix_base<ComplexFix16>(rows * input_states[outp].size(), max_fpga_cols);
             }
         }
-        for (size_t i = 0; i < output_states[outp].size(); i++) { //could improve by copying 1, then 2, then 4, then 8, etc...copy doubling strategy 
-            std::copy_n(rowchange_indices.begin(), rows, rowchange_indices.begin() + rows * i);
-            std::copy_n(mplicity.begin(), loopLength, mplicity.begin() + loopLength * i);
-            std::copy_n(initDirections.begin(), loopLength * (rows - onerows), initDirections.begin() + loopLength * (rows - onerows) * i);
+        for (size_t i = 0; i < input_states[outp].size(); i++) { //could improve by copying 1, then 2, then 4, then 8, etc...copy doubling strategy
+            if (i != 0) { 
+                std::copy_n(rowchange_indices.begin(), rows, rowchange_indices.begin() + rows * i);
+                std::copy_n(mplicity.begin(), loopLength, mplicity.begin() + loopLength * i);
+                std::copy_n(initDirections.begin(), loopLength * (rows - onerows), initDirections.begin() + loopLength * (rows - onerows) * i);
+            }
             for (size_t j = 0; j < actualinits; j++) {
-                if (colMux)
-                    memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], mtxsize);
-                else { //mux the columns on CPU
+                if (colMux) {
+                    if (i != 0) memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], mtxsize);
+                } else { //mux the columns on CPU
                     size_t basecol = max_fpga_cols * j;
                     size_t lastcol = photons<=basecol ? 0 : std::min(max_fpga_cols, photons-basecol);
                     for (size_t idx=0; idx < rows; idx++) {
