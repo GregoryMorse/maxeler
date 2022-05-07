@@ -735,7 +735,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (2 * limitNew < limit) {
                 limitNew++;
                 colSumFix[limitNew - 1] = colSumFix[limit - 1];
-                for (int i = 0; i < 9; i++) {
+                for (int i = 0; i < 9+4; i++) {
                     colSumFix[limitNew - 1] = optimization.pipeline(colSumFix[limitNew - 1]);
                 }
             }
