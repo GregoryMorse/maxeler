@@ -19,6 +19,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
 
     //40x40 is a large enough limit in all cases
     final int loopLength = 20; //based on 2 fixed point multiplications + a barrel shifter for multiplicities
+    final boolean colMux = true; //column multiplexing is very resource expensive and causes heavy congestion
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
 
         int numarrays = dual && !isSim ? 2 : 1;
@@ -59,10 +60,13 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 initColSumKernels[i].getInput("initBinCoeff") <== initBinCoeff2;
             }
         }
-        DFELink colIndex = addStreamFromCPU("colIndex");
-        colIndex.setAdditionalRegisters(2+2+2+2); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
-        Fanout colIndexFanout = fanout("colIndexFanout");
-        colIndexFanout.getInput() <== colIndex;
+        Fanout colIndexFanout = null;
+        if (colMux) {
+            DFELink colIndex = addStreamFromCPU("colIndex");
+            colIndex.setAdditionalRegisters(2+2+2+2); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
+            colIndexFanout = fanout("colIndexFanout");
+            colIndexFanout.getInput() <== colIndex;
+        }
         DFELink binCoeff = initColSumKernels[0].getOutput("bincoeff");
         binCoeff.setAdditionalRegisters(2+2+2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
         Fanout binCoeffFanout = fanout("binCoeffFanout"), binCoeffFanout2 = null;
@@ -74,10 +78,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             binCoeffFanout2.getInput() <== binCoeff2;
         }
         for (int i = 0; i < numkernels; i++) {
-            colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat));
-            DFELink colIndexOutput = colIndexFanout.addOutput("colIndex" + i);
-            colIndexOutput.setAdditionalRegisters(((i % 4)+1)*2); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
-            colSumKernels[i].getInput("colIndex") <== colIndexOutput;
+            colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat, colMux));
+            if (colMux) {
+                DFELink colIndexOutput = colIndexFanout.addOutput("colIndex" + i);
+                colIndexOutput.setAdditionalRegisters(((i % 4)+1)*2); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
+                colSumKernels[i].getInput("colIndex") <== colIndexOutput;
+            }
             DFELink mplicityOutput = (dual && isSim && i >= numkernels * numarrays / 2) ? binCoeffFanout2.addOutput("curMplicity" + i) : binCoeffFanout.addOutput("curMplicity" + i);
             mplicityOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
             colSumKernels[i].getInput("curMplicity") <== mplicityOutput;
@@ -141,7 +147,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         InterfaceParam msize = ei.addParam("msize", CPUTypes.UINT8);
         //InterfaceParam nonZeroRows = ei.addParam("rows", CPUTypes.UINT8);
         InterfaceParam photons = ei.addParam("photons", CPUTypes.UINT8);
-        //InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT8);
+        InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT32);
         InterfaceParam changeCount = ei.addParam("changeCount", CPUTypes.UINT64);
         InterfaceParam initParities = ei.addParam("initParities", CPUTypes.UINT32);
         
@@ -154,11 +160,11 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         }
         //ei.setScalar("SumUpPermDFEKernel", "msizeadj", msizeadj);
         ei.setScalar("SumUpPermDFEKernel", "changeCount", ticksmax * changeCount);
-        ei.setTicks("SumUpPermDFEKernel", ticksmax * changeCount);
+        ei.setTicks("SumUpPermDFEKernel", totalPerms * ticksmax * changeCount);
         for (int i = 0; i < initKerns; i++) {
             ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
             ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
-            ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + loopLength * (photons - 1));
+            ei.setTicks("InitializeColSumDFEKernel_" + i, totalPerms * (ticksmax * changeCount + loopLength * (photons - 1)));
             if (i != 0) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
             //ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
             ei.setScalar("InitializeColSumDFEKernel_" + i, "photonsm1", photons - 1);
@@ -175,7 +181,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             for (int i = initKerns; i < initKerns * 2; i++) {
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "msizeadj", msizeadj);
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "changeCount", changeCount);
-                ei.setTicks("InitializeColSumDFEKernel_" + i, ticksmax * changeCount + loopLength * (photons - 1));
+                ei.setTicks("InitializeColSumDFEKernel_" + i, totalPerms * (ticksmax * changeCount + loopLength * (photons - 1)));
                 if (i != initKerns) ei.setScalar("InitializeColSumDFEKernel_" + i, "msizem1", msize - 1);
                 //ei.setScalar("InitializeColSumDFEKernel_" + i, "rowsm1", nonZeroRows - 1);
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "photonsm1", photons - 1);                
@@ -184,21 +190,21 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             }
             //ei.setScalar("SumUpPermDFEKernel2", "msizeadj", msizeadj);
             ei.setScalar("SumUpPermDFEKernel2", "changeCount", ticksmax * changeCount);
-            ei.setTicks("SumUpPermDFEKernel2", ticksmax * changeCount);
+            ei.setTicks("SumUpPermDFEKernel2", totalPerms * ticksmax * changeCount);
         }
         for (int kernel_n = 0; kernel_n < numkernels; kernel_n++) {
             ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "msizeadj", msizeadj);
             ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "changeCount", changeCount);
             // set the ticks of the computing kernel
-            ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, ticksmax * changeCount + photons - 1);
-            ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "photonsm1", photons - 1);
+            ei.setTicks("PermanentGlynnDFEKernel_" + kernel_n, totalPerms * (ticksmax * changeCount + (colMux ? photons - 1 : ei.addConstant(0))));
+            if (colMux) ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "photonsm1", photons - 1);
         }
 
         // stream to CPU containing the result
-        if (!dual || isSim)
-          ei.setStream("res", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
-        if (dual && isSim)
-          ei.setStream("res2", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
+        //if (!dual || isSim)
+        //  ei.setStream("res", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
+        //if (dual && isSim)
+        //  ei.setStream("res2", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
         
 
 
