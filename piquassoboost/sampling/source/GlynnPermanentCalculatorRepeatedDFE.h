@@ -17,7 +17,11 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     PicState_int64& output_state, Complex16& perm, int useDual);
 
 void
-GlynnPermanentCalculatorRepeatedMultiBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+GlynnPermanentCalculatorRepeatedMultiInputBatch_DFE(matrix& matrix_init, std::vector<std::vector<PicState_int64>>& input_states,
+    std::vector<PicState_int64>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
+
+void
+GlynnPermanentCalculatorRepeatedMultiOutputBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
     std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
 
 /**
@@ -27,7 +31,11 @@ void GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_mtx, PicState_int64& in
     PicState_int64& output_state, Complex16& perm, int useDual);
 
 void
-GlynnPermanentCalculatorRepeatedBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
+GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<std::vector<PicState_int64>>& input_states,
+    std::vector<PicState_int64>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
+
+void
+GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector<PicState_int64>& input_states,
     std::vector<std::vector<PicState_int64>>& output_states, std::vector<std::vector<Complex16>>& perm, int useDual);
 
 
