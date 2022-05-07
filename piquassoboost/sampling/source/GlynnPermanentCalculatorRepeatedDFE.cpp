@@ -435,7 +435,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
 }
 
 int loopLength = 20;
-bool colMux = true;
+bool colMux = false;
 
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
