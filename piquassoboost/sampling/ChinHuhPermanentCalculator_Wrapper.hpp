@@ -252,6 +252,9 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
             }
             PyList_SetItem(multiInput ? self->input_state : self->output_state, i, oOut);
         }
+        for (size_t i = 0; i < input_states.size(); i++) {
+            ret[i].resize(output_states[i].size());
+        }
 #ifdef __DFE__        
         if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
             if (multiInput) GlynnPermanentCalculatorRepeatedInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepDualDFE);
@@ -263,7 +266,6 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
 #endif
         {
             for (size_t i = 0; i < input_states.size(); i++) {
-                ret[i].resize(output_states[i].size());
                 for (size_t j = 0; j < output_states[i].size(); j++) {
                     if (self->lib == ChinHuh)
                         ret[i][j] = self->calculator->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
