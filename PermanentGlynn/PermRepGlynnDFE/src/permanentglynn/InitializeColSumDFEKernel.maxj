@@ -18,8 +18,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.VectorMemory;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.CounterChain;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
@@ -210,13 +210,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar wrapVal = constant.var(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0)), 1) << rowpow2;
         DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64)) << rowpow2;
         DFEVar photonsm1cast = photonsm1.cast(dfeUInt(64));
-        CounterChain counterChain = control.count.makeCounterChain();
-        DFEVar ticksBeforeReset = ticksBeforeCols + photonsm1cast;
-        DFEVar resetSignal = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeReset)).getCount() === ticksBeforeReset;
+        DFEVar ticksBeforeReset = ticksBeforeCols + (photonsm1cast << 2) + (photonsm1cast << 4); //multiply by loopLength==20
+        DFEVar resetSignal = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeReset)).getCount() === 0;
         //64 bits, we don't care about precise maximum=(ticksBeforeCols+loopLength-1)/loopLength + photonsm1cast as either another scalar
         //or magic number division required (divide by 20 is divide by 4 then a multiplication to achieve unsigned divide by 5)
-        DFEVar mainCount = counterChain.addCounter(resetSignal ? constant.var(dfeUInt(64), 1) : ticksBeforeReset, 1); 
-        DFEVar loopCount = counterChain.addCounter(resetSignal ? constant.var(dfeUInt(5), 1) : loopLength, 1); //5 bits
+        Count.Counter loopCounter = control.count.makeCounter(control.count.makeParams(5).withMax(loopLength).withReset(resetSignal).withInc(1)); //5 bits
+        DFEVar mainCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeReset).withReset(resetSignal).withEnable(loopCounter.getWrap()).withInc(1)).getCount(); //64 bits
+        DFEVar loopCount = loopCounter.getCount();
+        //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", ticksBeforeCols, ticksBeforeReset, mainCount, loopCount, resetSignal);
         DFEVar initCount = repeatPipeline(mainCount.slice(0, 6).cast(dfeUInt(6)), 44);
         DFEVar repTickCount = mainCount - photonsm1cast;
         DFEVar isTransition = repTickCount === 0;
