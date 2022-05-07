@@ -434,6 +434,9 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   }*/
 }
 
+int loopLength = 20;
+bool colMux = false;
+
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
@@ -461,7 +464,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     std::vector<uint8_t> initDirections;
     uint8_t onerows, mulsum; uint64_t changecount;
     PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();
-    int loopLength = 20, initParities;
+    int initParities;
     matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, loopLength); 
     
     // calulate the maximal sum of the columns to normalize the matrix
@@ -500,25 +503,33 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
     }
 
+    std::vector<unsigned char> colIndices; colIndices.reserve(photons);
+    for (size_t i = 0; i < output_state.size(); i++) {
+      for (size_t j = transpose ? output_state[i] : input_state[i]; j != 0; j--) {
+        colIndices.push_back(i);
+      }
+    }
+
     // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
     // SLR and DFE input matrix with 1.0 filling on top row, 0 elsewhere 
     const size_t max_dim = dfe_mtx_size;
     const size_t rows = matrix_mtx.rows;
     const size_t numinits = 4;
     const size_t max_fpga_cols = max_dim / numinits;
-    const size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
+    const size_t cols = colMux ? matrix_mtx.cols : photons;
+    const size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
     for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
       size_t basecol = max_fpga_cols * i;
-      size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
+      size_t lastcol = cols<=basecol ? 0 : std::min(max_fpga_cols, cols-basecol);
       for (size_t idx=0; idx < rows; idx++) {
-        size_t offset = idx * matrix_mtx.stride + basecol;
+        size_t offset = idx * matrix_mtx.stride;
         size_t offset_small = idx*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-          mtxfix[i][offset_small+jdx].real = llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
-          mtxfix[i][offset_small+jdx].imag = llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+          mtxfix[i][offset_small+jdx].real = llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
+          mtxfix[i][offset_small+jdx].imag = llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
           //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
@@ -531,18 +542,12 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     //assert(mtxfix[i].stride == mtxfix[i].cols);
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     
-    std::vector<unsigned char> colIndices; colIndices.reserve(photons);
-    for (size_t i = 0; i < output_state.size(); i++) {
-      for (size_t j = transpose ? output_state[i] : input_state[i]; j != 0; j--) {
-        colIndices.push_back(i);
-      }
-    }
     for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (mplicity.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
     for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
 
-    calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
+    calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, cols, colIndices.data(),
       rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, 1, &perm);
 
     unlock_lib();
@@ -578,7 +583,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         std::vector<uint8_t> initDirections;
         uint8_t onerows, mulsum; uint64_t changecount;
         PicState_int64 adj_input_state = output_states[outp].copy();
-        int loopLength = 20, initParities;
+        int initParities;
         matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, false, loopLength); 
         
         // calulate the maximal sum of the columns to normalize the matrix
@@ -623,11 +628,11 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t rows = matrix_mtx.rows;
         const size_t numinits = 4;
         const size_t max_fpga_cols = max_dim / numinits;
-        const size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
+        size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[numinits] = {};
         const long double fixpow = 1ULL << 62;
         for (size_t i = 0; i < actualinits; i++) {
-          mtxfix[i] = matrix_base<ComplexFix16>(rows * input_states[outp].size(), max_fpga_cols);
+          mtxfix[i] = matrix_base<ComplexFix16>(rows * (colMux ? input_states[outp].size() : 1), max_fpga_cols);
           size_t basecol = max_fpga_cols * i;
           size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
           for (size_t idx=0; idx < rows; idx++) {
@@ -651,28 +656,49 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
           }
         }
         
-        //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
-        ComplexFix16* mtx_fix_data[numinits];
-        //assert(mtxfix[i].stride == mtxfix[i].cols);
-        for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
-
         rowchange_indices.resize(rows * input_states[outp].size());
         mplicity.resize(loopLength * input_states[outp].size());
         initDirections.resize(loopLength * (rows - onerows) * input_states[outp].size());
-        size_t mtxsize = sizeof(ComplexFix16)*rows * input_states[outp].size()*max_fpga_cols; 
+        size_t mtxsize = sizeof(ComplexFix16)*rows * input_states[outp].size()*max_fpga_cols;
+        matrix_base<ComplexFix16> mtxmuxed[numinits] = {};
+        if (!colMux) {
+            actualinits = (photons + max_fpga_cols-1) / max_fpga_cols;
+            for (size_t i = 0; i < actualinits; i++) {
+                mtxmuxed[i] = matrix_base<ComplexFix16>(rows * input_states[outp].size(), max_fpga_cols);
+            }
+        }
         for (size_t i = 0; i < output_states[outp].size(); i++) { //could improve by copying 1, then 2, then 4, then 8, etc...copy doubling strategy 
             std::copy_n(rowchange_indices.begin(), rows, rowchange_indices.begin() + rows * i);
             std::copy_n(mplicity.begin(), loopLength, mplicity.begin() + loopLength * i);
             std::copy_n(initDirections.begin(), loopLength * (rows - onerows), initDirections.begin() + loopLength * (rows - onerows) * i);
-            for (size_t j = 0; j < actualinits; j++)
-                memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], mtxsize); 
+            for (size_t j = 0; j < actualinits; j++) {
+                if (colMux)
+                    memcpy(&mtxfix[j][i*mtxsize], &mtxfix[j][0], mtxsize);
+                else { //mux the columns on CPU
+                    size_t basecol = max_fpga_cols * j;
+                    size_t lastcol = photons<=basecol ? 0 : std::min(max_fpga_cols, photons-basecol);
+                    for (size_t idx=0; idx < rows; idx++) {
+                        size_t offset = idx * mtxmuxed[j].stride;
+                        for (size_t jdx = 0; jdx < lastcol; jdx++) {
+                            size_t idxmtxfix = colIndices[basecol+jdx] / max_fpga_cols;
+                            mtxmuxed[j][offset+basecol+jdx] = mtxfix[idxmtxfix][idx*mtxfix[idxmtxfix].stride+colIndices[basecol+jdx] % max_fpga_cols];
+                        }
+                    }
+                }
+            }
         }
+        
         for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (mplicity.size() % 2 == 0) ? 0 : 1; i != 0; i--) mplicity.push_back(0); //round up to nearest 16 bytes to allow streaming
         for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
+
+        //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
+        ComplexFix16* mtx_fix_data[numinits];
+        //assert(mtxfix[i].stride == mtxfix[i].cols);
+        for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = colMux ? mtxfix[i].get_data() : mtxmuxed[i].get_data();
     
-        calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
+        calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, matrix_mtx.cols, colIndices.data(),
           rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, input_states[outp].size(), perm[outp].data());
     }
 }
@@ -716,7 +742,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
             std::vector<uint8_t> initDirections;
             uint8_t onerows, mulsum; uint64_t changecount;
             PicState_int64 adj_input_state = output_states[inp][outp].copy();
-            int loopLength = 20, initParities;
+            int initParities;
             matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, loopLength);
     
             // calulate the maximal sum of the columns to normalize the matrix
