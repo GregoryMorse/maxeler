@@ -217,21 +217,26 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
     // create PIC version of the input matrices
     pic::matrix matrix_mtx = numpy2matrix(self->matrix);
 
-    if (PyList_Check(self->input_state)) {
+    if (PyList_Check(self->input_state) && PyList_Check(self->output_state)) {
         Py_ssize_t sz = PyList_Size(self->input_state);
+        //Py_ssize_t szo = PyList_Size(self->output_state);
+        std::vector<std::vector<pic::Complex16>> ret;
+        ret.resize(sz);
+        int multiInput = sz != 0 && PyList_Check(PyList_GetItem(self->input_state, 0));
+
         std::vector<pic::PicState_int64> input_states;
         std::vector<std::vector<pic::PicState_int64>> output_states(sz);
         input_states.reserve(sz);
         for (Py_ssize_t i = 0; i < sz; i++) {
-            PyObject *o = PyList_GetItem(self->input_state, i);            
+            PyObject *o = PyList_GetItem(multiInput ? self->output_state : self->input_state, i);            
             if ( PyArray_IS_C_CONTIGUOUS(o) ) {
                 Py_INCREF(o);
             } else {
                 o = PyArray_FROM_OTF(o, NPY_INT64, NPY_ARRAY_IN_ARRAY);
             }
-            PyList_SetItem(self->input_state, i, o);
+            PyList_SetItem(multiInput ? self->output_state : self->input_state, i, o);
             input_states.push_back(numpy2PicState_int64(o));
-            PyObject* oOut = PyList_GetItem(self->output_state, i);
+            PyObject* oOut = PyList_GetItem(multiInput ? self->input_state : self->output_state, i);
             Py_INCREF(oOut);
             Py_ssize_t szOutput = PyList_Size(oOut);
             output_states[i].reserve(szOutput);
@@ -245,25 +250,28 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
                 PyList_SetItem(oOut, i, o);
                 output_states[i].push_back(numpy2PicState_int64(o));
             }
-            PyList_SetItem(self->output_state, i, oOut);
+            PyList_SetItem(multiInput ? self->input_state : self->output_state, i, oOut);
         }
-        std::vector<std::vector<pic::Complex16>> ret;
-        ret.resize(sz);
 #ifdef __DFE__        
         if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-            GlynnPermanentCalculatorRepeatedBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepDualDFE);
+            if (multiInput) GlynnPermanentCalculatorRepeatedInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepDualDFE);
+            else GlynnPermanentCalculatorRepeatedOutputBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepDualDFE);
         else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
-            GlynnPermanentCalculatorRepeatedMultiBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepMultiDualDFE);
+            if (multiInput) GlynnPermanentCalculatorRepeatedMultiInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepMultiDualDFE);
+            else GlynnPermanentCalculatorRepeatedMultiOutputBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepMultiDualDFE);
         else
 #endif
         {
             for (size_t i = 0; i < input_states.size(); i++) {
                 ret[i].resize(output_states[i].size());
                 for (size_t j = 0; j < output_states[i].size(); j++) {
-                    ret[i][j] = self->calculator->calculate(matrix_mtx, input_states[i], output_states[i][j]);
+                    if (self->lib == ChinHuh)
+                        ret[i][j] = self->calculator->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
+                    else if (self->lib == GlynnRep)
+                        ret[i][j] = self->calculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                 }
             }
-        }    
+        }
         
         PyObject* list = PyList_New(0);
         for (size_t i = 0; i < ret.size(); i++) {
@@ -289,7 +297,10 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
             GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepMultiDualDFE);
         else
 #endif
-        ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+        if (self->lib == ChinHuh)
+            ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+        else if (self->lib == GlynnRep)
+            ret = self->calculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
         return Py_BuildValue("D", &ret);
     }
 }
