@@ -182,6 +182,7 @@ long double dfeFloatToLD(__int128 res)
 }
 
 #define COLDIV (MTX_SIZE / INITS)
+#define USECOLMUX 1
 
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
@@ -227,10 +228,15 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #else
              ;
 #endif
-//"colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, "
-#define ROUTING_STRING "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "\
+//
+#define ROUTING_STRING_BASE "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "\
         "curMplicity0 -> binCoeffFanout, curMplicity1 -> binCoeffFanout, curMplicity2 -> binCoeffFanout, curMplicity3 -> binCoeffFanout, "\
-        "initDirections0 -> initDirectionsFanout, initDirections1 -> initDirectionsFanout, initDirections2 -> initDirectionsFanout, initDirections3 -> initDirectionsFanout" 
+        "initDirections0 -> initDirectionsFanout, initDirections1 -> initDirectionsFanout, initDirections2 -> initDirectionsFanout, initDirections3 -> initDirectionsFanout"
+#if USECOLMUX
+#define ROUTING_STRING "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, " ROUTING_STRING_BASE
+#else
+#define ROUTING_STRING ROUTING_STRING_BASE
+#endif 
     // simulation
 #ifndef DUAL
       actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
@@ -241,8 +247,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.glynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.glynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.glynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.glynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
-      //actions.glynnRowsGray.instream_colIndex = colIndices;
-      //actions.glynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#if USECOLMUX
+          actions.glynnRowsGray.instream_colIndex = colIndices;
+          actions.glynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#endif
       actions.glynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.glynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.glynnRowsGray.instream_initBinCoeff = mplicity;
@@ -270,8 +278,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_InputMtx5 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx5 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx6 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx6 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx7 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx7 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
-      //actions.dualGlynnRowsGray.instream_colIndex = colIndices;
-      //actions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#if USECOLMUX      
+      actions.dualGlynnRowsGray.instream_colIndex = colIndices;
+      actions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#endif
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.dualGlynnRowsGray.instream_size_rowChangeIndices = rows + (rows % 16 == 0 ? 0 : (16 - rows % 16));
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
@@ -294,8 +304,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       actions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
+#if USECOLMUX
       actions.dualGlynnRowsGray.instream_colIndex = colIndices;
       actions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#endif
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.dualGlynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
@@ -311,8 +323,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       dualactions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; dualactions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; dualactions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; dualactions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows : 0;
+#if USECOLMUX
       dualactions.dualGlynnRowsGray.instream_colIndex = colIndices;
       dualactions.dualGlynnRowsGray.instream_size_colIndex = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
+#endif
       dualactions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       dualactions.dualGlynnRowsGray.instream_size_rowChangeIndices = photons + (photons % 16 == 0 ? 0 : (16 - photons % 16));
       dualactions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
@@ -372,11 +386,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
         real /= numOfPartialPerms;
         imag /= numOfPartialPerms;
         real /= mulSumPerms, imag /= mulSumPerms;
-        size_t offset = i * cols;
         // renormalize the result according to the normalization of the input matrix
         for (int jdx=0; jdx<photons; jdx++ ) {
-            perm->real *= renormalize_data[colIndices[offset+jdx]];
-            perm->imag *= renormalize_data[colIndices[offset+jdx]];
+            perm[i].real *= renormalize_data[colIndices[i*photons+jdx]];
+            perm[i].imag *= renormalize_data[colIndices[i*photons+jdx]];
         }
         perm[i].real = real; perm[i].imag = imag;
         //real *= mplicity[i];
