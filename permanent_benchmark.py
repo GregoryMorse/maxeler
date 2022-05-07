@@ -258,7 +258,7 @@ def verify_timing(nmax, batchsize=1):
       for dim in xaxis:
         #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
         #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim:# or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -308,9 +308,11 @@ def verify_timing(nmax, batchsize=1):
       writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
       writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
 
-    #for i in xaxis:
-    #  assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
-    #  assert all(abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
+    for i in xaxis:
+      #assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
+      failures = [(i, x, res[key][x][i], res[key][largePermFuncs[0].__name__][i], abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i]))) for x in (y.__name__ for y in largePermFuncs) if x != largePermFuncs[0].__name__ and abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) > ERRBOUND]
+      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); assert False, failures
+
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
     verinfo = ([(f, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis]) for f in largePermFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
