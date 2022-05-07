@@ -388,8 +388,8 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
         real /= mulSumPerms, imag /= mulSumPerms;
         // renormalize the result according to the normalization of the input matrix
         for (int jdx=0; jdx<photons; jdx++ ) {
-            perm[i].real *= renormalize_data[colIndices[i*photons+jdx]];
-            perm[i].imag *= renormalize_data[colIndices[i*photons+jdx]];
+            real *= renormalize_data[colIndices[i*photons+jdx]];
+            imag *= renormalize_data[colIndices[i*photons+jdx]];
         }
         perm[i].real = real; perm[i].imag = imag;
         //real *= mplicity[i];
