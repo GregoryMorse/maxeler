@@ -2,6 +2,7 @@ package permanentglynn;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Arrays;
 import java.util.stream.IntStream;
 
 import maxpower.utils.CollectionUtils;
@@ -81,55 +82,66 @@ public class PermanentGlynnDFEKernel extends Kernel {
     DFEVar ternaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
     {
         int limit = vars.length;
-        while (limit > 2) {
-            int limitNew = limit / 3, i;
-            for (i = 0; i < limitNew; i++) {
-                //if (i != 0 && pipelineDelay[i-1] <= pipelineDelay[i*3] && (pipelineDelay[i*3] != pipelineDelay[i*3+1] || pipelineDelay[i*3+1] != pipelineDelay[i*3+2])) break; 
-                int maxDelay = Math.max(Math.max(pipelineDelay[i*3], pipelineDelay[i*3+1]), pipelineDelay[i*3+2]);
-                for (int j = 0; j < maxDelay - pipelineDelay[i*3]; j++) vars[i*3] = optimization.pipeline(vars[i*3]);
-                for (int j = 0; j < maxDelay - pipelineDelay[i*3+1]; j++) vars[i*3+1] = optimization.pipeline(vars[i*3+1]);
-                for (int j = 0; j < maxDelay - pipelineDelay[i*3+2]; j++) vars[i*3+2] = optimization.pipeline(vars[i*3+2]);
-                pipelineDelay[i] = maxDelay + 1;
-                if (!issub[i*3]) { //first argument must be positive for efficient TriArith
-                    vars[i] = triAddExact(vars[i*3], vars[i*3+1], vars[i*3+2], issub[i*3+1], issub[i*3+2]);
-                    issub[i] = false;
-                } else if (!issub[i*3+1]) {
-                    vars[i] = triAddExact(vars[i*3+1], vars[i*3], vars[i*3+2], issub[i*3], issub[i*3+2]);
-                    issub[i] = false;
-                } else if (!issub[i*3+2]) {
-                    vars[i] = triAddExact(vars[i*3+2], vars[i*3], vars[i*3+1], issub[i*3], issub[i*3+1]);
-                    issub[i] = false;
-                } else { //all 3 are negative
-                    vars[i] = triAddExact(vars[i*3], vars[i*3+1], vars[i*3+2], false, false);
-                    issub[i] = true;
-                }
-            }
-            if (3 * i != limit) {
-                limitNew = i;
-                i *= 3;
-                for (; i < limit; i++, limitNew++) {
-                    vars[limitNew] = vars[i];
-                    issub[limitNew] = issub[i];
-                    pipelineDelay[limitNew] = pipelineDelay[i];
-                }
-            }
-            limit = limitNew;
-        }
-        if (limit == 2) {
-            int maxDelay = Math.max(pipelineDelay[0], pipelineDelay[1]);
-            for (int j = 0; j < maxDelay - pipelineDelay[0]; j++) vars[0] = optimization.pipeline(vars[0]);
-            for (int j = 0; j < maxDelay - pipelineDelay[1]; j++) vars[1] = optimization.pipeline(vars[1]);      
-            pipelineDelay[0] = maxDelay + 1;      
-            if (!issub[0]) { //first argument must be positive for efficient binary arithmetic
-                vars[0] = addExact(vars[0], vars[1], issub[1]);
-                issub[0] = false;
-            } else if (!issub[1]) {
-                vars[0] = addExact(vars[1], vars[0], issub[0]);
-                issub[0] = false;
+        while (limit > 1) {
+            if (pipelineDelay[0] != pipelineDelay[1]) {
+                vars[0] = optimization.pipeline(vars[0]);
+                pipelineDelay[0]++;
+            } else if (limit > 2 && pipelineDelay[0] == pipelineDelay[1] && pipelineDelay[1] != pipelineDelay[2]) { //maxcompiler will still infer tri-adds and disregard correct pipelining if doing binary additions before the end...
+                vars[0] = optimization.pipeline(vars[0]);
+                pipelineDelay[0]++;
+                vars[1] = optimization.pipeline(vars[1]);
+                pipelineDelay[1]++;
             } else {
-                vars[0] = addExact(vars[0], vars[1], false);
-                issub[0] = true;
-            }           
+                int limitNew, i;
+                for (i = 0, limitNew = 0; i < limit; i++, limitNew++) {
+                    if (i == 0 && (limit == 2)) {// || pipelineDelay[0] == pipelineDelay[1] && pipelineDelay[1] != pipelineDelay[2])) {
+                        pipelineDelay[0]++;
+                        if (!issub[0]) { //first argument must be positive for efficient binary arithmetic
+                            vars[0] = addExact(vars[0], vars[1], issub[1]);
+                            issub[0] = false;
+                        } else if (!issub[1]) {
+                            vars[0] = addExact(vars[1], vars[0], issub[0]);
+                            issub[0] = false;
+                        } else {
+                            vars[0] = addExact(vars[0], vars[1], false);
+                            issub[0] = true;
+                        }
+                        i++;
+                    } else if (i >= limit-2 || pipelineDelay[i] != pipelineDelay[i+1] || pipelineDelay[i+1] != pipelineDelay[i+2]) {
+                        pipelineDelay[limitNew] = pipelineDelay[i];
+                        vars[limitNew] = vars[i];
+                        issub[limitNew] = issub[i];                        
+                    } else {
+                        pipelineDelay[limitNew] = pipelineDelay[i] + 1;
+                        if (!issub[i]) { //first argument must be positive for efficient TriArith
+                            vars[limitNew] = triAddExact(vars[i], vars[i+1], vars[i+2], issub[i+1], issub[i+2]);
+                            issub[limitNew] = false;
+                        } else if (!issub[i+1]) {
+                            vars[limitNew] = triAddExact(vars[i+1], vars[i], vars[i+2], issub[i], issub[i+2]);
+                            issub[limitNew] = false;
+                        } else if (!issub[i+2]) {
+                            vars[limitNew] = triAddExact(vars[i+2], vars[i], vars[i+1], issub[i], issub[i+1]);
+                            issub[limitNew] = false;
+                        } else { //all 3 are negative
+                            vars[limitNew] = triAddExact(vars[i], vars[i+1], vars[i+2], false, false);
+                            issub[limitNew] = true;
+                        }
+                        i+=2;
+                    }
+                }
+                limit = limitNew;
+            }
+            DFEVar[] varsCapture = Arrays.copyOf(vars, limit);
+            int[] pipelineDelayCapture = Arrays.copyOf(pipelineDelay, limit);
+            boolean[] issubCapture = Arrays.copyOf(issub, limit);
+            int[] idxsort = IntStream.range(0, limit).mapToObj(Integer::valueOf).sorted((i, j) -> {
+                int c = Integer.compare(pipelineDelayCapture[i], pipelineDelayCapture[j]);
+                int s = Integer.compare(((DFEFix)varsCapture[i].getType()).getOffset(), ((DFEFix)varsCapture[j].getType()).getOffset());
+                return c != 0 ? c : (s != 0 ? s : Integer.compare(i, j));
+                }).mapToInt(Integer::intValue).toArray();
+            vars = IntStream.of(idxsort).mapToObj(i -> varsCapture[i]).toArray(DFEVar[]::new);
+            issub = booleanAdapter(IntStream.of(idxsort).mapToObj(i -> issubCapture[i]).toArray(Boolean[]::new));
+            pipelineDelay = IntStream.of(idxsort).map(i -> pipelineDelayCapture[i]).toArray();
         }
         totalDelay[0] = pipelineDelay[0] + (issub[0] ? 1 : 0);
         return issub[0] ? -vars[0] : vars[0];
@@ -141,7 +153,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         return res;
     }
     DFEVar addShifter(DFEVar[] vars, int[] shift, boolean[] addsub, int[] pipelineDelay, Integer[] totalDelay) {
-        int[] idxsort = IntStream.range(0, vars.length).mapToObj(i -> Integer.valueOf(i)).sorted((i, j) -> {
+        int[] idxsort = IntStream.range(0, vars.length).mapToObj(Integer::valueOf).sorted((i, j) -> {
             int c = Integer.compare(pipelineDelay[i], pipelineDelay[j]);
             int s = Integer.compare(shift[i], shift[j]);
             return c != 0 ? c : (s != 0 ? s : Integer.compare(i, j));
