@@ -46,9 +46,13 @@ DFEREPF:
 	@$(MAKE)  DFEF -C ./PermRepGlynnDFE/
 	@$(MAKE)  DFEDUALF -C ./PermRepGlynnDFE/
 
-SIMREPF:
+SIMREP:
 	@$(MAKE)  SIM -C ./PermRepGlynnDFE/
 	@$(MAKE)  SIMDUAL -C ./PermRepGlynnDFE/
+
+SIMREPF:
+	@$(MAKE)  SIMF -C ./PermRepGlynnDFE/
+	@$(MAKE)  SIMDUALF -C ./PermRepGlynnDFE/
 
 CPUREP:
 	@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true
