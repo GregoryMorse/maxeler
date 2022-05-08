@@ -90,24 +90,40 @@ class GlynnRepeatedPermanentCalculator(RepeatedPermanentCalculator):
         super(GlynnRepeatedPermanentCalculator, self).__init__(1, matrix, input_state, output_state)
         pass
 
+class GlynnRepeatedInfPermanentCalculator(RepeatedPermanentCalculator):
+    def __init__(self, matrix, input_state, output_state):
+        super(GlynnRepeatedPermanentCalculator, self).__init__(2, matrix, input_state, output_state)
+        pass
+
+
 class GlynnRepeatedSingleDFEPermanentCalculator(RepeatedPermanentCalculator):
     def __init__(self, matrix, input_state, output_state):
-        super(GlynnRepeatedSingleDFEPermanentCalculator, self).__init__(2, matrix, input_state, output_state)
+        super(GlynnRepeatedSingleDFEPermanentCalculator, self).__init__(3, matrix, input_state, output_state)
         pass
 
 class GlynnRepeatedDualDFEPermanentCalculator(RepeatedPermanentCalculator):
     def __init__(self, matrix, input_state, output_state):
-        super(GlynnRepeatedDualDFEPermanentCalculator, self).__init__(3, matrix, input_state, output_state)
+        super(GlynnRepeatedDualDFEPermanentCalculator, self).__init__(4, matrix, input_state, output_state)
+        pass
+
+class GlynnRepeatedSingleDFEFPermanentCalculator(RepeatedPermanentCalculator):
+    def __init__(self, matrix, input_state, output_state):
+        super(GlynnRepeatedSingleDFEPermanentCalculator, self).__init__(5, matrix, input_state, output_state)
+        pass
+
+class GlynnRepeatedDualDFEFPermanentCalculator(RepeatedPermanentCalculator):
+    def __init__(self, matrix, input_state, output_state):
+        super(GlynnRepeatedDualDFEPermanentCalculator, self).__init__(6, matrix, input_state, output_state)
         pass
 
 class GlynnRepeatedMultiSingleDFEPermanentCalculator(RepeatedPermanentCalculator):
     def __init__(self, matrix, input_state, output_state):
-        super(GlynnRepeatedMultiSingleDFEPermanentCalculator, self).__init__(4, matrix, input_state, output_state)
+        super(GlynnRepeatedMultiSingleDFEPermanentCalculator, self).__init__(7, matrix, input_state, output_state)
         pass
 
 class GlynnRepeatedMultiDualDFEPermanentCalculator(RepeatedPermanentCalculator):
     def __init__(self, matrix, input_state, output_state):
-        super(GlynnRepeatedMultiDualDFEPermanentCalculator, self).__init__(5, matrix, input_state, output_state)
+        super(GlynnRepeatedMultiDualDFEPermanentCalculator, self).__init__(8, matrix, input_state, output_state)
         pass
 
 
