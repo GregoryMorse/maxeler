@@ -42,7 +42,11 @@ DFEREP:
 	@$(MAKE)  DFE -C ./PermRepGlynnDFE/
 	@$(MAKE)  DFEDUAL -C ./PermRepGlynnDFE/
 
-SIMREP:
+DFEREPF:
+	@$(MAKE)  DFEF -C ./PermRepGlynnDFE/
+	@$(MAKE)  DFEDUALF -C ./PermRepGlynnDFE/
+
+SIMREPF:
 	@$(MAKE)  SIM -C ./PermRepGlynnDFE/
 	@$(MAKE)  SIMDUAL -C ./PermRepGlynnDFE/
 
@@ -53,8 +57,18 @@ CPUREP:
 	#@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/bitstream -C ./PermRepGlynnCPU/ DUAL=true
 	@$(MAKE) run_sim MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true
 
+CPUREPF:
+	@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true USE_FLOAT=true
+	@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true DUAL=true USE_FLOAT=true
+	#@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/bitstream -C ./PermRepGlynnCPU/ USE_FLOAT=true
+	#@$(MAKE) MODE=release MAXFILE_DIRS=../PermRepGlynnDFE/builds/bitstream -C ./PermRepGlynnCPU/ DUAL=true USE_FLOAT=true
+	@$(MAKE) run_sim MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true USE_FLOAT=true
+
 CPUSIMREP:
 	@$(MAKE) run_sim MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true
+
+CPUSIMREPF:
+	@$(MAKE) run_sim MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true USE_FLOAT=true
 
 .PHONY: all
 
