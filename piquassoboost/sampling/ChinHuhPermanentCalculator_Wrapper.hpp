@@ -24,6 +24,8 @@
 #include "CChinHuhPermanentCalculator.h"
 #include "GlynnPermanentCalculatorRepeated.h"
 
+#include "GlynnPermanentCalculatorRepeatedInf.h"
+
 #ifdef __DFE__
 #include "GlynnPermanentCalculatorDFE.h"
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
@@ -34,10 +36,13 @@
 
 #define ChinHuh 0
 #define GlynnRep 1
-#define GlynnRepSingleDFE 2
-#define GlynnRepDualDFE 3
-#define GlynnRepMultiSingleDFE 4
-#define GlynnRepMultiDualDFE 5
+#define GlynnRepInf 2
+#define GlynnRepSingleDFE 3
+#define GlynnRepDualDFE 4
+#define GlynnRepSingleDFEF 5
+#define GlynnRepDualDFEF 6
+#define GlynnRepMultiSingleDFE 7
+#define GlynnRepMultiDualDFE 8
 
 
 
@@ -57,6 +62,7 @@ typedef struct ChinHuhPermanentCalculator_wrapper {
     union {
         pic::CChinHuhPermanentCalculator* calculator;
         pic::GlynnPermanentCalculatorRepeated* calculatorRep;
+        pic::GlynnPermanentCalculatorRepeatedInf* calculatorRepInf;
     };
 } ChinHuhPermanentCalculator_wrapper;
 
@@ -101,7 +107,9 @@ static void
 ChinHuhPermanentCalculator_wrapper_dealloc(ChinHuhPermanentCalculator_wrapper *self)
 {
 #ifdef __DFE__
-    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
+    if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE ||
+        self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF ||
+        self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
         dec_dfe_lib_count();
     else
 #endif
@@ -109,6 +117,7 @@ ChinHuhPermanentCalculator_wrapper_dealloc(ChinHuhPermanentCalculator_wrapper *s
     // deallocate the instance of class N_Qubit_Decomposition
     if (self->lib == ChinHuh) release_ChinHuhPermanentCalculator( self->calculator );
     else if (self->lib == GlynnRep && self->calculatorRep != NULL) delete self->calculatorRep;
+    else if (self->lib == GlynnRepInf && self->calculatorRepInf != NULL) delete self->calculatorRepInf;
     // release numpy arrays
     Py_DECREF(self->matrix);
     Py_DECREF(self->input_state);
@@ -195,8 +204,11 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
     // create instance of class ChinHuhPermanentCalculator
     if (self->lib == ChinHuh) self->calculator = create_ChinHuhPermanentCalculator();
     else if (self->lib == GlynnRep) self->calculatorRep = new pic::GlynnPermanentCalculatorRepeated();
+    else if (self->lib == GlynnRepInf) self->calculatorRepInf = new pic::GlynnPermanentCalculatorRepeatedInf();
 #ifdef __DFE__
-    else if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE || self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
+    else if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE ||
+        self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF ||
+        self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE)
         inc_dfe_lib_count();
 #endif
 
@@ -256,11 +268,12 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
             ret[i].resize(output_states[i].size());
         }
 #ifdef __DFE__        
-        if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-            if (multiInput) GlynnPermanentCalculatorRepeatedInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepDualDFE);
+        if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE ||
+            self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF)
+            if (multiInput) GlynnPermanentCalculatorRepeatedInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepDualDFE || self->lib == GlynnRepDualDFEF, self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF);
             else GlynnPermanentCalculatorRepeatedOutputBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepDualDFE);
         else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
-            if (multiInput) GlynnPermanentCalculatorRepeatedMultiInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepMultiDualDFE);
+            if (multiInput) GlynnPermanentCalculatorRepeatedMultiInputBatch_DFE( matrix_mtx, output_states, input_states, ret, self->lib == GlynnRepDualDFE || self->lib == GlynnRepDualDFEF, self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF);
             else GlynnPermanentCalculatorRepeatedMultiOutputBatch_DFE( matrix_mtx, input_states, output_states, ret, self->lib == GlynnRepMultiDualDFE);
         else
 #endif
@@ -271,6 +284,8 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
                         ret[i][j] = self->calculator->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                     else if (self->lib == GlynnRep)
                         ret[i][j] = self->calculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
+                    else if (self->lib == GlynnRepInf)
+                        ret[i][j] = self->calculatorRepInf->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                 }
             }
         }
@@ -294,15 +309,18 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
         pic::Complex16 ret;
 #ifdef __DFE__    
         if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE)
-            GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE);
+            GlynnPermanentCalculatorRepeated_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE || self->lib == GlynnRepDualDFEF, self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF);
         else if (self->lib == GlynnRepMultiSingleDFE || self->lib == GlynnRepMultiDualDFE) 
-            GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepMultiDualDFE);
+            GlynnPermanentCalculatorRepeatedMulti_DFE( matrix_mtx, input_state_mtx, output_state_mtx, ret, self->lib == GlynnRepDualDFE || self->lib == GlynnRepDualDFEF, self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF);
         else
 #endif
         if (self->lib == ChinHuh)
             ret = self->calculator->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
         else if (self->lib == GlynnRep)
             ret = self->calculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+        else if (self->lib == GlynnRepInf)
+            ret = self->calculatorRepInf->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+        
         return Py_BuildValue("D", &ret);
     }
 }
