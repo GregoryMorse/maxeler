@@ -114,7 +114,7 @@ int init_dfe_lib(int choice, int dual) {
           calcPermanentGlynnDFE = (CALCPERMGLYNNDFE)dlsym(handle, "calcPermanentGlynnDFEF");
           initialize_DFE = (INITPERMGLYNNDFE)dlsym(handle, "initialize_DFEF");
           releive_DFE = (FREEPERMGLYNNDFE)dlsym(handle, "releive_DFEF");
-          if (initialize_DFEF) return initialize_DFEF(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
+          if (initialize_DFE) return initialize_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
       } else if (choice == DFE_REP) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
@@ -175,7 +175,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
-    if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
+    if (!calcPermanentGlynnDFE ||
         matrices.begin()->rows < 1+dfe_basekernpow2 || matrices.begin()->cols == 0 || matrices.begin()->rows >= matrices.begin()->cols + 2) { //compute with other method
       GlynnPermanentCalculator gpc;
       for (size_t i = 0; i < matrices.size(); i++)
@@ -281,7 +281,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
 
-    if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
+    if (!calcPermanentGlynnDFE ||
         matrix_mtx.rows < 1+dfe_basekernpow2 || matrix_mtx.cols == 0 || matrix_mtx.rows >= matrix_mtx.cols + 2) { //compute with other method
       GlynnPermanentCalculator gpc;
       perm = gpc.calculate(matrix_mtx);
