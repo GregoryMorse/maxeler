@@ -1,14 +1,12 @@
-#ifndef GlynnPermanentCalculatorRepeatedInf_H
-#define GlynnPermanentCalculatorRepeatedInf_H
+#ifndef GlynnPermanentCalculatorInf_H
+#define GlynnPermanentCalculatorInf_H
 
 #include "matrix.h"
 #include "matrix32.h"
-#include "matrix_real.h"
 #include "PicState.h"
 #include <vector>
 #include "PicVector.hpp"
 #include <mpfr.h>
-#include "GlynnPermanentCalculatorInf.h"
 
 #ifndef CPYTHON
 #include <tbb/tbb.h>
@@ -16,9 +14,136 @@
 
 
 namespace pic {
+#define IEEE_DBL_MANT_DIG 53
+# define MPFR_LDBL_MANT_DIG   64
+class FloatInf
+{
+public:
+  FloatInf() : FloatInf(0.0) {}
+  virtual ~FloatInf() { uninit(); }
+  FloatInf(const double d) { init = 1; mpfr_init2(this->f, IEEE_DBL_MANT_DIG); mpfr_set_d(this->f, d, MPFR_RNDN); }
+  FloatInf(const long double ld) { init = 1; mpfr_init2(this->f, MPFR_LDBL_MANT_DIG); mpfr_set_ld(this->f, ld, MPFR_RNDN); }
+  FloatInf(const int i) { init = 1; mpfr_init2(this->f, sizeof(long int)); mpfr_set_si(this->f, (long int)i, MPFR_RNDN); }
+  FloatInf(const mpfr_t& f) { init = 1; mpfr_init2(this->f, mpfr_get_prec(f)); mpfr_set(this->f, f, MPFR_RNDN); }
+  FloatInf(mpfr_prec_t prec) { init = 1; mpfr_init2(this->f, prec); }
+  FloatInf(const FloatInf& f) : FloatInf(f.f) {}
+  FloatInf(FloatInf&& f) { memcpy(&this->f, &f.f, sizeof(mpfr_t)); f.init = 0; } 
+  FloatInf& operator=(const FloatInf& f) {
+    if (this != &f) {
+      if (init) mpfr_set_prec(this->f, mpfr_get_prec(f.f));
+      else init = 1, mpfr_init2(this->f, mpfr_get_prec(f.f));
+      mpfr_set(this->f, f.f, MPFR_RNDN);
+    }
+    return *this;
+  }
+  FloatInf& operator=(FloatInf&& other) {
+    if (init) uninit();
+    else init = 1;
+    memcpy(&this->f, &other.f, sizeof(mpfr_t));
+    other.init = 0;
+    return *this;
+  }
+  void uninit() { if (init) mpfr_clear(this->f); init = 0; }
+  //operator double() { return mpfr_get_d(this->f, MPFR_RNDN); } //dangerous as could cause problems with operator*, operator+
+  double toDouble() { return mpfr_get_d(this->f, MPFR_RNDN); }
+  //https://github.com/BrianGladman/MPC/blob/master/src/fma.c
+  static mpfr_prec_t
+  bound_prec_addsub (const mpfr_t x, const mpfr_t y)
+  {
+    if (!mpfr_regular_p (x))
+      return mpfr_regular_p (y) ?  mpfr_min_prec (y) : mpfr_get_prec (y);
+    else if (!mpfr_regular_p (y))
+      return mpfr_min_prec (x);
+    else /* neither x nor y are NaN, Inf or zero */
+      {
+        mpfr_exp_t ex = mpfr_get_exp (x);
+        mpfr_exp_t ey = mpfr_get_exp (y);
+        mpfr_exp_t ulpx = ex - mpfr_min_prec (x);
+        mpfr_exp_t ulpy = ey - mpfr_min_prec (y);
+        return ((ex >= ey) ? ex : ey) + 1 - ((ulpx <= ulpy) ? ulpx : ulpy);
+      }
+  }
+  static mpfr_prec_t
+  bound_prec_addsub (const mpfr_t x, const double y)
+  {
+    if (!mpfr_regular_p (x))
+      return IEEE_DBL_MANT_DIG;
+    else if (!std::isfinite(y) || y == 0)
+      return mpfr_min_prec (x);
+    else /* neither x nor y are NaN, Inf or zero */
+      {
+        mpfr_exp_t ex = mpfr_get_exp (x);
+        int exp; frexp(y, &exp);
+        mpfr_exp_t ey = exp;
+        mpfr_exp_t ulpx = ex - mpfr_min_prec (x);
+        mpfr_exp_t ulpy = ey - IEEE_DBL_MANT_DIG;
+        return ((ex >= ey) ? ex : ey) + 1 - ((ulpx <= ulpy) ? ulpx : ulpy);
+      }
+  }
+  static mpfr_prec_t
+  bound_prec_mul(const mpfr_t x, const mpfr_t y) {
+    if (!mpfr_regular_p (x))
+      return mpfr_regular_p (y) ?  mpfr_min_prec (y) : mpfr_get_prec (y);
+    else if (!mpfr_regular_p (y))
+      return mpfr_min_prec (x);
+    return mpfr_min_prec (x) + mpfr_min_prec (y);
+  }
+  FloatInf& operator+=(const double d) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, d), MPFR_RNDN);
+    mpfr_add_d(this->f, this->f, d, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf& operator-=(const double d) { //subtracting only values added before, no precision change
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, d), MPFR_RNDN);
+    mpfr_sub_d(this->f, this->f, d, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf& operator+=(const FloatInf& f) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
+    mpfr_add(this->f, this->f, f.f, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf& operator-=(const FloatInf& f) {
+    mpfr_prec_round(this->f, bound_prec_addsub(this->f, f.f), MPFR_RNDN);
+    mpfr_sub(this->f, this->f, f.f, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf& operator*=(const FloatInf& f) {
+    mpfr_prec_round(this->f, bound_prec_mul(this->f, f.f), MPFR_RNDN);
+    mpfr_mul(this->f, this->f, f.f, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf& operator/=(const FloatInf& f) { //divides only by power of 2, no precision change
+    mpfr_div(this->f, this->f, f.f, MPFR_RNDN);
+    return *this;
+  }
+  FloatInf operator+(const FloatInf& f) {
+    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    mpfr_add(newf.f, this->f, f.f, MPFR_RNDN);
+    return newf;
+  }  
+  FloatInf operator-(const FloatInf& f) {
+    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    mpfr_sub(newf.f, this->f, f.f, MPFR_RNDN);
+    return newf;
+  }  
+  FloatInf operator*(const FloatInf& f) {
+    FloatInf newf(bound_prec_mul(this->f, f.f));
+    mpfr_mul(newf.f, this->f, f.f, MPFR_RNDN);
+    return newf;
+  }
+  void print()
+  {
+    if (init) mpfr_out_str(stdout, 2, mpfr_min_prec(f), f, MPFR_RNDN); 
+  }
+private:
+  int init;
+  mpfr_t f;
+};
 
 /// @brief Structure type representing 16 byte complex numbers
 typedef Complex_base<FloatInf> ComplexInf;
+
 
 /**
 @brief Call to print the elements of a container
@@ -32,7 +157,7 @@ void print_state( Container state );
 /**
 @brief Interface class representing a Glynn permanent calculator
 */
-class GlynnPermanentCalculatorRepeatedInf {
+class GlynnPermanentCalculatorInf {
 
 protected:
     /// Unitary describing a quantum circuit
@@ -44,25 +169,19 @@ public:
 @brief Default constructor of the class.
 @return Returns with the instance of the class.
 */
-GlynnPermanentCalculatorRepeatedInf();
+GlynnPermanentCalculatorInf();
 
 
 
 /**
 @brief Call to calculate the permanent via Glynn formula scaling with n*2^n. (Does not use gray coding, but does the calculation is similar but scalable fashion)
 @param mtx The effective scattering matrix of a boson sampling instance
-@param input_state The input state
-@param output_state The output state
 @return Returns with the calculated permanent
 */
-Complex16 calculate(
-    matrix &mtx,
-    PicState_int64& input_state,
-    PicState_int64& output_state
-);
+Complex16 calculate(matrix &mtx);
 
 
-}; //GlynnPermanentCalculatorRepeatedInf
+}; //GlynnPermanentCalculatorInf
 
 
 
@@ -73,68 +192,43 @@ Complex16 calculate(
 
 
 /**
-@brief Class to calculate a partial permanent via Glynn's formula scaling with n*2^n.
-(Does not use gray coding, but does the calculation is similar but scalable fashion) 
+@brief Class to calculate a partial permanent via Glynn's formula scaling with n*2^n. (Does not use gray coding, but does the calculation is similar but scalable fashion) 
 */
-class GlynnPermanentCalculatorRepeatedInfTask {
+class GlynnPermanentCalculatorInfTask {
 
 public:
 
     /// Unitary describing a quantum circuit
     matrix mtx;
-    /// 2*mtx used in the recursive calls (The storing of thos matrix
-    /// spare many repeating multiplications)
-    matrix32 mtx2;
+    /// 2*mtx used in the recursive calls (The storing of thos matrix spare many repeating multiplications)
+    matrix mtx2;
     /// thread local storage for partial permanents
     tbb::combinable<pic::ComplexInf> priv_addend;
 
-    /// numbers describing the row multiplicity
-    PicState_int& row_multiplicities;
-    /// numbers describing the column multiplicity
-    PicState_int& col_multiplicities;
-
-    /// limit of the delta values, all same as the row multiplicity except
-    /// the first nonzero one which is one smaller
-    PicState_int deltaLimits;
-    /// minimal nonzero index of the row_multiplicity
-    size_t minimalIndex;
 public:
 
 /**
 @brief Default constructor of the class.
-@param mtx Unitary describing a quantum circuit
-@param row_multiplicities vector describing the row multiplicity
-@param col_multiplicities vector describing the column multiplicity
 @return Returns with the instance of the class.
 */
-GlynnPermanentCalculatorRepeatedInfTask(
-    matrix &mtx,
-    PicState_int& row_multiplicities,
-    PicState_int& col_multiplicities
-);
+GlynnPermanentCalculatorInfTask();
 
 
 /**
 @brief Call to calculate the permanent via Glynn formula. scales with n*2^n
+@param mtx The effective scattering matrix of a boson sampling instance
 @return Returns with the calculated permanent
 */
-Complex16 calculate();
+Complex16 calculate(matrix &mtx);
 
 
 /**
-@brief Method to span parallel tasks via iterative function calls.
-(new task is spanned by altering one element in the vector of deltas)
+@brief Method to span parallel tasks via iterative function calls. (new task is spanned by altering one element in the vector of deltas)
 @param colSum The sum of \f$ \delta_j a_{ij} \f$ in Eq. (S2) of arXiv:1606.05836
 @param sign The current product \f$ \prod\delta_i $\f
-@param index_min \f$ \delta_j a_{ij} $\f with \f$ 0<i<index_min $\f are kept constant, while the signs of \f$ \delta_i \f$  with \f$ i>=idx_min $\f are changed.
-@param currentMultiplicity multiplicity of the current delta vector
+@param index_min \f$ \delta_j a_{ij} $\f with \f$ 0<i<index_min $\f are kept contstant, while the signs of \f$ \delta_i \f$  with \f$ i>=idx_min $\f are changed.
 */
-void IterateOverDeltas(
-    pic::ComplexInf* colSum_data,
-    int sign,
-    size_t index_min,
-    int currentMultiplicity
-);
+void IterateOverDeltas( pic::ComplexInf* colSum_data, int sign, int index_min );
 
 
 }; // partial permanent_Task
@@ -147,4 +241,4 @@ void IterateOverDeltas(
 
 } // PIC
 
-#endif // GlynnPermanentCalculatorRepeatedInf_H
+#endif
