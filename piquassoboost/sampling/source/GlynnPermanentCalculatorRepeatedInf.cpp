@@ -95,7 +95,6 @@ GlynnPermanentCalculatorRepeatedInfTask::calculate() {
 
     // calculate the initial sum of the columns
     ComplexInf* colSum_data = new ComplexInf[mtx.cols];
-    memset( colSum_data, 0.0, colSum.size()*sizeof(Complex32));
 
     tbb::parallel_for( tbb::blocked_range<size_t>(0, mtx.cols), [&](tbb::blocked_range<size_t> r) {
         for (size_t col_idx=r.begin(); col_idx<r.end(); ++col_idx){
@@ -124,10 +123,11 @@ GlynnPermanentCalculatorRepeatedInfTask::calculate() {
 
 
     // sum up partial permanents
-    Complex32 permanent( 0.0, 0.0 );
+    ComplexInf permanent;
 
-    priv_addend.combine_each([&](ComplexM<long double> &a) {
-        permanent = permanent + a.get();
+    priv_addend.combine_each([&](ComplexInf &a) {
+        REALPART(permanent) += REALPART(a);
+        IMAGPART(permanent) += IMAGPART(a);
     });
 
     size_t sumMultiplicities = 0;
@@ -135,9 +135,11 @@ GlynnPermanentCalculatorRepeatedInfTask::calculate() {
         sumMultiplicities += row_multiplicities[idx];
     }
 
-    permanent = permanent / (long double)power_of_2( (unsigned long long) (sumMultiplicities-1) );
+    permanent /= (long double)power_of_2( (unsigned long long) (sumMultiplicities-1) );
 
-    return Complex16(permanent.real(), permanent.imag());
+    delete [] colSum_data;
+
+    return Complex16(REALPART(permanent).toDouble(), IMAGPART(permanent).toDouble());
 }
 
 
@@ -198,7 +200,7 @@ GlynnPermanentCalculatorRepeatedInfTask::IterateOverDeltas(
 
                 localSign *= -1;
                 IterateOverDeltas(
-                    colSum_new, 
+                    colSum_new_data, 
                     localSign,
                     idx+1,
                     currentMultiplicity*binomialCoeff(deltaLimits[idx], indexOfMultiplicity)
