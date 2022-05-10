@@ -5,7 +5,7 @@ import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.platform.max5.manager.ImplementationStrategy;
 import com.maxeler.platform.max5.manager.SynthesisStrategy;
 import com.maxeler.platform.max5.manager.BuildConfig;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.ManagerBlock ;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
@@ -34,7 +34,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         setup(this, params.dual(), params.isSim(), params.useFloat());
     }
 
-    public void assignKernelToSLR(KernelBlock kernel, int slr_index) {
+    public void assignKernelToSLR(ManagerBlock kernel, int slr_index) {
         NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
         if (slr_index < 0 || slr_index >= availableRegions.length) {
             //error
@@ -54,7 +54,8 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
-        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT, ImplementationStrategy.MAXELER3
+        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, ImplementationStrategy.MAXELER3
+            //ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
             //ImplementationStrategy.VIVADO_DEFAULT,
             //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP,
             //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
@@ -63,7 +64,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             //ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
             //ImplementationStrategy.MAXELER4,
             //ImplementationStrategy.PERFORMANCE_BALANCE_SLLS, ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
-            //ImplementationStrategy.PERFORMANCE_EXPLORE, ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,            
+            //ImplementationStrategy.PERFORMANCE_EXPLORE,
             //ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
             //ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
             //ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_SPREAD_SLLS,
