@@ -12,6 +12,7 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.ManagerBlock;
 //import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
 //import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnection;
 
@@ -145,7 +146,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
 
     }
 
-    void assignKernelToSLR(KernelBlock kernel, int slr_index);
+    void assignKernelToSLR(ManagerBlock kernel, int slr_index);
 
 
     static EngineInterface interfaceDefault(boolean dual, boolean isSim) {
