@@ -50,13 +50,19 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat, loopLength));
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             mtx.setAdditionalRegisters(((i % 4)+1)*2); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
-            initColSumKernels[i].getInput("mappedInputMtx_Rows") <== mtx;
+            DFELink mtxInput = initColSumKernels[i].getInput("mappedInputMtx_Rows");
+            mtxInput.setAdditionalRegisters(2);
+            mtxInput <== mtx;
             DFELink rowChangeOutput = rowChangeIndicesFanout.addOutput("rowChangeIndices" + i);
-            rowChangeOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings            
-            initColSumKernels[i].getInput("rowChangeIndices") <== rowChangeOutput;
+            rowChangeOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
+            DFELink rowChangeInput = initColSumKernels[i].getInput("rowChangeIndices");
+            rowChangeInput.setAdditionalRegisters(2);            
+            rowChangeInput <== rowChangeOutput;
             DFELink initDirectionsOutput = initDirectionsFanout.addOutput("initDirections" + i);
             initDirectionsOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
-            initColSumKernels[i].getInput("initDirections") <== initDirectionsOutput;
+            DFELink initDirectionsInput = initColSumKernels[i].getInput("initDirections");
+            initDirectionsInput.setAdditionalRegisters(2);
+            initDirectionsInput <== initDirectionsOutput;
             if (i == 0) {
                 DFELink initBinCoeff = addStreamFromCPU("initBinCoeff");
                 initBinCoeff.setAdditionalRegisters(2); //PCIE->SLR0 - 1 crossing
@@ -86,6 +92,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         Fanout binCoeffFanout = fanout("binCoeffFanout"), binCoeffFanout2 = null;
         assignKernelToSLR(binCoeffFanout, 0);
         DFELink binCoeffInput = binCoeffFanout.getInput();
+        binCoeffInput.setAdditionalRegisters(2);
         binCoeffInput <== binCoeff;
         if (dual && isSim) {
             DFELink binCoeff2 = initColSumKernels[initKerns].getOutput("bincoeff");
@@ -93,6 +100,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             binCoeffFanout2 = fanout("binCoeffFanout2");
             assignKernelToSLR(binCoeffFanout2, 0);
             DFELink binCoeffInput2 = binCoeffFanout2.getInput();
+            binCoeffInput2.setAdditionalRegisters(2);
             binCoeffInput2 <== binCoeff2;
         }
         for (int i = 0; i < numkernels; i++) {
@@ -100,18 +108,24 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             if (colMux) {
                 DFELink colIndexOutput = colIndexFanout.addOutput("colIndex" + i);
                 colIndexOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
-                colSumKernels[i].getInput("colIndex") <== colIndexOutput;
+                DFELink colIndexInput = colSumKernels[i].getInput("colIndex");
+                colIndexInput.setAdditionalRegisters(2);
+                colIndexInput <== colIndexOutput;
             }
             DFELink mplicityOutput = (dual && isSim && i >= numkernels * numarrays / 2) ? binCoeffFanout2.addOutput("curMplicity" + i) : binCoeffFanout.addOutput("curMplicity" + i);
             mplicityOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
-            colSumKernels[i].getInput("curMplicity") <== mplicityOutput;
+            DFELink mplicityInput = colSumKernels[i].getInput("curMplicity");
+            mplicityInput.setAdditionalRegisters(2);
+            mplicityInput <== mplicityOutput;
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
                 curOutput.setAdditionalRegisters(Math.abs(i%4 - j%4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
-                colSumKernels[i].getInput("colSums" + j) <== curOutput;
+                DFELink curInput = colSumKernels[i].getInput("colSums" + j);
+                curInput.setAdditionalRegisters(2);
+                curInput <== curOutput;
             }
         }
         for (int i = 0; i < initKerns; i++)
@@ -126,18 +140,28 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int singlekerns = numkernels * numarrays / 2;
         KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, 64/*dim - basekernpow2*/, useFloat));
         assignKernelToSLR(SumUpPermKernel, 0);
-        for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++)
-            SumUpPermKernel.getInput("colProd" + i) <== colProds[i];
+        for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
+            DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
+            colProdInput.setAdditionalRegisters(2);
+            colProdInput <== colProds[i];
+        }
         DFELink toCPU = SumUpPermKernel.getOutput("res");
         toCPU.setAdditionalRegisters(2); //SLR0->PCIE - 1 crossing
-        addStreamToCPU("res") <== toCPU;
+        DFELink cpuOutput = addStreamToCPU("res");
+        cpuOutput.setAdditionalRegisters(2); 
+        cpuOutput <== toCPU;
         if (dual && isSim) {            
             KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, 64/*dim - basekernpow2*/, useFloat));
-            for (int i = singlekerns; i < numkernels; i++)
-                SumUpPermKernel2.getInput("colProd" + (i - singlekerns)) <== colProds[i];                
+            for (int i = singlekerns; i < numkernels; i++) {
+                DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
+                colProdInput.setAdditionalRegisters(2);
+                colProdInput <== colProds[i];
+            }                
             DFELink toCPU2 = SumUpPermKernel2.getOutput("res");
             toCPU2.setAdditionalRegisters(2); //SLR0->PCIE - 1 crossing
-            addStreamToCPU("res2") <== toCPU2;
+            DFELink cpuOutput2 = addStreamToCPU("res2");
+            cpuOutput2.setAdditionalRegisters(2);
+            cpuOutput2 <== toCPU2;
         }
         addMaxFileConstant("MTXSIZE", dim);
         addMaxFileConstant("BASEKERNPOW2", basekernpow2);
