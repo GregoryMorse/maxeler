@@ -5,8 +5,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
@@ -45,15 +45,47 @@ public class SumUpPermDFEKernel extends Kernel {
         //colProdVals[0] = tickCount.get(0) ? -colProdVals[0] : colProdVals[0]; //parity
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
-        if (useFloat) optimization.pushNoPipelining();
-        DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
-        sum <== cursum + colProdVals[0];
-        if (useFloat) optimization.popNoPipelining();
         if (useFloat) {
+            DFEComplex cursum = tickCount < 15 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-14); //mux=1, large bit addition=14 so 15 total
+            sum <== cursum + colProdVals[0];
+            //the initialization case is special if less than 15 ticks of computations are performed
+            //current computation already included, remaining 14 in question so set all 14 bits if more than 14 sums,
+            //otherwise 2**ticks-1 sets all the bits from index [0...ticksmax-1] considering only the least 4 significant bits of ticksmax
+            DFEVar sumOneHot = ticksmax >= 15 ? constant.var(dfeUInt(14), (1 << 14) - 1) : ((constant.var(dfeUInt(15), 1) << (ticksmax-1).slice(0, 4).reinterpret(dfeUInt(4))) - 1).cast(dfeUInt(14));
+            DFEVector<DFEVar> sumOneHotVector = sumOneHot.reinterpret(new DFEVectorType<DFEVar>(dfeBool(), 14));
+            DFEComplex sums[] = new DFEComplex[15];
+            int delays[] = new int[15];
+            sums[0] = sum; delays[0] = 14-1;
+            for (int i = 1; i < 15; i++) {
+                sums[i] = (sumOneHotVector[i-1] ? stream.offset(sum, -i) : constant.zero(cplxFix128Type));
+                delays[i] = 14 - i;
+            }
+            int limit = 15;
+            while (limit > 1) { //binary summation tree to reduce pipeline depth
+                int limitNew = limit / 2;
+                for (int i = 0; i < limitNew; i++) {
+                    int delay = Math.max(delays[i*2], delays[i*2+1]);
+                    for (int j = delays[i*2]; j < delay; j++) sums[i*2] = optimization.pipeline(sums[i*2]);
+                    for (int j = delays[i*2+1]; j < delay; j++) sums[i*2+1] = optimization.pipeline(sums[i*2+1]);  
+                    sums[i] = sums[i*2] + sums[i*2+1];
+                    delays[i] = delay + 14;
+                }
+                if (2 * limitNew < limit) {
+                    limitNew++;
+                    sums[limitNew-1] = sums[limit-1];
+                    delays[limitNew-1] = delays[limit-1];                  
+                }
+                limit = limitNew;
+            }
+            //convert to little-endian for CPU by adding 49 0-bits to the most significant part and the 79 bit IEEE long double thereafter, the CPU will convert to a non-standard CPU long double
+            sum = sums[0];
+            for (int i = 0; i < delays[0]+1; i++) lastTick = optimization.pipeline(lastTick);
             io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), lastTick);
-        } else
+        } else {
+            DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
+            sum <== cursum + colProdVals[0];
             io.output("res", sum, cplxFix128Type, lastTick);
-
+        }
     }
 
 }
