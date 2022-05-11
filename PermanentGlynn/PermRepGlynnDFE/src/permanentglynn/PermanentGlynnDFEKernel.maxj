@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
 import java.util.stream.IntStream;
+import java.util.HashMap;
+import java.util.HashSet;
 
 import maxpower.utils.CollectionUtils;
 
@@ -77,6 +79,59 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }
             }
             return result;
+        }
+    }
+    public class Pair<A, B> {
+        private A first;
+        private B second;
+    
+        public Pair(A first, B second) {
+            super();
+            this.first = first;
+            this.second = second;
+        }
+    
+        public int hashCode() {
+            int hashFirst = first != null ? first.hashCode() : 0;
+            int hashSecond = second != null ? second.hashCode() : 0;
+    
+            return (hashFirst + hashSecond) * hashSecond + hashFirst;
+        }
+    
+        public boolean equals(Object other) {
+            if (other instanceof Pair<?, ?>) {
+                Pair<?, ?> otherPair = (Pair<?, ?>) other;
+                return 
+                ((  this.first == otherPair.first ||
+                    ( this.first != null && otherPair.first != null &&
+                      this.first.equals(otherPair.first))) &&
+                 (  this.second == otherPair.second ||
+                    ( this.second != null && otherPair.second != null &&
+                      this.second.equals(otherPair.second))) );
+            }
+    
+            return false;
+        }
+    
+        public String toString()
+        { 
+               return "(" + first + ", " + second + ")"; 
+        }
+    
+        public A getFirst() {
+            return first;
+        }
+    
+        public void setFirst(A first) {
+            this.first = first;
+        }
+    
+        public B getSecond() {
+            return second;
+        }
+    
+        public void setSecond(B second) {
+            this.second = second;
         }
     }
     DFEVar ternaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
@@ -167,6 +222,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
     {
         DFEFix aType = (DFEFix) a.getType();
         int num = 1+(aType.getTotalBits()-signbits+bits-1)/bits;
+        if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && ((aType.getTotalBits()-signbits)%bits == 1)) num--; //cannot have sign bit isolated
         DFEVar[] vars = new DFEVar[num];
         for (int i = 0; i < num; i++) {
             vars[i] = a.slice(i * bits, i == num - 1 ? aType.getTotalBits() - i * bits : bits)
@@ -183,12 +239,21 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //if (aType.getTotalBits() != 127) return mulExact(a, b, bits, intBits);
         Integer[] totalDelay = new Integer[1];
         DFEVar result = mulKaratsubaRectangular(a.reinterpret(dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())),
-                                        b.reinterpret(dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode())), aType.getTotalBits() <= 112 && bType.getTotalBits() <= 120 ? 0 : 2, totalDelay);
+                                        b.reinterpret(dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode())), 0, totalDelay); //aType.getTotalBits() <= 112 && bType.getTotalBits() <= 120 ? 0 : 2
         result = result
             .reinterpret(dfeFixOffset(getMulOutpBits(aType, bType), -(aType.getFractionBits() + bType.getFractionBits()), ((DFEFix)result.getType()).getSignMode()))
             .cast(dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()));
         //debug.simPrintf(result !== mulExact(a, b, bits, intBits), "%d %X %X %X\n", aType.getTotalBits(), result.reinterpret(dfeUInt(result.getType().getTotalBits())), mulKaratsubaExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())), mulExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())));
         return result;
+    }
+    DFEVar signedMulKaratsubaRectangular(DFEVar a, DFEVar b, int tileMode, Integer[] totalDelay)
+    {
+        DFEVar aSign = getSignBit(a), bSign = getSignBit(b);
+        DFEVar resSign = aSign ^ bSign;
+        DFEVar result = uToSigned(mulKaratsubaRectangular(sToUnsigned(aSign ? -a : a), sToUnsigned(bSign ? -b : b), tileMode, totalDelay));
+        for (int i = 0; i < totalDelay[0] + 1 + (tileMode == 2 ? 1 : 0); i++) resSign = optimization.pipeline(resSign);
+        totalDelay[0] += 2;
+        return resSign ? -result : result;
     }
     int getMulInpBits(DFEFix type) { return type.getTotalBits() + (type.getSignMode() == SignMode.UNSIGNED ? 1 : 0); } //effective bits for a signed multiplier
     int getMulOutpBits(DFEFix aType, DFEFix bType) { //actual output bits, save one sign bit on 2 argument signed multiplication
@@ -201,11 +266,176 @@ public class PermanentGlynnDFEKernel extends Kernel {
     {
         if (aType.getTotalBits() == 1 || bType.getTotalBits() == 1 && aType.getSignMode() == SignMode.UNSIGNED && bType.getSignMode() == SignMode.UNSIGNED) return 1;
         if (aType.getTotalBits() <= 10 || bType.getTotalBits() <= 10) return 3;
-        return ((getMulInpBits(aType) > 18 || getMulInpBits(bType) > 18) &&
+        return ((getMulInpBits(aType) > 23 || getMulInpBits(bType) > 23) &&
                 (aType.getSignMode() == SignMode.TWOSCOMPLEMENT || bType.getSignMode() == SignMode.TWOSCOMPLEMENT)) ? 4 : 3;
     }
-    
     //https://hal.inria.fr/hal-01773447/document Karatsuba with Rectangular Multipliers for FPGAs
+    Object[] mulKaratsubaRectangularSums(DFEVar a, DFEVar b, int tileMode) //tileMode is 0 for 16x24, 1 for 17x24, 2 for 18x24
+    {
+        DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
+        if (aType.getTotalBits() > bType.getTotalBits()) return mulKaratsubaRectangularSums(b, a, tileMode);
+        int tileX = tileMode + 16, tileY = 24;
+        int W = gcd(tileX, tileY);
+        int M = tileX / W;
+        int N = tileY / W;
+        /*int MNWa = M * N * W;
+        int MNWb1 = (N + 1) * M * W, MNWb2 = (M + 1) * N * W; 
+        int MNWc = 2 * MNWa; 
+        int MNWd1 = (2*N + 1) * M * W, MNWd2 = (2 * M + 1) * N * W;
+        if (aType.getTotalBits()-(aType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa && bType.getTotalBits()-(bType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa) { //16x24 tiling, 48x48        
+        } else if (aType.getTotalBits()-(aType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWb1 && bType.getTotalBits()-(bType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWb2) { //16x24 tiling, 64x72
+        } else if (aType.getTotalBits() <= MNWc && bType.getTotalBits() <= MNWc || //16x24 tiling, 96x96 breaks down to 3 48x48 multiplications, 95x95 signed...
+                   aType.getTotalBits() <= MNWd1 && bType.getTotalBits() <= MNWd2) { //16x24 tiling, 112x120 breaks down to 48x48, 2 64x64 multiplications, 111x119 signed...
+             //17x24 tiling does not work until 425x432...so use 18x24 technique with one line done using logic resources, 132x132
+            int splitPoint = W * M * N - (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && bType.getSignMode() == SignMode.TWOSCOMPLEMENT ? (tileMode == 2 ? 2 : 1) : 0);
+            DFEVar[] aSplit = new DFEVar[] { a.slice(0, splitPoint).reinterpret(dfeUInt(splitPoint)), a.slice(splitPoint, aType.getTotalBits() - splitPoint).reinterpret(dfeFixOffset(aType.getTotalBits() - splitPoint, 0, aType.getSignMode())) };
+            DFEVar[] bSplit = new DFEVar[] { b.slice(0, splitPoint).reinterpret(dfeUInt(splitPoint)), b.slice(splitPoint, bType.getTotalBits() - splitPoint).reinterpret(dfeFixOffset(bType.getTotalBits() - splitPoint, 0, bType.getSignMode())) };
+            Integer[] delay0 = new Integer[1], delay1 = new Integer[1], delay2 = new Integer[1];
+            DFEVar z0 = mulKaratsubaRectangular(aSplit[0], bSplit[0], tileMode, delay0);
+            DFEVar z1 = signedMulKaratsubaRectangular(addExact(aSplit[0], aSplit[1], true), addExact(bSplit[1], bSplit[0], true), tileMode, delay1); //take care for the mistake in the paper on subtracting high-low vs low-high
+            DFEVar z2 = mulKaratsubaRectangular(aSplit[1], bSplit[1], tileMode, delay2);
+            return new Object[] { new DFEVar[] { z0, z0, z2, z1, z2, }, new int[] { 0, splitPoint, splitPoint, splitPoint, 2 * splitPoint },
+                null, new int[] { delay0[0], delay0[0], delay2[0], delay1[0]+1, delay2[0] } };
+        }*/
+        DFEVar[] aSplit = splitInt(a, tileX, 18);
+        DFEVar[] bSplit = splitInt(b, tileY, 25);
+
+        HashMap<Integer, List<Object>> sums = new HashMap<>();
+        HashSet<Pair<Integer, Integer>> subs = new HashSet<>();
+        HashSet<Object> prods = new HashSet<>(); 
+        for (int i = 0; i < aSplit.length; i++) { //rectangular tiled grade school multiplication
+            for (int j = 0; j < bSplit.length; j++) {
+                if (!sums.containsKey(i * M + j * N)) sums.put(i * M + j * N, new ArrayList<Object>());
+                sums.get(i * M + j * N).add(new Pair<Integer, Integer>(i, j));
+            }
+        }
+        for (Integer key : sums.keySet()) {
+            List<Object> l = sums.get(key);
+            if (l == null || l.size() == 2) continue;
+            for (int i = 0; i < l.size(); i++)
+                prods.add(l[i]);
+        }
+        for (Integer key : sums.keySet()) {
+            List<Object> l = sums.get(key);
+            if (l == null || l.size() != 2) continue;
+            Object o1 = l[0];
+            Object o2 = l[1];
+            if (o1 instanceof Pair<?, ?> && o2 instanceof Pair<?, ?>) {
+                Pair<?, ?> left = (Pair<?, ?>)o1;
+                Pair<?, ?> right = (Pair<?, ?>)o2;
+                if (prods.contains(left)) {
+                    prods.add(right); continue;
+                } else if (prods.contains(right)) {
+                    prods.add(left); continue;
+                }
+                Object l1 = left.getFirst(), l2 = left.getSecond();
+                Object r1 = right.getFirst(), r2 = right.getSecond();
+                if (l1 instanceof Integer && l2 instanceof Integer && r1 instanceof Integer && r2 instanceof Integer) {
+                    Integer il1 = (Integer)l1, il2 = (Integer)l2;
+                    Integer ir1 = (Integer)r1, ir2 = (Integer)r2;
+                    Pair<Integer, Integer> sub1 = new Pair<Integer, Integer>(il1, ir1);
+                    Pair<Integer, Integer> sub2 = new Pair<Integer, Integer>(-il2, -ir2);
+                    subs.add(sub1);
+                    subs.add(sub2);
+                    l.clear();
+                    Pair<Pair<Integer, Integer>, Pair<Integer, Integer>> subprod = new Pair<Pair<Integer, Integer>, Pair<Integer, Integer>>(sub1, sub2);
+                    l.add(subprod);
+                    prods.add(subprod);
+                    Pair<Integer, Integer> prod1 = new Pair<Integer, Integer>(il1, ir2);
+                    Pair<Integer, Integer> prod2 = new Pair<Integer, Integer>(ir1, il2);
+                    prods.add(prod1);
+                    prods.add(prod2);
+                    l.add(prod1);
+                    l.add(prod2);
+                } else throw new IllegalArgumentException();
+            } else throw new IllegalArgumentException();
+        }
+        long rightSubs = subs.stream().filter(o -> o.getFirst() < 0 || o.getSecond() < 0).count();
+        long prodcount = prods.stream().filter(o -> o instanceof Pair<?, ?> && !(((Pair<?, ?>)o).getFirst() instanceof Pair<?, ?>)).count();
+        if (rightSubs*2 + prodcount > 32 || (subs.size()-rightSubs)*2+prodcount > 32) {
+            for (int i = 0; i < aSplit.length; i++) aSplit[i] = optimization.pipeline(aSplit[i]);
+            for (int i = 0; i < bSplit.length; i++) bSplit[i] = optimization.pipeline(bSplit[i]);
+        }
+        
+        HashMap<Pair<Integer, Integer>, DFEVar> subMap = new HashMap<>();
+        HashMap<Object, DFEVar> prodMap = new HashMap<>();
+        HashMap<Object, DFEVar> extraProdMap = new HashMap<>(); //for 18 bit unsigned case
+        HashMap<Object, Integer> prodMapDelay = new HashMap<>();
+        for (Pair<Integer, Integer> sub : subs) {
+            if (sub.getFirst() < 0 || sub.getSecond() < 0) {
+                subMap.put(sub, addExact(bSplit[-sub.getFirst()], bSplit[-sub.getSecond()], true));
+            } else {
+                subMap.put(sub, addExact(aSplit[sub.getFirst()], aSplit[sub.getSecond()], true));
+            }
+        }        
+        for (Object o : prods) {
+            DFEVar left = null, right = null;
+            if (o instanceof Pair<?, ?>) {
+                Pair<?, ?> p = (Pair<?, ?>)o;
+                Object ol = p.getFirst();
+                Object or = p.getSecond();
+                if (ol instanceof Pair<?, ?> && or instanceof Pair<?, ?>) {
+                    Pair<?, ?> p1 = (Pair<?, ?>)ol;
+                    Object o1 = p1.getFirst();
+                    Object o2 = p1.getSecond();
+                    if (o1 instanceof Integer && o2 instanceof Integer) {
+                        left = subMap.get(new Pair<Integer, Integer>((Integer)o1, (Integer)o2));
+                    } else throw new IllegalArgumentException();
+                    Pair<?, ?> p2 = (Pair<?, ?>)or;
+                    o1 = p2.getFirst();
+                    o2 = p2.getSecond();
+                    if (o1 instanceof Integer && o2 instanceof Integer) {
+                        right = subMap.get(new Pair<Integer, Integer>((Integer)o1, (Integer)o2));                         
+                    } else throw new IllegalArgumentException();
+                } else if (ol instanceof Integer && or instanceof Integer) {
+                    left = aSplit[(Integer)ol];
+                    right = bSplit[(Integer)or];                    
+                } else throw new IllegalArgumentException();
+            } else throw new IllegalArgumentException();
+            //if (tileMode == 2) System.out.println(left.getType().getTotalBits() + " " + right.getType().getTotalBits());
+            if (left.getType().getTotalBits() == 18 && ((DFEFix)left.getType()).getSignMode() == SignMode.UNSIGNED && right.getType().getTotalBits() > 17) {                
+                extraProdMap.put(o, left.get(0) ? right : constant.zero(dfeFixOffset(right.getType().getTotalBits(), 0, ((DFEFix)right.getType()).getSignMode())));
+                left = left.slice(1, 17).reinterpret(dfeUInt(17));
+            } else if (right.getType().getTotalBits() == 26 && ((DFEFix)right.getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) {
+                extraProdMap.put(o, right.get(0) ? left : constant.zero(dfeFixOffset(left.getType().getTotalBits(), 0, ((DFEFix)left.getType()).getSignMode())));
+                right = right.slice(1, 25).reinterpret(dfeInt(25));               
+            }
+            if (!(getMulInpBits((DFEFix)left.getType()) <= 18 && getMulInpBits((DFEFix)right.getType()) <= 25)) throw new IllegalArgumentException("Size: " + aType.getTotalBits() + " " + bType.getTotalBits());
+            if (left.getType().getTotalBits() == 1) { //must be unsigned...
+                if (((DFEFix)left.getType()).getSignMode() != SignMode.UNSIGNED) throw new IllegalArgumentException();
+                prodMap.put(o, left ? right : constant.zero(dfeFixOffset(right.getType().getTotalBits(), 0, ((DFEFix)right.getType()).getSignMode())));
+                prodMapDelay.put(o, 0);
+            } else if (right.getType().getTotalBits() == 1) { //must be unsigned...
+                if (((DFEFix)right.getType()).getSignMode() != SignMode.UNSIGNED) throw new IllegalArgumentException();
+                prodMap.put(o, right ? left : constant.zero(dfeFixOffset(left.getType().getTotalBits(), 0, ((DFEFix)left.getType()).getSignMode())));
+                prodMapDelay.put(o, 0);
+            } else {
+                prodMap.put(o, mulExact(left, right, getMulOutpBits((DFEFix)left.getType(), (DFEFix)right.getType()), getMulOutpBits((DFEFix)left.getType(), (DFEFix)right.getType())));
+                prodMapDelay.put(o, getMulPipelineDelay((DFEFix)left.getType(), (DFEFix)right.getType()));
+            }
+        }
+        List<DFEVar> c = new ArrayList<DFEVar>();
+        List<Integer> shift = new ArrayList<Integer>();
+        List<Integer> pipelineDelay = new ArrayList<Integer>();
+        for (Integer key : sums.keySet()) {
+            List<Object> l = sums.get(key);
+            if (l == null) continue;
+            for (Object o : l) {
+                int subDelay = o instanceof Pair<?, ?> && ((Pair<?, ?>)o).getFirst() instanceof Pair<?, ?> ? 1 : 0; 
+                c.add(prodMap.get(o));
+                pipelineDelay.add(prodMapDelay.get(o) + subDelay);
+                shift.add(key * W + (extraProdMap.containsKey(o) ? 1 : 0));
+                if (extraProdMap.containsKey(o)) {
+                    c.add(extraProdMap.get(o));
+                    pipelineDelay.add(subDelay);
+                    shift.add(key * W);
+                }
+            }
+        }
+        //System.out.println(aType.getTotalBits() + " Products: " + prodMap.size() + " Sums: " + c.size()); 
+        return new Object[] { c.stream().toArray(DFEVar[]::new), shift.stream().mapToInt(Integer::valueOf).toArray(), null, pipelineDelay.stream().mapToInt(Integer::valueOf).toArray() };
+    }
+    
     Object[] mulKaratsubaRectangularInner(DFEVar a, DFEVar b, int tileMode) //tileMode is 0 for 16x24, 1 for 17x24, 2 for 18x24
     {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
@@ -215,14 +445,12 @@ public class PermanentGlynnDFEKernel extends Kernel {
         int M = tileX / W;
         int N = tileY / W;
         int MNWa = M * N * W;
-        int MNWb1 = (N + 1) * M * W, MNWb2 = (M + 1) * N * W; 
-        int MNWc = 2 * MNWa; 
+        int MNWb1 = (N + 1) * M * W, MNWb2 = (M + 1) * N * W;
+        int MNWc = 2 * MNWa;
         int MNWd1 = (2*N + 1) * M * W, MNWd2 = (2 * M + 1) * N * W;
         if (aType.getTotalBits()-(aType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa && bType.getTotalBits()-(bType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa) { //16x24 tiling, 48x48
             DFEVar[] aSplit = splitInt(a, tileX, 18);
             DFEVar[] bSplit = splitInt(b, tileY, 25);
-            //for (int i = 0; i < aSplit.length; i++) aSplit[i] = optimization.pipeline(aSplit[i]);
-            //for (int i = 0; i < bSplit.length; i++) bSplit[i] = optimization.pipeline(bSplit[i]);
             List<DFEVar> c = new ArrayList<>();
             List<Integer> shift = new ArrayList<>();
             List<Boolean> issub = new ArrayList<>();
@@ -257,10 +485,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
             int[] pipelineDelay = new int[(M+1)*(N+1)+1+extra];
             Integer[][] poly = new Integer[(M+1)*(N+1)+1][2];
             for (int i = 0; i <= N; i++) {
-                 for (int j = 0; j <= M; j++) {
-                     if (poly[i * M + j * N][0] == null) poly[i * M + j * N][0] = (i << 8) | j;         
-                     else poly[i * M + j * N][1] = (i << 8) | j;
-                 }
+                for (int j = 0; j <= M; j++) {
+                    if (poly[i * M + j * N][0] == null) poly[i * M + j * N][0] = (i << 8) | j;         
+                    else poly[i * M + j * N][1] = (i << 8) | j;
+                }
             }
             for (int k = 0; k < poly.length; k++) {
                 if (poly[k][0] == null) continue;
@@ -347,8 +575,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
     }
     DFEVar mulKaratsubaRectangular(DFEVar a, DFEVar b, int tileMode, Integer[] totalDelay) //tileMode is 0 for 16x24, 1 for 17x24, 2 for 18x24
     {
-        
-        Object[] objs = mulKaratsubaRectangularInner(a, b, tileMode);
+        Object[] objs = mulKaratsubaRectangularSums(a, b, tileMode);
         DFEVar[] c = (DFEVar[])objs[0];
         int[] shift = (int[])objs[1];
         boolean[] issub = (boolean[])objs[2];
@@ -509,7 +736,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         return (asign ^ bsign) ? -result : result;
     }
     DFEVar getSignBit(DFEVar x) {
-        return x.get(x.getType().getTotalBits() - 1);
+        return ((DFEFix)x.getType()).getSignMode() == SignMode.UNSIGNED ? constant.zero(dfeBool()) : x.get(x.getType().getTotalBits() - 1);
     }
     DFEVar getIsOneSet(DFEVar x) {
         return getSignBit(x) ^ x.get(x.getType().getTotalBits() - 2);
@@ -528,7 +755,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
             Optimization.offsetExact(-fracBits), MathOps.ADD_SUB);
         DFEVar result = isSub ? (a - b) : (a + b);
         optimization.popFixOpMode(MathOps.ADD_SUB);
-        return result;
+        return isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(dfeFixOffset(1 + (growSign ? 1 : 0) + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
+                fracBits, -fracBits, SignMode.TWOSCOMPLEMENT)) : result;
     }
     DFEVar mulExact(DFEVar a, DFEVar b, int bits, int intBits) {
         optimization.pushFixOpMode(Optimization.bitSizeExact(bits),
@@ -567,24 +795,19 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 DFEVar bd = mulExact(b, d, bits, 2);
                 return DFEComplexType.newInstance(owner, ac - bd, addExact(mulExact(addExact(a, b, false), addExact(c, d, false), bits, 4), addExact(ac, bd, false), true).cast(dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT)));
             } else {
-                DFEComplex ret;
-                if (bits > 93) {
-                    DFEVar cab = mulKaratsubaRectangularExact(optimization.pipeline(c), addExact(a, b, false), bits, 3); //2..-2 requires 3 integer bits
-                    ret = DFEComplexType.newInstance(owner, (cab - mulKaratsubaRectangularExact(optimization.pipeline(b), addExact(c, d, false), bits, 3)),
-                        (cab + mulKaratsubaRectangularExact(optimization.pipeline(a), addExact(d, c, true), bits, 3)));
-                } else {
-                    DFEVar cab = mulExact(optimization.pipeline(c), addExact(a, b, false), bits, 3); //2..-2 requires 3 integer bits
-                    ret = DFEComplexType.newInstance(owner, (cab - mulExact(optimization.pipeline(b), addExact(c, d, false), bits, 3)),
-                        (cab + mulExact(optimization.pipeline(a), addExact(d, c, true), bits, 3)));
-                }
+                DFEVar cab = mulKaratsubaRectangularExact(optimization.pipeline(c), addExact(a, b, false), bits, 3); //2..-2 requires 3 integer bits
+                DFEComplex ret = DFEComplexType.newInstance(owner, (cab - mulKaratsubaRectangularExact(optimization.pipeline(b), addExact(c, d, false), bits, 3)),
+                    (cab + mulKaratsubaRectangularExact(optimization.pipeline(a), addExact(d, c, true), bits, 3)));
                 return ret;
             }
         }
     }
-    int getDSPCount(int x, int y) //y > x
+    int getDSPUnsignedCount(int x, int y) { return getDSPCount(x+1, y+1); }
+    int getDSPCount(int x, int y)
     {   
+        if (y < x) return getDSPCount(y, x);
         int z = ((x-18)%17==0 || (x-18)%17>7) ? 1 : 0;
-        return 1-z+(1+(y-25+17-1)/17)*(z+(x-18+17-1)/17);
+        return 1-z+(1+(y-25+17-1)/17)*(z+(x-18+17-1)/17); //25x18 signed tiles Virtex 5 DSP48E 24x17 unsigned
     }
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat, boolean colMux) {
@@ -753,7 +976,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar curMplicity = parity.slice(0, 38).reinterpret(dfeUInt(38));
         for (int i = 0; i < 9; i++) curMplicity = optimization.pipeline(curMplicity);
         parity = parity.get(38).reinterpret(dfeBool());
-        colSumFix[0] = DFEComplexType.newInstance(this, mulExact(colSumFix[0].getReal(), curMplicity, 127, 2), mulExact(colSumFix[0].getImaginary(), curMplicity, 127, 2));
+        if (useFloat) {
+            colSumFix[0] = colSumFix[0] * curMplicity.cast(dataTypeFix128); //mixed point floating point ops not supported
+        } else {
+            colSumFix[0] = DFEComplexType.newInstance(this, mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 127, 2), mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 127, 2));
+        }
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
         DFEVar tickParity = tickCount.get(0);
@@ -761,7 +988,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar sign = ((tickParity ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
         for (int i = 0; i < 49; i++) sign = optimization.pipeline(sign);
         sign = sign ^ parity;
-        for (int i = 0; i < 10; i++) sign = optimization.pipeline(sign);
+        for (int i = 0; i < 10+5; i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
         if (colMux) {
