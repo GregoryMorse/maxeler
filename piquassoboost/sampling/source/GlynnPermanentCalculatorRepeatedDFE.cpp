@@ -28,6 +28,13 @@ inline Complex32 ToComplex32(Complex16 v) {
   return Complex32((long double)v.real(), (long double)v.imag());
 }
 
+inline long long doubleToLLRaw(double d)
+{
+    double* pd = &d;
+    long long* pll = (long long*)pd;
+    return *pll;
+}
+
 uint64_t binomial_gcode(uint64_t bc, int parity, uint64_t n, uint64_t k)
 {
   return parity ? bc*k/(n-k+1) : bc*(n-k)/(k+1);
@@ -467,40 +474,42 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     int initParities;
     matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, loopLength); 
     
-    // calulate the maximal sum of the columns to normalize the matrix
-    matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
-    memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-    //sum up vectors in first/upper-left and fourth/lower-right quadrants
-    for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
-        for (size_t i=0; i<rowchange_indices[idx]; i++) {
-            for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                size_t offset = idx*matrix_mtx.stride + jdx;
-                int realPos = matrix_mtx[offset].real() > 0;
-                int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
-                if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
-                else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+    matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
+    if (!useFloat) {
+        // calulate the maximal sum of the columns to normalize the matrix
+        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+        memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+        //sum up vectors in first/upper-left and fourth/lower-right quadrants
+        for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
+            for (size_t i=0; i<rowchange_indices[idx]; i++) {
+                for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                    size_t offset = idx*matrix_mtx.stride + jdx;
+                    int realPos = matrix_mtx[offset].real() > 0;
+                    int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                    if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
+                    else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                }
             }
         }
-    }
-    //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
-    for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
-        for (size_t i=0; i<rowchange_indices[idx]; i++) {
-            for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                size_t offset = idx*matrix_mtx.stride + jdx;
-                int realPos = matrix_mtx[offset].real() > 0;
-                int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
-                Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
-                Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
-                colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-            }
-        } 
-    }       
-
-    // calculate the renormalization coefficients
-    matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
-    for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-        renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
-        //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
+        //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
+        for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
+            for (size_t i=0; i<rowchange_indices[idx]; i++) {
+                for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                    size_t offset = idx*matrix_mtx.stride + jdx;
+                    int realPos = matrix_mtx[offset].real() > 0;
+                    int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                    Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
+                    Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
+                    colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                }
+            } 
+        }       
+    
+        // calculate the renormalization coefficients
+        for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
+            renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+            //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
+        }
     }
 
     std::vector<unsigned char> colIndices; colIndices.reserve(photons);
@@ -520,6 +529,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     const size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
+    const double fOne = doubleToLLRaw(1.0);
     for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>(rows, max_fpga_cols);
       size_t basecol = max_fpga_cols * i;
@@ -528,13 +538,13 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         size_t offset = idx * matrix_mtx.stride;
         size_t offset_small = idx*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
-          mtxfix[i][offset_small+jdx].real = llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
-          mtxfix[i][offset_small+jdx].imag = llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
+          mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real()) : llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
+          mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag()) : llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
           //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
       }
-      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = fixpow; 
+      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow;; 
     }
 
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
@@ -586,40 +596,42 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         int initParities;
         matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, false, loopLength); 
         
-        // calulate the maximal sum of the columns to normalize the matrix
-        matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
-        memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
-        //sum up vectors in first/upper-left and fourth/lower-right quadrants
-        for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
-            for (size_t i=0; i<rowchange_indices[idx]; i++) {
-                for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                    size_t offset = idx*matrix_mtx.stride + jdx;
-                    int realPos = matrix_mtx[offset].real() > 0;
-                    int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
-                    if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
-                    else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+        matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
+        if (!useFloat) {
+            // calulate the maximal sum of the columns to normalize the matrix
+            matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+            memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
+            //sum up vectors in first/upper-left and fourth/lower-right quadrants
+            for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
+                for (size_t i=0; i<rowchange_indices[idx]; i++) {
+                    for( size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                        size_t offset = idx*matrix_mtx.stride + jdx;
+                        int realPos = matrix_mtx[offset].real() > 0;
+                        int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                        if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
+                        else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                    }
                 }
             }
-        }
-        //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
-        for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
-            for (size_t i=0; i<rowchange_indices[idx]; i++) {
-                for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
-                    size_t offset = idx*matrix_mtx.stride + jdx;
-                    int realPos = matrix_mtx[offset].real() > 0;
-                    int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
-                    Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
-                    Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
-                    colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
-                }
-            } 
-        }       
-    
-        // calculate the renormalization coefficients
-        matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
-        for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
-            renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
-            //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
+            //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
+            for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
+                for (size_t i=0; i<rowchange_indices[idx]; i++) {
+                    for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++) {
+                        size_t offset = idx*matrix_mtx.stride + jdx;
+                        int realPos = matrix_mtx[offset].real() > 0;
+                        int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
+                        Complex32 value1 = colSumMax[2*jdx+1-slopeUpLeft] + matrix_mtx[offset];
+                        Complex32 value2 = colSumMax[2*jdx+1-slopeUpLeft] - matrix_mtx[offset];
+                        colSumMax[2*jdx+1-slopeUpLeft] = std::norm(value1) > std::norm(value2) ? value1 : value2;
+                    }
+                } 
+            }       
+        
+            // calculate the renormalization coefficients
+            for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
+                renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+                //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
+            }
         }
     
         // renormalize the input matrix and convert to fixed point maximizing precision via long doubles
@@ -631,6 +643,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[numinits] = {};
         const long double fixpow = 1ULL << 62;
+        const double fOne = doubleToLLRaw(1.0);
         for (size_t i = 0; i < actualinits; i++) {
           mtxfix[i] = matrix_base<ComplexFix16>(rows * (colMux ? input_states[outp].size() : 1), max_fpga_cols);
           size_t basecol = max_fpga_cols * i;
@@ -639,8 +652,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
             size_t offset = idx * matrix_mtx.stride + basecol;
             size_t offset_small = idx*mtxfix[i].stride;
             for (size_t jdx = 0; jdx < lastcol; jdx++) {
-              mtxfix[i][offset_small+jdx].real = llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
-              mtxfix[i][offset_small+jdx].imag = llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
+              mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].real()) : llrintl((long double)matrix_mtx[offset+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
+              mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+jdx].imag()) : llrintl((long double)matrix_mtx[offset+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
               //printf("%d %d %d %llX %llX\n", i, idx, jdx, mtxfix[i][offset_small+jdx].real, mtxfix[i][offset_small+jdx].imag); 
             }
             memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
