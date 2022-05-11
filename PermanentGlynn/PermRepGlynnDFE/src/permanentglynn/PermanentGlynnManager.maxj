@@ -60,9 +60,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             rowChangeInput <== rowChangeOutput;
             DFELink initDirectionsOutput = initDirectionsFanout.addOutput("initDirections" + i);
             initDirectionsOutput.setAdditionalRegisters((i % 4)*2); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
-            DFELink initDirectionsInput = initColSumKernels[i].getInput("initDirections");
-            initDirectionsInput.setAdditionalRegisters(2);
-            initDirectionsInput <== initDirectionsOutput;
+            DFELink initDirectionsInp = initColSumKernels[i].getInput("initDirections");
+            initDirectionsInp.setAdditionalRegisters(2);
+            initDirectionsInp <== initDirectionsOutput;
             if (i == 0) {
                 DFELink initBinCoeff = addStreamFromCPU("initBinCoeff");
                 initBinCoeff.setAdditionalRegisters(2); //PCIE->SLR0 - 1 crossing
