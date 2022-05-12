@@ -365,7 +365,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 
     //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
     numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
-    long double factor = (long double)(1ULL<<62);
     uint64_t mulSumPerms = 1ULL << mulsum;
     //perm->real = 0, perm->imag = 0;
     //int parity = 0;
@@ -381,6 +380,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].imag /= numOfPartialPerms;
     perm[i].real /= mulSumPerms, perm[i].imag /= mulSumPerms;
 #else
+    long double factor = (long double)(1ULL<<62);
 #ifdef DUAL
         res[i*2] += res2[i*2];
         res[i*2+1] += res2[i*2+1];
