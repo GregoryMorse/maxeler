@@ -317,11 +317,11 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
              ;
 #endif
 //
-#define ROUTING_STRING_BASE "rowChangeIndices0 -> rowChangeIndicesFanout, rowChangeIndices1 -> rowChangeIndicesFanout, rowChangeIndices2 -> rowChangeIndicesFanout, rowChangeIndices3 -> rowChangeIndicesFanout, "\
-        "curMplicity0 -> binCoeffFanout, curMplicity1 -> binCoeffFanout, curMplicity2 -> binCoeffFanout, curMplicity3 -> binCoeffFanout, "\
-        "initDirections0 -> initDirectionsFanout, initDirections1 -> initDirectionsFanout, initDirections2 -> initDirectionsFanout, initDirections3 -> initDirectionsFanout"
+#define ROUTING_STRING_BASE "rowChangeIndicesChain0 -> rowChangeIndicesFanout0, rowChangeIndicesChain1 -> rowChangeIndicesFanout1, rowChangeIndices0 -> rowChangeIndicesFanout0, rowChangeIndices1 -> rowChangeIndicesFanout1, rowChangeIndices2 -> rowChangeIndicesFanout2, rowChangeIndices3 -> rowChangeIndicesFanout2, "\
+        "binCoeffChain0 -> binCoeffFanout0, binCoeffChain1 -> binCoeffFanout1, curMplicity0 -> binCoeffFanout0, curMplicity1 -> binCoeffFanout1, curMplicity2 -> binCoeffFanout2, curMplicity3 -> binCoeffFanout2, "\
+        "initDirectionsChain0 -> initDirectionsFanout0, initDirectionsChain1 -> initDirectionsFanout1, initDirections0 -> initDirectionsFanout0, initDirections1 -> initDirectionsFanout1, initDirections2 -> initDirectionsFanout2, initDirections3 -> initDirectionsFanout2"
 #if USECOLMUX
-#define ROUTING_STRING "colIndex0 -> colIndexFanout, colIndex1 -> colIndexFanout, colIndex2 -> colIndexFanout, colIndex3 -> colIndexFanout, " ROUTING_STRING_BASE
+#define ROUTING_STRING "colIndexChain0 -> colIndexFanout0, colIndexChain1 -> colIndexFanout1, colIndex0 -> colIndexFanout0, colIndex1 -> colIndexFanout1, colIndex2 -> colIndexFanout2, colIndex3 -> colIndexFanout2, " ROUTING_STRING_BASE
 #else
 #define ROUTING_STRING ROUTING_STRING_BASE
 #endif 
@@ -379,10 +379,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
       actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING ", "
-                                                 //"colIndex4 -> colIndexFanout, colIndex5 -> colIndexFanout, colIndex6 -> colIndexFanout, colIndex7 -> colIndexFanout, "
-                                                 "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout, "
-                                                 "curMplicity4 -> binCoeffFanout2, curMplicity5 -> binCoeffFanout2, curMplicity6 -> binCoeffFanout2, curMplicity7 -> binCoeffFanout2, "
-                                                 "initDirections4 -> initDirectionsFanout, initDirections5 -> initDirectionsFanout, initDirections6 -> initDirectionsFanout, initDirections7 -> initDirectionsFanout";
+                                                 //"colIndex4 -> colIndexFanout0, colIndex5 -> colIndexFanout1, colIndex6 -> colIndexFanout2, colIndex7 -> colIndexFanout2, "
+                                                 "rowChangeIndices4 -> rowChangeIndicesFanout0, rowChangeIndices5 -> rowChangeIndicesFanout1, rowChangeIndices6 -> rowChangeIndicesFanout2, rowChangeIndices7 -> rowChangeIndicesFanout2, "
+                                                 "binCoeffChain20 -> binCoeffFanout20, binCoeffChain21 -> binCoeffFanout21, curMplicity4 -> binCoeffFanout20, curMplicity5 -> binCoeffFanout21, curMplicity6 -> binCoeffFanout22, curMplicity7 -> binCoeffFanout22, "\
+                                                 "initDirections4 -> initDirectionsFanout0, initDirections5 -> initDirectionsFanout1, initDirections6 -> initDirectionsFanout2, initDirections7 -> initDirectionsFanout2";
 #else
       actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.param_totalPerms = totalPerms, actions.dualGlynnRowsGray.param_initParities = initParities,
