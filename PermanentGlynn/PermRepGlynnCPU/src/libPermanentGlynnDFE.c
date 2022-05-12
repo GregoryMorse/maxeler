@@ -4,6 +4,21 @@
 #include <MaxSLiCInterface.h>
 
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+#ifndef DUAL
+#include "PermRepGlynn_singleSIMF.h"
+#define MTX_SIZE PermRepGlynn_singleSIMF_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleSIMF_BASEKERNPOW2
+#define INITS PermRepGlynn_singleSIMF_INITKERNS
+#define LOOPLENGTH PermRepGlynn_singleSIMF_LOOPLENGTH
+#else
+#include "PermRepGlynn_dualSIMF.h"
+#define MTX_SIZE PermRepGlynn_dualSIMF_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualSIMF_BASEKERNPOW2
+#define INITS PermRepGlynn_dualSIMF_INITKERNS
+#define LOOPLENGTH PermRepGlynn_dualSIMF_LOOPLENGTH
+#endif
+#else
 #ifndef DUAL
 #include "PermRepGlynn_singleSIM.h"
 #define MTX_SIZE PermRepGlynn_singleSIM_MTXSIZE
@@ -16,6 +31,22 @@
 #define BASEKERNPOW2 PermRepGlynn_dualSIM_BASEKERNPOW2
 #define INITS PermRepGlynn_dualSIM_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualSIM_LOOPLENGTH
+#endif
+#endif
+#else
+#ifdef USE_FLOAT
+#ifndef DUAL
+#include "PermRepGlynn_singleDFEF.h"
+#define MTX_SIZE PermRepGlynn_singleDFEF_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleDFEF_BASEKERNPOW2
+#define INITS PermRepGlynn_singleDFEF_INITKERNS
+#define LOOPLENGTH PermRepGlynn_singleDFEF_LOOPLENGTH
+#else
+#include "PermanentGlynn_dualDFEF.h"
+#define MTX_SIZE PermRepGlynn_dualDFEF_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualDFEF_BASEKERNPOW2
+#define INITS PermRepGlynn_dualDFEF_INITKERNS
+#define LOOPLENGTH PermRepGlynn_dualDFEF_LOOPLENGTH
 #endif
 #else
 #ifndef DUAL
@@ -30,6 +61,7 @@
 #define BASEKERNPOW2 PermRepGlynn_dualDFE_BASEKERNPOW2
 #define INITS PermRepGlynn_dualDFE_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualDFE_LOOPLENGTH
+#endif
 #endif
 #endif
 
@@ -79,22 +111,42 @@ void releiveRep_DFE();
 /**
 @brief Interface function to initialize DFE array
 */
+#ifdef USE_FLOAT
+int initializeRep_DFEF(int groupMode, size_t* mtx_size, size_t* basekernpow2)
+#else
 int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2)
+#endif
 {
 
 	if (initialized) return 1;
   max_file_t* (*initFunc)(void) = NULL;
 #ifndef DUAL
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+    initFunc = PermRepGlynn_singleSIMF_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIMF_run, freeFunc = PermRepGlynn_singleSIMF_free;
+#else
     initFunc = PermRepGlynn_singleSIM_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIM_run, freeFunc = PermRepGlynn_singleSIM_free;
+#endif
+#else
+#ifdef USE_FLOAT
+    initFunc = PermRepGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFEF_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFEF_run_group, freeFunc = PermRepGlynn_singleDFEF_free;
 #else
     initFunc = PermRepGlynn_singleDFE_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFE_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFE_run_group, freeFunc = PermRepGlynn_singleDFE_free;
+#endif
 #endif  
 #else
 #ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+    initFunc = PermRepGlynn_dualSIMF_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIMF_run, freeFunc = PermRepGlynn_dualSIMF_free;
+#else
     initFunc = PermRepGlynn_dualSIM_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIM_run, freeFunc = PermRepGlynn_dualSIM_free;
+#endif
+#else
+#ifdef USE_FLOAT
+    initFunc = PermRepGlynn_dualDFEF_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFEF_run_group_nonblock, freeFunc = PermRepGlynn_dualDFEF_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFEF_run_array
 #else
     initFunc = PermRepGlynn_dualDFE_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFE_run_group_nonblock, freeFunc = PermRepGlynn_dualDFE_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFE_run_array
+#endif
 #endif  
 #endif
 	// initialize the max file
@@ -142,7 +194,11 @@ int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2)
 /**
 @brief Interface function to releive DFE array
 */
+#ifdef USE_FLOAT
+void releiveRep_DFEF()
+#else
 void releiveRep_DFE()
+#endif
 {
 
 	if (!initialized) return;
@@ -192,8 +248,13 @@ uint64_t roundUp(uint64_t num, uint64_t nearest)
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
 */
+#ifdef USE_FLOAT
+void calcPermanentGlynnRepDFEF(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, const unsigned char* colIndices,
+  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
+#else
 void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, const unsigned char* colIndices,
   const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
+#endif
 {
     if (!initialized) return;
     
@@ -213,17 +274,33 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 
     union {
-#ifdef MAXELER_SIM    
+#ifdef MAXELER_SIM
+#ifdef USE_FLOAT
+#ifndef DUAL
+      PermRepGlynn_singleSIMF_actions_t glynnRowsGray;
+#else
+      PermRepGlynn_dualSIMF_actions_t dualGlynnRowsGray;
+#endif
+#else
 #ifndef DUAL
       PermRepGlynn_singleSIM_actions_t glynnRowsGray;
 #else
       PermRepGlynn_dualSIM_actions_t dualGlynnRowsGray;
+#endif
+#endif
+#else
+#ifdef USE_FLOAT
+#ifndef DUAL
+      PermRepGlynn_singleDFEF_actions_t glynnRowsGray;
+#else
+      PermRepGlynn_dualDFEF_actions_t dualGlynnRowsGray;
 #endif
 #else
 #ifndef DUAL
       PermRepGlynn_singleDFE_actions_t glynnRowsGray;
 #else
       PermRepGlynn_dualDFE_actions_t dualGlynnRowsGray;
+#endif
 #endif
 #endif
     } actions
