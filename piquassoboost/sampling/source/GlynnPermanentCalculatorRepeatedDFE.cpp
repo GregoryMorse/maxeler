@@ -82,7 +82,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     }
     if (!((!useFloat && calcPermanentGlynnDFE) || (useFloat && calcPermanentGlynnDFEF)) ||
         photons < 1+dfe_basekernpow2) { //compute with other method
-      GlynnPermanentCalculatorRepeated gpc;
+      GlynnPermanentCalculatorRepeatedLongDouble gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       unlock_lib();
       return;
@@ -126,7 +126,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         totalPerms *= (adj_input_state[mrows[i]] + 1);
     }
     if (onerows < 1+dfe_basekernpow2) { //compute with other method
-      GlynnPermanentCalculatorRepeated gpc;
+      GlynnPermanentCalculatorRepeatedLongDouble gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       unlock_lib();
       return;
@@ -461,7 +461,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         t1 *= (input_state[i]+1); t2 *= (output_state[i]+1);
     }
     if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
-      GlynnPermanentCalculatorRepeated gpc;
+      GlynnPermanentCalculatorRepeatedLongDouble gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state);
       unlock_lib();
       return;
@@ -578,7 +578,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         photons += output_states[0][i];
     }
     if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
-        GlynnPermanentCalculatorRepeated gpc;
+        GlynnPermanentCalculatorRepeatedLongDouble gpc;
         for (size_t i = 0; i < output_states.size(); i++) {
             perm[i].resize(input_states[i].size());
             for (size_t j = 0; j < input_states[i].size(); j++) {
@@ -737,7 +737,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
         photons += input_states[0][i];
     }
     if (1 || !calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
-        GlynnPermanentCalculatorRepeated gpc;
+        GlynnPermanentCalculatorRepeatedLongDouble gpc;
         for (size_t i = 0; i < input_states.size(); i++) {
             perm[i].resize(output_states[i].size());
             for (size_t j = 0; j < output_states[i].size(); j++) {
