@@ -340,7 +340,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     uint64_t segment = total / loopLength, rem = total % loopLength;
     uint64_t cursum = 0;
     initDirections.resize(loopLength * inp.size()); //for initDirections - * mulsum
-    initParities = 0;
+    initParities = 0;    
     for (size_t i = 0; i < loopLength; i++) {
         if ((cursum & 1) != 0) initParities |= 1 << i; 
         std::vector<uint64_t> loc, gcode;
@@ -362,7 +362,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
             k_base += inp[j]; */
             //initDirections XORed together gives the starting parity, computed on DFE
         }
-        mplicity.push_back(bincoeff);
+        if (i < total) mplicity.push_back(bincoeff);
         cursum += segment + ((i < rem) ? 1 : 0);
     }
     return total;
@@ -400,7 +400,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
       //  rowchange_indices.push_back(i);
       //}
   }
-  if (mrows.size() == 0) { mplicity.push_back(1); return matrix_rows; }
+  if (mrows.size() == 0) { initParities = 0; mplicity.push_back(1); return matrix_rows; }
   changecount = divide_gray_code(inp, mplicity, initDirections, initParities, loopLength) - 1;
   return matrix_rows;
   /*std::vector<uint8_t> k; k.resize(inp.size());
@@ -545,7 +545,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
       }
-      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow;; 
+      for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
     }
 
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
@@ -660,7 +660,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
             }
             memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
           }
-          for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = fixpow; 
+          for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
         }
         std::vector<unsigned char> colIndices; colIndices.reserve(photons * output_states[outp].size());
         for (size_t inp = 0; inp < input_states[outp].size(); inp++) {
@@ -672,7 +672,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         }
         
         rowchange_indices.resize(rows * input_states[outp].size());
-        mplicity.resize(loopLength * input_states[outp].size());
+        int adjLoopLength = changecount+1 < loopLength ? changecount+1 : loopLength;
+        mplicity.resize(adjLoopLength * input_states[outp].size());
         initDirections.resize(loopLength * (rows - onerows) * input_states[outp].size());
         size_t mtxsize = rows * max_fpga_cols;
         matrix_base<ComplexFix16> mtxmuxed[numinits] = {};
@@ -685,7 +686,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         for (size_t i = 0; i < input_states[outp].size(); i++) { //could improve by copying 1, then 2, then 4, then 8, etc...copy doubling strategy
             if (i != 0) { 
                 std::copy_n(rowchange_indices.begin(), rows, rowchange_indices.begin() + rows * i);
-                std::copy_n(mplicity.begin(), loopLength, mplicity.begin() + loopLength * i);
+                std::copy_n(mplicity.begin(), adjLoopLength, mplicity.begin() + adjLoopLength * i);
                 std::copy_n(initDirections.begin(), loopLength * (rows - onerows), initDirections.begin() + loopLength * (rows - onerows) * i);
             }
             for (size_t j = 0; j < actualinits; j++) {
@@ -702,7 +703,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                         }
                         memset(&mtxmuxed[j][offset+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols-lastcol));
                     }
-                    for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxmuxed[j][i*mtxsize+jdx].real = fixpow; 
+                    for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxmuxed[j][i*mtxsize+jdx].real = useFloat ? fOne : fixpow; 
                 }
             }
         }
