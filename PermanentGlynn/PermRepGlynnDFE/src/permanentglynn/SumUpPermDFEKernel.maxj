@@ -56,6 +56,7 @@ public class SumUpPermDFEKernel extends Kernel {
             DFEComplex sums[] = new DFEComplex[15];
             int delays[] = new int[15];
             sums[0] = sum; delays[0] = 14-1;
+            //debug.simPrintf("%d %d %d %KObj% %KObj% %KObj%\n", tickCount, ticksmax, sumOneHot, sum, stream.offset(sum, -1), stream.offset(sum, -2), sumOneHotVector); 
             for (int i = 1; i < 15; i++) {
                 sums[i] = (sumOneHotVector[i-1] ? stream.offset(sum, -i) : constant.zero(cplxFix128Type));
                 delays[i] = 14 - i;
@@ -80,6 +81,10 @@ public class SumUpPermDFEKernel extends Kernel {
             //convert to little-endian for CPU by adding 49 0-bits to the most significant part and the 79 bit IEEE long double thereafter, the CPU will convert to a non-standard CPU long double
             sum = sums[0];
             for (int i = 0; i < delays[0]+1; i++) lastTick = optimization.pipeline(lastTick);
+            //optimization.pushNoPipelining();
+            //DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
+            //sum <== cursum + colProdVals[0];
+            //optimization.popNoPipelining();
             io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), lastTick);
         } else {
             DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
