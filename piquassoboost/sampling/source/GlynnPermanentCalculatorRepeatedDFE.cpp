@@ -339,7 +339,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     for (size_t i = 0; i < inp.size(); i++) { total *= inp[i]; }
     uint64_t segment = total / loopLength, rem = total % loopLength;
     uint64_t cursum = 0;
-    if (total < loopLength) initDirections.resize(loopLength * (inp.size()-1) + total); 
+    if (total < loopLength && inp[inp.size()-1]==2) initDirections.resize(loopLength * (inp.size()-1) + total); 
     else initDirections.resize(loopLength * inp.size()); //for initDirections - * mulsum
     initParities = 0;    
     for (size_t i = 0; i < loopLength; i++) {
@@ -354,7 +354,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
             uint64_t curval = curdir ? inp[j]-1-gcode[j] : gcode[j]-inp[j];
             bincoeff *= binomialCoeffInt64(inp[j]-1, curval);
             //add the initial parity as the high bit of the byte - because counter_to_gcode computes it backwards, it would create unnecessary logic in the kernel when we have 2 free bits wasted regardless for the 6-bit counters
-            if (i < total || j != gcode.size()-1) 
+            if (i < total || j != gcode.size()-1 || inp[j] != 2) 
                 initDirections[j*loopLength+i] = loc[j] | (curdir ? 0x80 : 0);
             /*int64_t curmp = (curval << 1) - inp[j];
             uint64_t k = 0;
@@ -676,8 +676,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         rowchange_indices.resize(rows * input_states[outp].size());
         int adjLoopLength = changecount+1 < (unsigned)loopLength ? changecount+1 : loopLength;
         mplicity.resize(adjLoopLength * input_states[outp].size());
-        int numInitDir = ((changecount+1 < (unsigned)loopLength) && (rows != onerows)) ? loopLength * (rows - onerows - 1) + changecount + 1 : loopLength  * (rows - onerows);
-        initDirections.resize(numInitDir * input_states[outp].size());
+        int numInitDir = initDirections.size();
+        initDirections.resize(loopLength * (rows - onerows) * input_states[outp].size());
         size_t mtxsize = rows * max_fpga_cols;
         matrix_base<ComplexFix16> mtxmuxed[numinits] = {};
         if (!colMux) {
