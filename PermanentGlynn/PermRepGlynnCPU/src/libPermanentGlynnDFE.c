@@ -269,6 +269,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 
 	// variable to store the result
 	//__int128 res[2];
+    int adjLoopLength = changecount + 1 < LOOPLENGTH ? changecount + 1 : LOOPLENGTH;
     size_t resbytes = sizeof(__int128) * 2 * totalPerms; //*(changecount+1);
     //__int128 res[2];
     __int128* res = (__int128*)malloc(resbytes);
@@ -340,7 +341,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.glynnRowsGray.instream_size_rowChangeIndices = roundUp(rows*totalPerms, 16);
       actions.glynnRowsGray.instream_initBinCoeff = mplicity;
-      actions.glynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * LOOPLENGTH * totalPerms, 16);
+      actions.glynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.glynnRowsGray.instream_initDirections = initDirections;
       actions.glynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);
       actions.glynnRowsGray.routing_string = ROUTING_STRING;
@@ -371,9 +372,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.dualGlynnRowsGray.instream_size_rowChangeIndices = roundUp(rows*totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
-      actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * LOOPLENGTH * totalPerms, 16);
+      actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initBinCoeff2 = mplicity;
-      actions.dualGlynnRowsGray.instream_size_initBinCoeff2 = roundUp(sizeof(uint64_t) * LOOPLENGTH * totalPerms, 16);
+      actions.dualGlynnRowsGray.instream_size_initBinCoeff2 = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
       actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING ", "
@@ -397,7 +398,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       actions.dualGlynnRowsGray.instream_size_rowChangeIndices = roundUp(rows*totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
-      actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * LOOPLENGTH * totalPerms, 16);
+      actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
       actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
@@ -416,7 +417,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       dualactions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
       dualactions.dualGlynnRowsGray.instream_size_rowChangeIndices = roundUp(rows*totalPerms, 16);
       dualactions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
-      dualactions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * LOOPLENGTH * totalPerms, 16);
+      dualactions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       dualactions.dualGlynnRowsGray.instream_initDirections = initDirections;
       dualactions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
       dualactions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
