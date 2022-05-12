@@ -290,7 +290,9 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
                     if (self->lib == ChinHuh)
                         ret[i][j] = self->calculator->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                     else if (self->lib == GlynnRep)
-                        ret[i][j] = self->calculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
+                        ret[i][j] = self->calculatorRepLongDouble->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
+                    else if (self->lib == GlynnRepCPUDouble)
+                        ret[i][j] = self->calculatorRepDouble->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                     else if (self->lib == GlynnRepInf)
                         ret[i][j] = self->calculatorRepInf->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                 }
