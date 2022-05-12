@@ -20,6 +20,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
@@ -767,6 +768,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
         optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
+    <T extends KernelObject<T>> T repeatPipeline(T var, int count)
+    {
+        for (int i = 0; i < count; i++) var = optimization.pipeline(var);
+        return var;
+    }
     DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, boolean useUngar, boolean useFloat, KernelBase <?> owner) {
         //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
         //vs. 3 multiplications 5 additions 3M+5A
@@ -786,8 +792,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 DFEVar bd = b * d;
                 return DFEComplexType.newInstance(owner, ac - bd, (a + b) * (c + d) - (ac + bd));
             } else {
-                DFEVar cab = c * (a+b);
-                return DFEComplexType.newInstance(owner, cab - b * (c + d), cab + a * (d - c));
+                DFEVar cab = repeatPipeline(c, 14) * (a+b);
+                return DFEComplexType.newInstance(owner, cab - repeatPipeline(b, 14) * (c + d), cab + repeatPipeline(a, 14) * (d - c));
             }
         } else {
             if (useUngar) {
@@ -958,7 +964,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (2 * limitNew < limit) {
                 limitNew++;
                 colSumFix[limitNew - 1] = colSumFix[limit - 1];
-                for (int i = 0; i < 9+4; i++) {
+                for (int i = 0; i < 9+4 + (useFloat ? 37 : 0); i++) {
                     colSumFix[limitNew - 1] = optimization.pipeline(colSumFix[limitNew - 1]);
                 }
             }
@@ -988,7 +994,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar sign = ((tickParity ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
         for (int i = 0; i < 49; i++) sign = optimization.pipeline(sign);
         sign = sign ^ parity;
-        for (int i = 0; i < 10+5; i++) sign = optimization.pipeline(sign);
+        for (int i = 0; i < 10+5 + (useFloat ? 22 : 0); i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
         if (colMux) {
