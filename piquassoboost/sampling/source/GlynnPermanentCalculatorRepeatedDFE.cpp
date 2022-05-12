@@ -452,7 +452,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     PicState_int64& output_state, Complex16& perm, int useDual, int useFloat)
 {
     lock_lib();
-    init_dfe_lib(DFE_REP, useDual);    
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     uint64_t t1 = 1, t2 = 1;   
     for (size_t i = 0; i < input_state.size(); i++) {
@@ -570,7 +571,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
 {
     if (output_states.size() == 0) return;
     lock_lib();
-    init_dfe_lib(DFE_REP, useDual);    
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     for (size_t i = 0; i < output_states[0].size(); i++) {
         photons += output_states[0][i];
@@ -728,7 +730,8 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
 {
     if (input_states.size() == 0) return;
     lock_lib();
-    init_dfe_lib(DFE_REP, useDual);    
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     for (size_t i = 0; i < input_states[0].size(); i++) {
         photons += input_states[0][i];
