@@ -285,6 +285,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         //DFEVar mplicityCount = control.count.makeCounter(control.count.makeParams(6).withMax(rowChangeIndex)).getCount();
         DFEVar curdir = dfeUInt(8).newInstance(this);
         DFEVar nextCurDir = repeatPipeline(initLoops[1] ? io.input("initDirections", dfeUInt(8), initLoops[0]) : repeatPipeline(stream.offset(curdir, -loopLength), 3), 16);
+        
         curdir <== nextCurDir;
         curdir = repeatPipeline(curdir, 18);
         DFEVar counterInit = curdir.slice(0, 6).reinterpret(dfeUInt(6));
@@ -311,7 +312,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < mplicityRows; i++) {
             allRows[i] <== initOneHot[i] ? (i < mplicityRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
         }
-        //if (kernNum == 1) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
+        //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
         
         DFEVar oneHotInitMplicity = initLoops[3].cast(dfeUInt(mplicityRows)) << storeRowIndex;
         oneHotInitMplicity = optimization.pipeline(oneHotInitMplicity.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInitMplicity.slice(0, mplicityRows/2)));
