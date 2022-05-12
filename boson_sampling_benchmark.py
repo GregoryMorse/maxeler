@@ -252,8 +252,8 @@ def permanent_glynn_gray(mat): #optimal row-major order
   return tot / (1 << (n-1)) #tot
   
 from scipy.stats import unitary_group
-from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator
-calculators = [None, None, None, None, None, None]
+from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedSingleDFEFPermanentCalculator, GlynnRepeatedDualDFEFPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator
+calculators = [None, None, None, None, None, None, None, None]
 
 def permanent_Glynn_Cpp(Arep, input_state, output_state):
   #if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
@@ -273,14 +273,22 @@ def permanent_Glynn_DFEDual(Arep, input_state, output_state):
   if calculators[3] is None: calculators[3] = GlynnRepeatedDualDFEPermanentCalculator(Arep, input_state, output_state)
   else: calculators[3].matrix, calculators[3].input_state, calculators[3].output_state = Arep, input_state, output_state  
   return calculators[3].calculate()
-def permanent_Glynn_MultiDFE(Arep, input_state, output_state):
-  if calculators[4] is None: calculators[4] = GlynnRepeatedMultiSingleDFEPermanentCalculator(Arep, input_state, output_state)
+def permanent_Glynn_DFEF(Arep, input_state, output_state):
+  if calculators[4] is None: calculators[4] = GlynnRepeatedSingleDFEFPermanentCalculator(Arep, input_state, output_state)
   else: calculators[4].matrix, calculators[4].input_state, calculators[4].output_state = Arep, input_state, output_state  
   return calculators[4].calculate()
-def permanent_Glynn_MultiDFEDual(Arep, input_state, output_state):
-  if calculators[5] is None: calculators[5] = GlynnRepeatedMultiDualDFEPermanentCalculator(Arep, input_state, output_state)
+def permanent_Glynn_DFEFDual(Arep, input_state, output_state):
+  if calculators[5] is None: calculators[5] = GlynnRepeatedDualDFEFPermanentCalculator(Arep, input_state, output_state)
   else: calculators[5].matrix, calculators[5].input_state, calculators[5].output_state = Arep, input_state, output_state  
   return calculators[5].calculate()
+def permanent_Glynn_MultiDFE(Arep, input_state, output_state):
+  if calculators[6] is None: calculators[6] = GlynnRepeatedMultiSingleDFEPermanentCalculator(Arep, input_state, output_state)
+  else: calculators[6].matrix, calculators[6].input_state, calculators[6].output_state = Arep, input_state, output_state  
+  return calculators[6].calculate()
+def permanent_Glynn_MultiDFEDual(Arep, input_state, output_state):
+  if calculators[7] is None: calculators[7] = GlynnRepeatedMultiDualDFEPermanentCalculator(Arep, input_state, output_state)
+  else: calculators[7].matrix, calculators[7].input_state, calculators[7].output_state = Arep, input_state, output_state  
+  return calculators[7].calculate()
 
 samplers = [None, None, None, None, None, None]
 seed = 0x123456789ABCDEF
@@ -316,7 +324,7 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
-dfePermFuncs = (permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
+dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
 largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
@@ -479,7 +487,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         plt.close(fig)
 #other_stability(40, 30)
 #stability(40, 30)
-for i in range(19 if hasSim else 0, 40+1):
+for i in range(8 if hasSim else 0, 40+1):
     verify_timing(DEPTH, i, None)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
