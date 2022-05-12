@@ -270,6 +270,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 	// variable to store the result
 	//__int128 res[2];
     int adjLoopLength = changecount + 1 < LOOPLENGTH ? changecount + 1 : LOOPLENGTH;
+    int numInitDir = ((changecount+1 < LOOPLENGTH) && (rows != onerows)) ? LOOPLENGTH * (rows - onerows - 1) + changecount + 1 : LOOPLENGTH  * (rows - onerows);
     size_t resbytes = sizeof(__int128) * 2 * totalPerms; //*(changecount+1);
     //__int128 res[2];
     __int128* res = (__int128*)malloc(resbytes);
@@ -343,7 +344,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_initBinCoeff = mplicity;
       actions.glynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.glynnRowsGray.instream_initDirections = initDirections;
-      actions.glynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);
+      actions.glynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);
       actions.glynnRowsGray.routing_string = ROUTING_STRING;
       //max_actions_t* mat = PermRepGlynn_singleSIM_convert(mavMaxFile, &actions.glynnRowsGray);
       //int loopLength = max_get_offset_auto_loop_size(mat, "InitializeColSumDFEKernel_0", "loopLength");
@@ -376,7 +377,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_initBinCoeff2 = mplicity;
       actions.dualGlynnRowsGray.instream_size_initBinCoeff2 = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
-      actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
+      actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING ", "
                                                  //"colIndex4 -> colIndexFanout, colIndex5 -> colIndexFanout, colIndex6 -> colIndexFanout, colIndex7 -> colIndexFanout, "
                                                  "rowChangeIndices4 -> rowChangeIndicesFanout, rowChangeIndices5 -> rowChangeIndicesFanout, rowChangeIndices6 -> rowChangeIndicesFanout, rowChangeIndices7 -> rowChangeIndicesFanout, "
@@ -400,7 +401,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
       actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       actions.dualGlynnRowsGray.instream_initDirections = initDirections;
-      actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
+      actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);      
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
       dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.outstream_res = res2, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
       dualactions.dualGlynnRowsGray.param_totalPerms = totalPerms, dualactions.dualGlynnRowsGray.param_initParities = initParities,
@@ -419,7 +420,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       dualactions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
       dualactions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
       dualactions.dualGlynnRowsGray.instream_initDirections = initDirections;
-      dualactions.dualGlynnRowsGray.instream_size_initDirections = roundUp(LOOPLENGTH*(rows-onerows)*totalPerms, 16);      
+      dualactions.dualGlynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);      
       dualactions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
 #endif
 #endif
