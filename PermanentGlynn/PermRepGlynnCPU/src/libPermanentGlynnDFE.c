@@ -107,7 +107,11 @@ static max_engine_t* mavDFE;
 static RUNFUNC runFunc;
 #endif
 
-void releiveRep_DFE();
+#ifdef USE_FLOAT
+void releive_DFEF();
+#else
+void releive_DFE();
+#endif
 /**
 @brief Interface function to initialize DFE array
 */
