@@ -10,27 +10,52 @@ include $(MAXCOMPILERDIR)/lib/Makefile.include
 
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
-  ifeq ($(strip $(DUAL)),true)
-      TARGET := libPermRepGlynnDualSIM.so
-      COMPVAR := -DMAXELER_SIM -DDUAL
-      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+  ifeq ($(strip $(USE_FLOAT)),true)
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermRepGlynnDualSIMF.so
+          COMPVAR := -DMAXELER_SIM -DDUAL -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIMF.max))
+      else
+          TARGET := libPermRepGlynnSIMF.so
+          COMPVAR := -DMAXELER_SIM -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIMF.max))
+      endif                
   else
-      TARGET := libPermRepGlynnSIM.so
-      COMPVAR := -DMAXELER_SIM
-      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermRepGlynnDualSIM.so
+          COMPVAR := -DMAXELER_SIM -DDUAL
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+      else
+          TARGET := libPermRepGlynnSIM.so
+          COMPVAR := -DMAXELER_SIM
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+      endif                
   endif
 else
   ##### Target executable or shared-object name. ####
-  ifeq ($(strip $(DUAL)),true)
-      TARGET := libPermRepGlynnDualDFE.so
-      COMPVAR := -DDUAL
-      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+  ifeq ($(strip $(USE_FLOAT)),true)
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermRepGlynnDualDFEF.so
+          COMPVAR := -DDUAL -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFEF.max))
+      else
+          TARGET := libPermRepGlynnDFEF.so
+          COMPVAR := -DUSE_FLOAT
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFEF.max))
+      endif
   else
-      TARGET := libPermRepGlynnDFE.so
-      COMPVAR :=
-      MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+      ifeq ($(strip $(DUAL)),true)
+          TARGET := libPermRepGlynnDualDFE.so
+          COMPVAR := -DDUAL
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+      else
+          TARGET := libPermRepGlynnDFE.so
+          COMPVAR :=
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+      endif
   endif
 endif
+
 
 ##### Simulator configuration #####
 SIM_NAME := $(USER)_$(basename $(TARGET))_sim
