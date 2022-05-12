@@ -177,7 +177,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
 
     if (!calcPermanentGlynnDFE ||
         matrices.begin()->rows < 1+dfe_basekernpow2 || matrices.begin()->cols == 0 || matrices.begin()->rows >= matrices.begin()->cols + 2) { //compute with other method
-      GlynnPermanentCalculator gpc;
+      GlynnPermanentCalculatorLongDouble gpc;
       for (size_t i = 0; i < matrices.size(); i++)
           perm[i] = gpc.calculate(matrices[i]);
       unlock_lib();
@@ -283,7 +283,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
 
     if (!calcPermanentGlynnDFE ||
         matrix_mtx.rows < 1+dfe_basekernpow2 || matrix_mtx.cols == 0 || matrix_mtx.rows >= matrix_mtx.cols + 2) { //compute with other method
-      GlynnPermanentCalculator gpc;
+      GlynnPermanentCalculatorLongDouble gpc;
       perm = gpc.calculate(matrix_mtx);
       unlock_lib();
       return;
