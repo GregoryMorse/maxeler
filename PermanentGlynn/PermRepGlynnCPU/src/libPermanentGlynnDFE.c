@@ -270,7 +270,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 	// variable to store the result
 	//__int128 res[2];
     int adjLoopLength = changecount + 1 < LOOPLENGTH ? changecount + 1 : LOOPLENGTH;
-    int numInitDir = ((changecount+1 < LOOPLENGTH) && (rows != onerows)) ? LOOPLENGTH * (rows - onerows - 1) + changecount + 1 : LOOPLENGTH  * (rows - onerows);
+    int numInitDir = LOOPLENGTH  * (rows - onerows);
     size_t resbytes = sizeof(__int128) * 2 * totalPerms; //*(changecount+1);
     //__int128 res[2];
     __int128* res = (__int128*)malloc(resbytes);
