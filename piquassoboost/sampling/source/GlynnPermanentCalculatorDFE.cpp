@@ -120,7 +120,7 @@ int init_dfe_lib(int choice, int dual) {
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
           if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
-      } else if (choice == DFE_REP) {
+      } else if (choice == DFE_REP_FLOAT) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFEF");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFEF");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFEF");
