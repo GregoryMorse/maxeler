@@ -239,7 +239,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         notIsInit = repeatPipeline(notIsInit, 96);
         isTransition = repeatPipeline(isTransition, 96);
         DFEVar isCalc = notIsInit | repeatPipeline(isTransition, 42);
-        if (dual) isCalc = repeatPipeline(isCalc);
+        if (dual) isCalc = repeatPipeline(isCalc, 2);
         DFEVar firstTick = isInits[1] & (initCount === 0);
         DFEVar[] firstTicks = pipelineStaggered(firstTick, new int[]{0 + (dual ? 2 : 0), 4 - (dual ? 2 : 0), 94, 6+(useFloat ? 4 : 0)});
         DFEVar gcodeDir = (repTickCount >> rowpow2).get(0);
@@ -342,7 +342,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         saveInitMultiplicities <== repeatVectorPipeline(initMultiplicities, loopLength - 1, mplicityRows/2+1);
 
         nextRowIdx = repeatPipeline(nextRowIdx, 50);
-        if (dual) isTransition = optimization.pipeline(isTransition, 2);
+        if (dual) isTransition = repeatPipeline(isTransition, 2);
         DFEVar enableGCode = nextRowIdx | isTransition;
         DFEVector<DFEVar> cpInitGrayCode = counterChainWithInit(enableGCode, rowMultiplicities+1, initCounters, isTransition, 1, loopLength, this);
         DFEVector<DFEVar> countersZero = cpInitGrayCode !== 0;
