@@ -327,7 +327,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     "colSumsChain301 -> colSumsFanout301, colSumsChain302 -> colSumsFanout302, "\
     "colSumsChain312 -> colSumsFanout312, "\
     "colProdChain21 -> colProdFanout21, "\
-    "colProdChain31 -> colProdFanout31, colProdChain32 -> colProdFanout32"\
+    "colProdChain31 -> colProdFanout31, colProdChain32 -> colProdFanout32, "\
     "rowChangeIndicesChain0 -> rowChangeIndicesFanout0, rowChangeIndicesChain1 -> rowChangeIndicesFanout1, rowChangeIndices0 -> rowChangeIndicesFanout0, rowChangeIndices1 -> rowChangeIndicesFanout1, rowChangeIndices2 -> rowChangeIndicesFanout2, rowChangeIndices3 -> rowChangeIndicesFanout2, "\
         "binCoeffChain0 -> binCoeffFanout0, binCoeffChain1 -> binCoeffFanout1, curMplicity0 -> binCoeffFanout0, curMplicity1 -> binCoeffFanout1, curMplicity2 -> binCoeffFanout2, curMplicity3 -> binCoeffFanout2, "\
         "initDirectionsChain0 -> initDirectionsFanout0, initDirectionsChain1 -> initDirectionsFanout1, initDirections0 -> initDirectionsFanout0, initDirections1 -> initDirectionsFanout1, initDirections2 -> initDirectionsFanout2, initDirections3 -> initDirectionsFanout2"
