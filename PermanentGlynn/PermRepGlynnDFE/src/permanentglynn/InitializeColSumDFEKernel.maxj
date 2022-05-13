@@ -239,8 +239,9 @@ public class InitializeColSumDFEKernel extends Kernel {
         notIsInit = repeatPipeline(notIsInit, 96);
         isTransition = repeatPipeline(isTransition, 96);
         DFEVar isCalc = notIsInit | repeatPipeline(isTransition, 42);
+        if (dual) isCalc = repeatPipeline(isCalc);
         DFEVar firstTick = isInits[1] & (initCount === 0);
-        DFEVar[] firstTicks = pipelineStaggered(firstTick, new int[]{0, 4, 94, 6+(useFloat ? 4 : 0)});
+        DFEVar[] firstTicks = pipelineStaggered(firstTick, new int[]{0 + (dual ? 2 : 0), 4 - (dual ? 2 : 0), 94, 6+(useFloat ? 4 : 0)});
         DFEVar gcodeDir = (repTickCount >> rowpow2).get(0);
         DFEVar tickCount = optimization.pipeline(optimization.pipeline(repTickCount.cast(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0))))) & (wrapVal-1);
         DFEVar mplicityWrap = dfeBool().newInstance(this);
@@ -341,6 +342,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         saveInitMultiplicities <== repeatVectorPipeline(initMultiplicities, loopLength - 1, mplicityRows/2+1);
 
         nextRowIdx = repeatPipeline(nextRowIdx, 50);
+        if (dual) isTransition = optimization.pipeline(isTransition, 2);
         DFEVar enableGCode = nextRowIdx | isTransition;
         DFEVector<DFEVar> cpInitGrayCode = counterChainWithInit(enableGCode, rowMultiplicities+1, initCounters, isTransition, 1, loopLength, this);
         DFEVector<DFEVar> countersZero = cpInitGrayCode !== 0;
@@ -367,7 +369,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         inpmp = optimization.pipeline(control.mux(optimization.pipeline(storeRowIndex), rowMultiplicities.getElementsAsList())).cast(dfeUInt(7));
         rowChangeIsNeg = curmp < inpmp;
         if (kernNum == 0) { //now we need the next multiplicities
-            cpInitGrayCode = repeatPipeline(cpInitGrayCode, 7);
+            cpInitGrayCode = repeatPipeline(cpInitGrayCode, 7+(dual ? 1 : 0));
             countersZero = cpInitGrayCode !== rowMultiplicities;
             rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
             DFEVar rowIndex = Bitops.onehotDecode(rowChangeMask);
@@ -399,7 +401,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar lastMultiplicity = repeatPipeline(isTransition, 5) ? io.input("initBinCoeff", dfeUInt(64), isTransition).cast(dfeUInt(38)) : stream.offset(cur_multiplicity, -loopLength);
             cur_multiplicity <== (mulExact(mulExact(repeatPipeline(lastMultiplicity, 2), num, 38+4, 38+4), control.mux(denom-1, magicDivisionMpliers.getElementsAsList()), 38+4+38+4, 38+4+38+4) >> repeatPipeline(control.mux(denom-1, magicDivisionShifts.getElementsAsList()), 8)).cast(dfeUInt(38));
             //debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, lastMultiplicity, rowIndex, rowChangeMask, curmp, inpmp, num, denom, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
-            io.output("bincoeff", repeatPipeline((parity ^ repeatPipeline(repTickCount.get(0), 3)), 146).cat(lastMultiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), repeatPipeline(isCalc, 10));
+            io.output("bincoeff", repeatPipeline((parity ^ repeatPipeline(repTickCount.get(0), 3)), 146+(dual ? 2 : 0)).cat(lastMultiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), repeatPipeline(isCalc, 10));
         }       
 
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);
@@ -464,7 +466,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
         prevColmnSumVector = prevColmnSumVector + toAdd;
         allColSums <== repeatPipeline(prevColmnSumVector, loopLength - 1 - (useFloat ? 1+13 : 0)); //for float - mux=1 + float add=13, for fixed piont - mux+add is optimized to conditional add=1
-        isCalc = repeatPipeline(isCalc, 11 + (useFloat ? 18 : 0));
+        isCalc = repeatPipeline(isCalc, 11 + (useFloat ? 18 : 0) + (dual ? 2 : 0));
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
             io.output("colSums" + i, prevColmnSumVector[i].cast(colTransferType), colTransferType, isCalc);
