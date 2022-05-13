@@ -12,12 +12,49 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerPCIe;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.ManagerBlock;
 //import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
 //import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnection;
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
-
+    default DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX) //-1 for PCIE
+    {
+        for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
+            selectSLR(i);
+            Fanout fo = fanout(name + "Fanout" + suffix + i);
+            unselectSLR();
+            DFELink inp = fo.getInput();            
+            inp.setAdditionalRegisters(regPerX);
+            inp <== input;
+            input = fo.addOutput(name + "Chain" + suffix + i);
+            input.setAdditionalRegisters(regPerX);
+            if (slrEnd >= slrStart) i++; else i--;
+        }
+        return input;
+    }
+    default Fanout[] slrCrossingFanoutChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX) //slrStart is inclusive here
+    {
+        Fanout fanouts[] = new Fanout[slrEnd - slrStart];
+        for (int i = slrStart; i < slrEnd; i++) {
+            selectSLR(i);
+            fanouts[i] = fanout(name + "Fanout" + suffix + i);
+            unselectSLR();
+        }
+        for (int i = slrStart; i < slrEnd; i++) {
+            if (i == slrStart) {
+                DFELink inp = fanouts[0].getInput();
+                inp.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing
+                inp <== input;
+            }
+            if (i != slrEnd - 1) {
+                DFELink chain = fanouts[i].addOutput(name + "Chain" + suffix + i);
+                chain.setAdditionalRegisters(regPerX); //PCIE->SLR0 or SLR0->SLR1 or SLR1->SLR2- 1 crossing
+                DFELink inp = fanouts[i+1].getInput();
+                inp.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
+                inp <== chain;
+            }             
+        }
+        return fanouts;
+    }
     //40x40 is a large enough limit in all cases
     final int loopLength = 20; //based on 2 fixed point multiplications + a barrel shifter for multiplicities
     final boolean colMux = false; //column multiplexing is very resource expensive and causes heavy congestion
@@ -35,43 +72,15 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int initKerns = 4;
         DFELink rowChangeIndices = addStreamFromCPU("rowChangeIndices");
         rowChangeIndices.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing        
-        Fanout rowChangeIndicesFanout[] = new Fanout[] { fanout("rowChangeIndicesFanout0"), fanout("rowChangeIndicesFanout1"), fanout("rowChangeIndicesFanout2") };
-        for (int i = 0; i < 3; i++) {
-            assignKernelToSLR(rowChangeIndicesFanout[i], i);
-            if (i == 0) {
-                DFELink rowChangeIndicesInput = rowChangeIndicesFanout[0].getInput();
-                rowChangeIndicesInput.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing
-                rowChangeIndicesInput <== rowChangeIndices;
-            }
-            if (i != 2) {
-                DFELink chain = rowChangeIndicesFanout[i].addOutput("rowChangeIndicesChain" + i);
-                chain.setAdditionalRegisters(regPerX); //PCIE->SLR0 or SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                DFELink rowChangeIndicesInput = rowChangeIndicesFanout[i+1].getInput();
-                rowChangeIndicesInput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                rowChangeIndicesInput <== chain;
-            }             
-        }
+        Fanout rowChangeIndicesFanout[] = slrCrossingFanoutChain("rowChangeIndices", "", rowChangeIndices, 0, 3, regPerX);
         
         DFELink initDirections = addStreamFromCPU("initDirections");
         initDirections.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing
-        Fanout initDirectionsFanout[] = new Fanout[] { fanout("initDirectionsFanout0"), fanout("initDirectionsFanout1"), fanout("initDirectionsFanout2") };
-        for (int i = 0; i < 3; i++) {
-            assignKernelToSLR(initDirectionsFanout[i], i);
-            if (i == 0) {
-                DFELink initDirectionsInput = initDirectionsFanout[0].getInput();
-                initDirectionsInput.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing
-                initDirectionsInput <== initDirections;                
-            }
-            if (i != 2) {
-                DFELink chain = initDirectionsFanout[i].addOutput("initDirectionsChain" + i);
-                chain.setAdditionalRegisters(regPerX); //PCIE->SLR0 or SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                DFELink initDirectionsInput = initDirectionsFanout[i+1].getInput();
-                initDirectionsInput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                initDirectionsInput <== chain;
-            }
-        }
+        Fanout initDirectionsFanout[] = slrCrossingFanoutChain("initDirections", "", initDirections, 0, 3, regPerX);
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
+            selectSLR(i % 4);
             initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat, loopLength));
+            unselectSLR();
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             mtx.setAdditionalRegisters(((i % 4)+1)*regPerX); //PCIE->SLR0->SLR1->SLR2->SLR3 - 4 crossings
             DFELink mtxInput = initColSumKernels[i].getInput("mappedInputMtx_Rows");
@@ -105,63 +114,20 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         if (colMux) {
             DFELink colIndex = addStreamFromCPU("colIndex");
             colIndex.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossings
-            colIndexFanout = new Fanout[] { fanout("colIndexFanout"), fanout("colIndexFanout"), fanout("colIndexFanout") };
-            for (int i = 0; i < 3; i++) {
-                assignKernelToSLR(colIndexFanout[i], i);
-                if (i == 0) {
-                    DFELink colIndexInput = colIndexFanout[0].getInput();
-                    colIndexInput.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossings
-                    colIndexInput <== colIndex;
-                }
-                if (i != 2) {
-                    DFELink chain = colIndexFanout[i].addOutput("colIndexChain" + i);
-                    chain.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                    DFELink colIndexInput = colIndexFanout[i+1].getInput();
-                    colIndexInput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                    colIndexInput <== chain;
-                }
-            }
+            colIndexFanout = slrCrossingFanoutChain("colIndex", "", colIndex, 0, 3, regPerX);
         }
         DFELink binCoeff = initColSumKernels[0].getOutput("bincoeff");
         binCoeff.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-        Fanout binCoeffFanout[] = new Fanout[] { fanout("binCoeffFanout0"), fanout("binCoeffFanout1"), fanout("binCoeffFanout2") }, binCoeffFanout2[] = null;
-        for (int i = 0; i < 3; i++) {
-            assignKernelToSLR(binCoeffFanout[i], i);
-            if (i == 0) {
-                DFELink binCoeffInput = binCoeffFanout[0].getInput();
-                binCoeffInput.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-                binCoeffInput <== binCoeff;
-            }
-            if (i != 2) {
-                DFELink chain = binCoeffFanout[i].addOutput("binCoeffChain" + i);
-                chain.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                DFELink binCoeffInput = binCoeffFanout[i+1].getInput();
-                binCoeffInput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                binCoeffInput <== chain;
-            }
-        }
+        Fanout binCoeffFanout[] = slrCrossingFanoutChain("binCoeff", "", binCoeff, 0, 3, regPerX), binCoeffFanout2[] = null;
         if (dual && isSim) {
             DFELink binCoeff2 = initColSumKernels[initKerns].getOutput("bincoeff");
             binCoeff2.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-            binCoeffFanout2 = new Fanout[] { fanout("binCoeffFanout20"), fanout("binCoeffFanout21"), fanout("binCoeffFanout22") };
-            for (int i = 0; i < 3; i++) {
-                assignKernelToSLR(binCoeffFanout2[i], i);
-                if (i == 0) { 
-                    DFELink binCoeffInput2 = binCoeffFanout2[0].getInput();
-                    binCoeffInput2.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-                    binCoeffInput2 <== binCoeff2;
-                }
-                if (i != 2) {
-                    DFELink chain = binCoeffFanout2[i].addOutput("binCoeffChain2" + i);
-                    chain.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                    DFELink binCoeffInput2 = binCoeffFanout2[i+1].getInput();
-                    binCoeffInput2.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
-                    binCoeffInput2 <== chain;
-                }
-            }
+            binCoeffFanout2 = slrCrossingFanoutChain("binCoeff", "2", binCoeff2, 0, 3, regPerX);
         }
         for (int i = 0; i < numkernels; i++) {
+            selectSLR(i % 4);
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat, colMux));
+            unselectSLR();
             if (colMux) {
                 DFELink colIndexOutput = colIndexFanout[i % 4].addOutput("colIndex" + i);
                 colIndexOutput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
@@ -185,18 +151,15 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 curInput <== curOutput;
             }
         }
-        for (int i = 0; i < initKerns; i++)
-          assignKernelToSLR(initColSumKernels[i], i % 4);
-        for (int i = 0; i < numkernels; i++)
-          assignKernelToSLR(colSumKernels[i], i % 4);
         DFELink colProds[] = new DFELink[numkernels];
         for (int i = 0; i < numkernels; i++) {
             colProds[i] = colSumKernels[i].getOutput("colProd");
             colProds[i].setAdditionalRegisters((i % 4) * regPerX); //SLR0->SLR1->SLR2->SLR3 - 3 crossings
         }
         int singlekerns = numkernels * numarrays / 2;
+        selectSLR(0);
         KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, 64/*dim - basekernpow2*/, useFloat));
-        assignKernelToSLR(SumUpPermKernel, 0);
+        unselectSLR();
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
             DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
             colProdInput.setAdditionalRegisters(regPerX);
@@ -207,8 +170,10 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         DFELink cpuOutput = addStreamToCPU("res");
         cpuOutput.setAdditionalRegisters(regPerX); 
         cpuOutput <== toCPU;
-        if (dual && isSim) {            
+        if (dual && isSim) {
+            selectSLR(0);
             KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, 64/*dim - basekernpow2*/, useFloat));
+            unselectSLR();
             for (int i = singlekerns; i < numkernels; i++) {
                 DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
                 colProdInput.setAdditionalRegisters(regPerX);
@@ -227,7 +192,8 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
 
     }
 
-    void assignKernelToSLR(ManagerBlock kernel, int slr_index);
+    void selectSLR(int slr_index);
+    void unselectSLR();
 
 
     static EngineInterface interfaceDefault(boolean dual, boolean isSim) {
