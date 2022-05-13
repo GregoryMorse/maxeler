@@ -411,7 +411,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
         grayCounter.changePosition = repeatPipeline(grayCounter.changePosition, 91+42+(dual ? 5 : 0));
-        if (dual) nextRowIdx = optimization.pipeline(nextRowIdx);
+        nextRowIdx = optimization.pipeline(nextRowIdx);
         DFEVar changePos = nextRowIdx ? storeRowIndex : grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum));
         changePos = repeatPipeline(changePos, 4);
         nextRowIdx = repeatPipeline(nextRowIdx, 5);
