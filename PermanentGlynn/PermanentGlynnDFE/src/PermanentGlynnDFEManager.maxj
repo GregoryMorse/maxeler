@@ -58,6 +58,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         System.out.println("UseAsapScheduler: " + config.getUseAsapScheduler());
         System.out.println("UseGlobalClockBuffer: " + config.getUseGlobalClockBuffer());
         System.out.println("UseGlobalClockLinesRst: " + config.getUseGlobalClockLinesRst());*/
+        getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
         getCurrentKernelConfig().optimization.setInlining(true);
         getCurrentKernelConfig().optimization.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
         getCurrentKernelConfig().optimization.setPreserveNodeRegisters(false);
@@ -92,17 +93,17 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 if (dual && isSim && i >= numkernels * numarrays / 2)
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
-                curOutput.setAdditionalRegisters(regPerX);
+                curOutput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curOutput = slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX);
                 DFELink curInput = colSumKernels[i].getInput("colSums" + j);
-                curInput.setAdditionalRegisters(regPerX);
+                curInput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curInput <== curOutput;
             }
         }
         DFELink colProds[] = new DFELink[numkernels];
         for (int i = 0; i < numkernels; i++) {
             colProds[i] = colSumKernels[i].getOutput("colProd");
-            colProds[i].setAdditionalRegisters(regPerX);
+            colProds[i].setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
             colProds[i] = slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX);
         }
         int singlekerns = numkernels * numarrays / 2;
@@ -111,7 +112,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         unselectSLR();
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
             DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
-            colProdInput.setAdditionalRegisters(regPerX);
+            colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
             colProdInput <== colProds[i];
         }
         DFELink toCPU = SumUpPermKernel.getOutput("res");
@@ -125,7 +126,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             unselectSLR();
             for (int i = singlekerns; i < numkernels; i++) {
                 DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
-                colProdInput.setAdditionalRegisters(regPerX);
+                colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
                 colProdInput <== colProds[i];
             }                
             DFELink toCPU2 = SumUpPermKernel2.getOutput("res");
