@@ -14,6 +14,7 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 //import com.maxeler.maxcompiler.v2.managers.custom.stdlib.MaxRingBidirectionalStream;
 //import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager.MaxRingConnection;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
     default DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX) //-1 for PCIE
@@ -42,7 +43,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         for (int i = slrStart; i < slrEnd; i++) {
             if (i == slrStart) {
                 DFELink inp = fanouts[0].getInput();
-                inp.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossing
+                inp.setAdditionalRegisters(input.getAdditionalRegisters()); //PCIE->SLR0 - 1 crossing
                 inp <== input;
             }
             if (i != slrEnd - 1) {
@@ -59,7 +60,34 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
     final int loopLength = 20; //based on 2 fixed point multiplications + a barrel shifter for multiplicities
     final boolean colMux = false; //column multiplexing is very resource expensive and causes heavy congestion
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
+        /*OptimizationOptions config = getCurrentKernelConfig().optimization;
+
+        System.out.println("CEPipelining: " + config.getCEPipelining());
+        System.out.println("CEReplicationNumPartitions: " + config.getCEReplicationNumPartitions());
+        System.out.println("ClockPhaseBalanceThreshold: " + config.getClockPhaseBalanceThreshold());
+        System.out.println("ClockPhaseRetries: " + config.getClockPhaseRetries());
+        System.out.println("ConditionalArithmeticEnabled: " + config.getConditionalArithmeticEnabled());
+        System.out.println("ConstantMultiplicationWithShiftAddThreshold: " + config.getConstantMultiplicationWithShiftAddThreshold());
+        System.out.println("DeleteRedundantNodes: " + config.getDeleteRedundantNodes());
+        System.out.println("DSPMulAddChainBehavior: " + config.getDSPMulAddChainBehavior());
+        System.out.println("FIFOCoalescingEnabled: " + config.getFIFOCoalescingEnabled());
+        System.out.println("FIFOImplementationBRAMThreshold: " + config.getFIFOImplementationBRAMThreshold());
+        System.out.println("Inlining: " + config.getInlining());
+        System.out.println("MinimumStaticFIFOSplitDepth: " + config.getMinimumStaticFIFOSplitDepth());
+        System.out.println("NumberOfPacketsInFlight: " + config.getNumberOfPacketsInFlight());
+        System.out.println("OptimizationTechnique: " + config.getOptimizationTechnique());
+        System.out.println("OptimizePowerTwoFloatMultEnabled: " + config.getOptimizePowerTwoFloatMultEnabled());
+        System.out.println("PreserveNodeRegisters: " + config.getPreserveNodeRegisters());
+        System.out.println("ROMImplementationBRAMThreshold: " + config.getROMImplementationBRAMThreshold());
+        System.out.println("TriAddsEnabled: " + config.getTriAddsEnabled());
+        System.out.println("UseAsapScheduler: " + config.getUseAsapScheduler());
+        System.out.println("UseGlobalClockBuffer: " + config.getUseGlobalClockBuffer());
+        System.out.println("UseGlobalClockLinesRst: " + config.getUseGlobalClockLinesRst());*/
         getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
+        getCurrentKernelConfig().optimization.setInlining(true);
+        getCurrentKernelConfig().optimization.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
+        getCurrentKernelConfig().optimization.setPreserveNodeRegisters(false);
+        
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
@@ -88,12 +116,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             mtxInput.setAdditionalRegisters(regPerX);
             mtxInput <== mtx;
             DFELink rowChangeOutput = rowChangeIndicesFanout[(i % 4 == 3 ? i-1 : i) % 4].addOutput("rowChangeIndices" + i);
-            rowChangeOutput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
+            rowChangeOutput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
             DFELink rowChangeInput = initColSumKernels[i].getInput("rowChangeIndices");
             rowChangeInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
             rowChangeInput <== rowChangeOutput;
             DFELink initDirectionsOutput = initDirectionsFanout[(i % 4 == 3 ? i-1 : i) % 4].addOutput("initDirections" + i);
-            initDirectionsOutput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
+            initDirectionsOutput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
             DFELink initDirectionsInp = initColSumKernels[i].getInput("initDirections");
             initDirectionsInp.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
             initDirectionsInp <== initDirectionsOutput;
@@ -131,13 +159,13 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             unselectSLR();
             if (colMux) {
                 DFELink colIndexOutput = colIndexFanout[i % 4].addOutput("colIndex" + i);
-                colIndexOutput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
+                colIndexOutput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
                 DFELink colIndexInput = colSumKernels[i].getInput("colIndex");
                 colIndexInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
                 colIndexInput <== colIndexOutput;
             }
             DFELink mplicityOutput = (dual && isSim && i >= numkernels * numarrays / 2) ? binCoeffFanout2[(i % 4 == 3 ? i-1 : i) % 4].addOutput("curMplicity" + i) : binCoeffFanout[(i % 4 == 3 ? i-1 : i) % 4].addOutput("curMplicity" + i);
-            mplicityOutput.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
+            mplicityOutput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
             DFELink mplicityInput = colSumKernels[i].getInput("curMplicity");
             mplicityInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
             mplicityInput <== mplicityOutput;
@@ -146,17 +174,17 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 if (dual && isSim && i >= numkernels * numarrays / 2)
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
-                curOutput.setAdditionalRegisters(regPerX);
+                curOutput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curOutput = slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX);
                 DFELink curInput = colSumKernels[i].getInput("colSums" + j);
-                curInput.setAdditionalRegisters(regPerX);
+                curInput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curInput <== curOutput;
             }
         }
         DFELink colProds[] = new DFELink[numkernels];
         for (int i = 0; i < numkernels; i++) {
             colProds[i] = colSumKernels[i].getOutput("colProd");
-            colProds[i].setAdditionalRegisters(regPerX);
+            colProds[i].setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
             colProds[i] = slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX);
         }
         int singlekerns = numkernels * numarrays / 2;
@@ -165,7 +193,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         unselectSLR();
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
             DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
-            colProdInput.setAdditionalRegisters(regPerX);
+            colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
             colProdInput <== colProds[i];
         }
         DFELink toCPU = SumUpPermKernel.getOutput("res");
@@ -179,7 +207,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             unselectSLR();
             for (int i = singlekerns; i < numkernels; i++) {
                 DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
-                colProdInput.setAdditionalRegisters(regPerX);
+                colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
                 colProdInput <== colProds[i];
             }                
             DFELink toCPU2 = SumUpPermKernel2.getOutput("res");
