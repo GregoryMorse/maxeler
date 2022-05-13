@@ -316,7 +316,7 @@ union {
       actions.dualGlynnRowsGray.instream_InputMtx6 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx6 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx7 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx7 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.routing_string = ROUTING_STRING
-        "InputMtxChain50 -> InputMtxFanout50, "
+        ", InputMtxChain50 -> InputMtxFanout50, "
         "InputMtxChain60 -> InputMtxFanout60, InputMtxChain61 -> InputMtxFanout61, "
         "InputMtxFanout70 -> InputMtxChain70, InputMtxFanout71 -> InputMtxChain71, InputMtxFanout72 -> InputMtxChain72, "
         "colSumsChain461 -> colSumsFanout461, "
