@@ -566,7 +566,7 @@ calculate_outputs_probability(
         PicState_int64 adapted_output_state = output_state.filter(filterNonZero);
     
         
-        GlynnPermanentCalculatorRepeated permanentCalculatorRecursive;
+        GlynnPermanentCalculatorRepeatedLongDouble permanentCalculatorRecursive;
         permanent = permanentCalculatorRecursive.calculate(
             modifiedInterferometerMatrix,
             adapted_input_state,
