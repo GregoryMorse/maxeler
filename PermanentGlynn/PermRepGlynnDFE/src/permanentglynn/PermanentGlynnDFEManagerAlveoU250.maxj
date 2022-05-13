@@ -5,7 +5,6 @@ import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.platform.max5.manager.ImplementationStrategy;
 import com.maxeler.platform.max5.manager.SynthesisStrategy;
 import com.maxeler.platform.max5.manager.BuildConfig;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.ManagerBlock ;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
@@ -34,13 +33,14 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         setup(this, params.dual(), params.isSim(), params.useFloat());
     }
 
-    public void assignKernelToSLR(ManagerBlock kernel, int slr_index) {
+    public void selectSLR(int slr_index) {
         NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
         if (slr_index < 0 || slr_index >= availableRegions.length) {
-            //error
+            throw new IllegalArgumentException();
         }
-        assignToNamedRegion(kernel, availableRegions[slr_index]);
+        pushNamedRegion(availableRegions[slr_index]);
     }
+    public void unselectSLR() { popRegion(); }
 
     public static void main(final String[] argv) {
         final PermanentGlynnEngineParameters params = new PermanentGlynnEngineParameters(argv);
@@ -73,7 +73,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             );
         conf.setParallelism(4);
 
-        manager.setDefaultStreamClockFrequency(200);
+        manager.setDefaultStreamClockFrequency(300);
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
