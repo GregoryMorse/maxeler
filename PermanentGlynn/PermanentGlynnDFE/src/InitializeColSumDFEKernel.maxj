@@ -54,6 +54,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     }
     public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
+        int CEPipelining = getKernelConfig().optimization.getCEPipelining();
         DFEType IntType = dfeInt(64);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(15, 64) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
@@ -93,8 +94,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, initNeedData);
 
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), rows - (basekernpow2 + (dual ? 1 : 0)) - 1);
-        for (int i = 0; i < 5; i++) initCount = optimization.pipeline(initCount); 
-        for (int i = 0; i < 3; i++) isInit = optimization.pipeline(isInit);
+        for (int i = 0; i < 3+CEPipelining; i++) initCount = optimization.pipeline(initCount); 
+        for (int i = 0; i < 1+CEPipelining; i++) isInit = optimization.pipeline(isInit);
         DFEVar initCountM1 = (initCount - 1);
         if (dual) for (int i = 0; i < 7; i++) initCountM1 = optimization.pipeline(initCountM1);
         DFEVar initToOneHot = isInit;
@@ -129,7 +130,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             allRows[i] <== (i < 32 ? initOneHot[i] : optimization.pipeline(initOneHot[i])) ? (i < 32 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
         }
         //read row from input matrix
-        for (int i = 0; i < 8; i++) grayCounter.changePosition = optimization.pipeline(grayCounter.changePosition);
+        for (int i = 0; i < 6+CEPipelining; i++) grayCounter.changePosition = optimization.pipeline(grayCounter.changePosition);
         if (dual) for (int i = 0; i < 6; i++) grayCounter.changePosition = optimization.pipeline(grayCounter.changePosition);
         DFEVar changePosIsZero = grayCounter.changePosition === (rowpow2 - 1); //changePos === 0;
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);       
@@ -157,7 +158,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar isGcodeBits = isInit & (dual ? initGtRowPow2 : initGtRowPow2 & optimization.pipeline((rowpow2 !== 0) | ~firstTick)); //isInit 3+2+4 delay
         isInit = optimization.pipeline(isInit);        
         if (dual) for (int i = 0; i < 2; i++) isInit = optimization.pipeline(isInit); 
-        for (int i = 0; i < 8; i++) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
+        for (int i = 0; i < 6+CEPipelining; i++) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
         if (dual) for (int i = 0; i < 7; i++) grayCounter.changeValue = optimization.pipeline(grayCounter.changeValue);
         DFEVar isNeg = null;
 	    if (!dual) isNeg = (changePosIsZero ^ grayCounter.changeValue) & ~isInit; //isInit 3+2+4+1 delay
@@ -214,7 +215,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (useFloat) optimization.popNoPipelining();
 
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
-        for (int i = 0; i < 13 + (useFloat ? 4 : 0); i++) isCalc = optimization.pipeline(isCalc);
+        for (int i = 0; i < 11+CEPipelining + (useFloat ? 4 : 0); i++) isCalc = optimization.pipeline(isCalc);
         if (dual) for (int i = 0; i < 7; i++) isCalc = optimization.pipeline(isCalc);
         for (int i = 0; i < kerns; i++) {
             io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
