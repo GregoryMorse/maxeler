@@ -28,6 +28,7 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateValue;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmExpr;
 import com.maxeler.maxcompiler.v2.statemachine.DFEsmInput;
@@ -40,13 +41,25 @@ import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 
 public class InitializeColSumDFEKernel extends Kernel {
 
-    class CounterWithInitValue extends KernelStateMachine
+    static int countSMID = 0;
+    DFEVar[] makeCounterWithInitValue(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar userReset, boolean needWrap, KernelLib owner)
+    {
+        SMIO smio = addStateMachine("CounterWithInitValue" + countSMID++,
+            new CounterWithInitValue(owner, bit_width, max.getType().isConcreteType() ? max.getType().getTotalBits() : bit_width + 1, 0, inc, userReset != null, needWrap));
+        smio.connectInput("initValue", initValue);
+        smio.connectInput("max", max);
+        if (userReset != null) smio.connectInput("userReset", userReset);
+        smio.connectInput("enable", enable);
+        return new DFEVar[] { smio.getOutput("count"), needWrap ? smio.getOutput("wrap") : null };
+    }
+
+    class CounterWithInitValue extends KernelStateMachine //requires a reset signal for initialization, reset happens on current tick, not next tick
     {
         private final int m_bit_width;
         private final long m_inc;
         private final long m_wrap_value;
         private final boolean m_has_reset;
-        private final DFEsmValueType m_max_type;
+        private final boolean m_needWrap;
         private final DFEsmValueType m_count_type;
         private final DFEsmValueType m_count_type_int;
         private final DFEsmOutput m_count;
@@ -61,92 +74,93 @@ public class InitializeColSumDFEKernel extends Kernel {
         private final DFEsmValue m_init_value;
         private DFEsmValue wrap;
         private DFEsmValue enable_i;
-        protected CounterWithInitValue(KernelLib owner, int bit_width, long wrap_value, long inc, boolean has_reset)
+        public CounterWithInitValue(KernelLib owner, int bit_width, int max_width, long wrap_value, long inc, boolean has_reset, boolean needWrap)
         {
             super(owner);
-            this.m_bit_width = bit_width;
-            this.m_wrap_value = wrap_value;
-            this.m_inc = inc;
-            this.m_max_type = StateMachineLib.dfeUInt(bit_width + 1);
-            this.m_has_reset = has_reset;
-            this.m_user_enable = null;
-            this.m_user_reset = null;
-            this.wrap = null;
-            this.enable_i = null;
-            this.m_count_type = StateMachineLib.dfeUInt(this.m_bit_width);
-            this.m_count_type_int = StateMachineLib.dfeUInt(this.m_bit_width + 1);
-            this.m_init_value = this.io.input("initValue", m_count_type).cast(this.m_count_type_int);
-            this.m_count = this.io.output("count", this.m_count_type);
-            this.m_wrap = this.io.output("wrap", StateMachineLib.dfeBool());
-            this.m_limit = this.io.input("max", StateMachineLib.dfeUInt(this.m_max_type.getTotalBits())).cast(this.m_count_type_int);
-            this.m_user_enable = this.io.input("enable", StateMachineLib.dfeBool());
-            if (this.m_has_reset) {
-                this.m_user_reset = this.io.input("userReset", StateMachineLib.dfeBool());
-                this.enable_i = this.m_user_enable.or(this.m_user_reset);
+            m_bit_width = bit_width;
+            m_wrap_value = wrap_value;
+            m_inc = inc;
+            m_has_reset = has_reset;
+            m_needWrap = needWrap;
+            m_user_enable = null;
+            m_user_reset = null;
+            wrap = null;
+            enable_i = null;
+            m_count_type = StateMachineLib.dfeUInt(m_bit_width);
+            m_count_type_int = StateMachineLib.dfeUInt(m_bit_width + 1);
+            m_init_value = io.input("initValue", m_count_type).cast(m_count_type_int);
+            m_count = io.output("count", m_count_type);
+            m_wrap = needWrap ? io.output("wrap", StateMachineLib.dfeBool()) : null;
+            m_limit = io.input("max", StateMachineLib.dfeUInt(max_width)).cast(m_count_type_int);
+            m_user_enable = io.input("enable", StateMachineLib.dfeBool());
+            if (m_has_reset) {
+                m_user_reset = io.input("userReset", StateMachineLib.dfeBool());
+                enable_i = m_user_enable.or(m_user_reset);
             }
             else {
-                this.enable_i = this.m_user_enable;
+                enable_i = m_user_enable;
             }
-            this.m_counter_value = state.value(m_count_type_int); this.m_counter_value.next.connect(this.m_init_value);
-            this.m_counter_next_value = state.value(m_count_type_int); this.m_counter_next_value.next.connect(this.m_init_value.add(1));
-            this.m_counter_onext_value = state.value(m_count_type_int); this.m_counter_onext_value.next.connect(this.m_init_value.add(2));
-            this.m_has_wrapped = this.state.value(StateMachineLib.dfeBool(), false);
-            this.wrap = this.m_counter_next_value.gte(this.m_limit);
-        }
-        
-        private long getInitNextValue(final long n, final int n2) {
-            return n + this.m_inc * n2;
+            m_counter_value = state.value(m_count_type_int);
+            m_counter_next_value = state.value(m_count_type_int);
+            m_counter_onext_value = state.value(m_count_type_int);
+            m_has_wrapped = state.value(StateMachineLib.dfeBool(), false);
+            wrap = m_counter_next_value.gte(m_limit);
         }
         
         @Override
         protected void nextState() {
-            if (this.m_user_reset != null) {
-                this._IF(this.m_user_reset);
-                this.m_counter_value.next.connect(this.m_wrap_value);
-                this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 1));
-                this.m_counter_onext_value.next.connect(this.getInitNextValue(this.m_wrap_value, 2));
-                this._ELSE();
-                this.nextStateProcessEnable();
-                this._END_IF();
+            if (m_user_reset != null) {
+                _IF(m_user_reset);
+                m_counter_value.next.connect(m_init_value);
+                m_counter_next_value.next.connect(m_init_value.add(m_inc * 1));
+                m_counter_onext_value.next.connect(m_init_value.add(m_inc * 2));
+                m_has_wrapped.next.connect(false);
+                _ELSE();
+                nextStateProcessEnable();
+                _END_IF();
             }
             else {
-                this.nextStateProcessEnable();
+                nextStateProcessEnable();
             }
         }
         
         void nextStateProcessEnable() {
-            if (this.m_user_enable != null) {
-                this._IF(this.m_user_enable);
-                this.genNextState();
-                this._END_IF();
+            if (m_user_enable != null) {
+                _IF(m_user_enable);
+                genNextState();
+                _END_IF();
             }
             else {
-                this.genNextState();
+                genNextState();
             }
         }
         
         private void genNextState() {
-            this.m_counter_onext_value.next.connect((DFEsmExpr)this.m_counter_next_value.add(2L * this.m_inc));
-            this._IF(this.wrap);
-            this.m_has_wrapped.next.connect(true);
-            this.m_counter_value.next.connect(this.m_wrap_value);
-            this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 1));
-            this._ELSE();
-            this._IF(this.m_has_wrapped);
-            this.m_has_wrapped.next.connect(false);
-            this.m_counter_value.next.connect((DFEsmExpr)this.m_counter_next_value);
-            this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 2));
-            this._ELSE();
-            this.m_counter_value.next.connect((DFEsmExpr)this.m_counter_next_value);
-            this.m_counter_next_value.next.connect((DFEsmExpr)this.m_counter_onext_value);
-            this._END_IF();
-            this._END_IF();
+            m_counter_onext_value.next.connect((DFEsmExpr)m_counter_next_value.add(2L * m_inc));
+            _IF(wrap);
+            m_has_wrapped.next.connect(true);
+            m_counter_value.next.connect(m_wrap_value);
+            m_counter_next_value.next.connect(m_wrap_value + m_inc * 1);
+            _ELSE();
+            _IF(m_has_wrapped);
+            m_has_wrapped.next.connect(false);
+            m_counter_value.next.connect((DFEsmExpr)m_counter_next_value);
+            m_counter_next_value.next.connect(m_wrap_value + m_inc * 2);
+            _ELSE();
+            m_counter_value.next.connect((DFEsmExpr)m_counter_next_value);
+            m_counter_next_value.next.connect((DFEsmExpr)m_counter_onext_value);
+            _END_IF();
+            _END_IF();
         }
         
         @Override
         protected void outputFunction() {
-            this.m_count.connect((DFEsmExpr)this.m_counter_value.slice(0, this.m_bit_width));
-            this.m_wrap.connect((DFEsmExpr)this.wrap.and(this.enable_i));
+            _IF(m_user_reset);
+            m_count.connect((DFEsmExpr)m_init_value.cast(m_count_type));
+            _ELSE();
+            m_count.connect((DFEsmExpr)m_counter_value.slice(0, m_bit_width));
+            _END_IF();
+            if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(enable_i));
         }
     }
     
@@ -182,8 +196,9 @@ public class InitializeColSumDFEKernel extends Kernel {
         return result;
     }
     
-    DFEVar[] counterWithInit(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar userReset, DFEVar nextUserReset, int loopLength, boolean needWrap, boolean pipelineMax, KernelBase <?> owner)
+    DFEVar[] counterWithInit(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar userReset, DFEVar nextUserReset, int loopLength, boolean needWrap, boolean pipelineMax, KernelLib owner)
     {
+        //return makeCounterWithInitValue(bit_width, max, enable, inc, initValue, userReset, needWrap, owner);
         // max>0 required
         
         //Addition-based method
@@ -286,7 +301,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
         return out.reinterpret(var.getType());
     }
-    DFEVector<DFEVar> counterChainWithInit(DFEVar enable, DFEVector<DFEVar> max, DFEVector<DFEVar> initValues, DFEVar userReset, int inc, int loopLength, KernelBase <?> owner) //DFEVar[] initValue, 
+    DFEVector<DFEVar> counterChainWithInit(DFEVar enable, DFEVector<DFEVar> max, DFEVector<DFEVar> initValues, DFEVar userReset, int inc, int loopLength, KernelLib owner) //DFEVar[] initValue, 
     {
         final int counterChainWrapPipelining = 1;
         DFEVector<DFEVar> counterChain = new DFEVectorType<DFEVar>(max[0].getType(), max.getType().getSize()).newInstance(this);
@@ -407,10 +422,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar rowChangeIndex = io.input("rowChangeIndices", dfeUInt(8), repeatPipeline(startOfRowLoop, 8-CEPipelining)).cast(dfeUInt(6));
         DFEVar rowChangeIndex4 = repeatPipeline(rowChangeIndex, 2+CEPipelining);
         DFEVar inpmp = rowChangeIndex4 + 1;
-        DFEVar[] mplicityCounter = counterWithInit(6, rowChangeIndex, constant.var(dfeBool(), 1), 1, constant.zero(dfeUInt(6)), initLoops[2], optimization.pipeline(initLoops[2]), loopLength, true, false, this);
+        //DFEVar[] mplicityCounter = counterWithInit(6, rowChangeIndex, constant.var(dfeBool(), 1), 1, constant.zero(dfeUInt(6)), initLoops[2], optimization.pipeline(initLoops[2]), loopLength, true, false, this);
+        DFEVar[] mplicityCounter = makeCounterWithInitValue(6, rowChangeIndex, startOfLoop, 1, constant.zero(dfeUInt(6)), startOfRowLoop, true, this);
+        //Count.Counter mplicityCounter = control.count.makeCounter(control.count.makeParams(6).withMax(rowChangeIndex).withInc(1).withEnable(startOfLoop));
+        //DFEVar mplicityCount = mplicityCounter.getCount();
+        //mplicityWrap <== mplicityCounter.getWrap();
         DFEVar mplicityCount = mplicityCounter[0];
-        mplicityWrap <== mplicityCounter[1];
-        //DFEVar mplicityCount = control.count.makeCounter(control.count.makeParams(6).withMax(rowChangeIndex)).getCount();
+        mplicityWrap <== startOfLoop ? mplicityCounter[1] : stream.offset(mplicityWrap, -1);
+        if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
         DFEVar curdir = dfeUInt(8).newInstance(this);
         DFEVar nextCurDir = repeatPipeline(repeatPipeline(initLoops[1], CEPipelining-2) ? io.input("initDirections", dfeUInt(8), initLoops[0]) : repeatPipeline(stream.offset(curdir, -loopLength), loopLength -1 - 7), 7); //divide loop to meet timing in mplicityWrap
         
