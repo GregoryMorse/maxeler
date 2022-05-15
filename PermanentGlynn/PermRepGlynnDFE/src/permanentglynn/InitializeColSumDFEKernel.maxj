@@ -27,7 +27,129 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
 
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateValue;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmExpr;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmInput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmOutput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
+//import com.maxeler.maxcompiler.v2.statemachine.StateMachine;
+import com.maxeler.maxcompiler.v2.statemachine.StateMachineLib;
+import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
+import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
+
 public class InitializeColSumDFEKernel extends Kernel {
+
+    class CounterWithInitValue extends KernelStateMachine
+    {
+        private final int m_bit_width;
+        private final long m_inc;
+        private final long m_wrap_value;
+        private final boolean m_has_reset;
+        private final DFEsmValueType m_max_type;
+        private final DFEsmValueType m_count_type;
+        private final DFEsmValueType m_count_type_int;
+        private final DFEsmOutput m_count;
+        private final DFEsmOutput m_wrap;
+        private final DFEsmStateValue m_counter_value;
+        private final DFEsmStateValue m_counter_next_value;
+        private final DFEsmStateValue m_counter_onext_value;
+        private final DFEsmStateValue m_has_wrapped;
+        private DFEsmValue m_user_enable;
+        private DFEsmInput m_user_reset;
+        private final DFEsmValue m_limit;
+        private final DFEsmValue m_init_value;
+        private DFEsmValue wrap;
+        private DFEsmValue enable_i;
+        protected CounterWithInitValue(KernelLib owner, int bit_width, long wrap_value, long inc, boolean has_reset)
+        {
+            super(owner);
+            this.m_bit_width = bit_width;
+            this.m_wrap_value = wrap_value;
+            this.m_inc = inc;
+            this.m_max_type = StateMachineLib.dfeUInt(bit_width + 1);
+            this.m_has_reset = has_reset;
+            this.m_user_enable = null;
+            this.m_user_reset = null;
+            this.wrap = null;
+            this.enable_i = null;
+            this.m_count_type = StateMachineLib.dfeUInt(this.m_bit_width);
+            this.m_count_type_int = StateMachineLib.dfeUInt(this.m_bit_width + 1);
+            this.m_init_value = this.io.input("initValue", m_count_type).cast(this.m_count_type_int);
+            this.m_count = this.io.output("count", this.m_count_type);
+            this.m_wrap = this.io.output("wrap", StateMachineLib.dfeBool());
+            this.m_limit = this.io.input("max", StateMachineLib.dfeUInt(this.m_max_type.getTotalBits())).cast(this.m_count_type_int);
+            this.m_user_enable = this.io.input("enable", StateMachineLib.dfeBool());
+            if (this.m_has_reset) {
+                this.m_user_reset = this.io.input("userReset", StateMachineLib.dfeBool());
+                this.enable_i = this.m_user_enable.or(this.m_user_reset);
+            }
+            else {
+                this.enable_i = this.m_user_enable;
+            }
+            this.m_counter_value = state.value(m_count_type_int); this.m_counter_value.next.connect(this.m_init_value);
+            this.m_counter_next_value = state.value(m_count_type_int); this.m_counter_next_value.next.connect(this.m_init_value.add(1));
+            this.m_counter_onext_value = state.value(m_count_type_int); this.m_counter_onext_value.next.connect(this.m_init_value.add(2));
+            this.m_has_wrapped = this.state.value(StateMachineLib.dfeBool(), false);
+            this.wrap = this.m_counter_next_value.gte(this.m_limit);
+        }
+        
+        private long getInitNextValue(final long n, final int n2) {
+            return n + this.m_inc * n2;
+        }
+        
+        @Override
+        protected void nextState() {
+            if (this.m_user_reset != null) {
+                this._IF(this.m_user_reset);
+                this.m_counter_value.next.connect(this.m_wrap_value);
+                this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 1));
+                this.m_counter_onext_value.next.connect(this.getInitNextValue(this.m_wrap_value, 2));
+                this._ELSE();
+                this.nextStateProcessEnable();
+                this._END_IF();
+            }
+            else {
+                this.nextStateProcessEnable();
+            }
+        }
+        
+        void nextStateProcessEnable() {
+            if (this.m_user_enable != null) {
+                this._IF(this.m_user_enable);
+                this.genNextState();
+                this._END_IF();
+            }
+            else {
+                this.genNextState();
+            }
+        }
+        
+        private void genNextState() {
+            this.m_counter_onext_value.next.connect((DFEsmExpr)this.m_counter_next_value.add(2L * this.m_inc));
+            this._IF(this.wrap);
+            this.m_has_wrapped.next.connect(true);
+            this.m_counter_value.next.connect(this.m_wrap_value);
+            this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 1));
+            this._ELSE();
+            this._IF(this.m_has_wrapped);
+            this.m_has_wrapped.next.connect(false);
+            this.m_counter_value.next.connect((DFEsmExpr)this.m_counter_next_value);
+            this.m_counter_next_value.next.connect(this.getInitNextValue(this.m_wrap_value, 2));
+            this._ELSE();
+            this.m_counter_value.next.connect((DFEsmExpr)this.m_counter_next_value);
+            this.m_counter_next_value.next.connect((DFEsmExpr)this.m_counter_onext_value);
+            this._END_IF();
+            this._END_IF();
+        }
+        
+        @Override
+        protected void outputFunction() {
+            this.m_count.connect((DFEsmExpr)this.m_counter_value.slice(0, this.m_bit_width));
+            this.m_wrap.connect((DFEsmExpr)this.wrap.and(this.enable_i));
+        }
+    }
+    
     static int bitlength(long i) {
         int r = 0;
         while ((i >>= 1) != 0) r++;
