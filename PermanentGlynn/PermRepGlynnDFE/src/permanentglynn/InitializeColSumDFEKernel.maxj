@@ -111,9 +111,9 @@ public class InitializeColSumDFEKernel extends Kernel {
         protected void nextState() {
             if (m_user_reset != null) {
                 _IF(m_user_reset);
-                m_counter_value.next.connect(m_init_value);
-                m_counter_next_value.next.connect(m_init_value.add(m_inc * 1));
-                m_counter_onext_value.next.connect(m_init_value.add(m_inc * 2));
+                m_counter_value.next.connect(m_init_value.add(m_inc * 1));
+                m_counter_next_value.next.connect(m_init_value.add(m_inc * 2));
+                m_counter_onext_value.next.connect(m_init_value.add(m_inc * 3));
                 m_has_wrapped.next.connect(false);
                 _ELSE();
                 nextStateProcessEnable();
@@ -157,10 +157,11 @@ public class InitializeColSumDFEKernel extends Kernel {
         protected void outputFunction() {
             _IF(m_user_reset);
             m_count.connect((DFEsmExpr)m_init_value.cast(m_count_type));
+            if (m_needWrap) m_wrap.connect(m_init_value.add(m_inc * 1).gte(m_limit));
             _ELSE();
             m_count.connect((DFEsmExpr)m_counter_value.slice(0, m_bit_width));
-            _END_IF();
             if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(enable_i));
+            _END_IF();
         }
     }
     
@@ -423,11 +424,12 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar rowChangeIndex4 = repeatPipeline(rowChangeIndex, 2+CEPipelining);
         DFEVar inpmp = rowChangeIndex4 + 1;
         //DFEVar[] mplicityCounter = counterWithInit(6, rowChangeIndex, constant.var(dfeBool(), 1), 1, constant.zero(dfeUInt(6)), initLoops[2], optimization.pipeline(initLoops[2]), loopLength, true, false, this);
-        DFEVar[] mplicityCounter = makeCounterWithInitValue(6, rowChangeIndex, startOfLoop, 1, constant.zero(dfeUInt(6)), startOfRowLoop, true, this);
+        DFEVar[] mplicityCounter = makeCounterWithInitValue(6, rowChangeIndex, startOfLoop, 1, constant.zero(dfeUInt(6)), isRowInit, true, this);
         //Count.Counter mplicityCounter = control.count.makeCounter(control.count.makeParams(6).withMax(rowChangeIndex).withInc(1).withEnable(startOfLoop));
         //DFEVar mplicityCount = mplicityCounter.getCount();
         //mplicityWrap <== mplicityCounter.getWrap();
-        DFEVar mplicityCount = mplicityCounter[0];
+        DFEVar mplicityCount = dfeUInt(6).newInstance(this);
+        mplicityCount <== startOfLoop ? mplicityCounter[0] : stream.offset(mplicityCount, -1);
         mplicityWrap <== startOfLoop ? mplicityCounter[1] : stream.offset(mplicityWrap, -1);
         if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
         DFEVar curdir = dfeUInt(8).newInstance(this);
