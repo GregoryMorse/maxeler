@@ -54,7 +54,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
-        ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
+        ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
 
         conf.setImplementationStrategies( PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM, ImplementationStrategy.MAXELER4
             //ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
