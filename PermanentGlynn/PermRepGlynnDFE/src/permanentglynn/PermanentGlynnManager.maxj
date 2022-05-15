@@ -84,6 +84,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         System.out.println("UseGlobalClockBuffer: " + config.getUseGlobalClockBuffer());
         System.out.println("UseGlobalClockLinesRst: " + config.getUseGlobalClockLinesRst());*/
         getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
+        getCurrentKernelConfig().optimization.setCEPipelining(3);
         getCurrentKernelConfig().optimization.setInlining(true);
         getCurrentKernelConfig().optimization.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
         getCurrentKernelConfig().optimization.setPreserveNodeRegisters(false);
