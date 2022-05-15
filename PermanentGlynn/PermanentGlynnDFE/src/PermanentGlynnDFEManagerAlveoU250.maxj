@@ -52,9 +52,12 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
+        
+        ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
+
                 
         //Ranking best to worst: PERFORMANCE_EXTRA_TIMING_OPT, MAXELER3, MAXELER1, MAXELER2, MAXELER4, PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, PERFORMANCE_EXPLORE, VIVADO_DEFAULT
-        conf.setImplementationStrategies( ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT, ImplementationStrategy.MAXELER3
+        conf.setImplementationStrategies( PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM, ImplementationStrategy.MAXELER4
             //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
             //ImplementationStrategy.FLOW_RUN_POST_ROUTE_PHYS_OPT, 
             //ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT
@@ -64,7 +67,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             //ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW,  
             //ImplementationStrategy.FLOW_QUICK, ImplementationStrategy.FLOW_RUN_PHYS_OPT, ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED,
             //ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
-            //ImplementationStrategy.MAXELER4,
+            //ImplementationStrategy.MAXELER3,
             //ImplementationStrategy.PERFORMANCE_BALANCE_SLLS, ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
             //ImplementationStrategy.PERFORMANCE_EXPLORE,            
             //ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
