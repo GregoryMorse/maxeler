@@ -54,28 +54,43 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
-        ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
+        //route options: RouteOpt.ALTERNATE_CLB_ROUTING, RouteOpt.EXPLORE, RouteOpt.createCustom(RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), RouteOpt.createCustom(RouteOpt.EXPLORE, true, false, "")
+        
+        //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
+        ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+        ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+        
 
-        conf.setImplementationStrategies( PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM, ImplementationStrategy.MAXELER4
-            //ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
-            //ImplementationStrategy.VIVADO_DEFAULT,
-            //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP,
-            //ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM,
-            //ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW,  
-            //ImplementationStrategy.FLOW_QUICK, ImplementationStrategy.FLOW_RUN_PHYS_OPT, ImplementationStrategy.FLOW_RUN_POST_ROUTE_PHYS_OPT, ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED,
-            //ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
-            //ImplementationStrategy.MAXELER3,
-            //ImplementationStrategy.PERFORMANCE_BALANCE_SLLS, ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
-            //ImplementationStrategy.PERFORMANCE_EXPLORE,
-            //ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
-            //ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
-            //ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_SPREAD_SLLS,
-            //ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT
-            //ImplementationStrategy.POWER_DEFAULT_OPTS,ImplementationStrategy.POWER_EXPLORE_AREA 
-            );
-        conf.setParallelism(4);
+        ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
+            ImplementationStrategy.VIVADO_DEFAULT,
+            //ImplementationStrategy.FLOW_RUN_PHYS_OPT //default placement strategy
+            ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED, ImplementationStrategy.FLOW_QUICK,
+            PERFORMANCE_BALANCE_SLRS, PERFORMANCE_HIGH_UTIL_SLRS,
+            ImplementationStrategy.PERFORMANCE_EXPLORE,
+            ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT, //same placement strategy, different physical strategy
+            ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
+            ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
+            ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
+            ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
+            ImplementationStrategy.PERFORMANCE_SPREAD_SLLS, ImplementationStrategy.PERFORMANCE_BALANCE_SLLS,
+             //for congestion strategies, explore same placement as high, aggressive physical strategy
+            ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
+            ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
+            //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP, //default placement strategy
+            //ImplementationStrategy.POWER_DEFAULT_OPTS, ImplementationStrategy.POWER_EXPLORE_AREA, //default placement strategy
+        };
+        
+        //PERFORMANCE_REFINE_PLACEMENT -> PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT
+        //PERFORMANCE_EXPLORE -> PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT
+        //FLOW_RUN_PHYS_OPT -> FLOW_RUN_POST_ROUTE_PHYS_OPT
+        //PERFORMANCE_NET_DELAY_HIGH -> MAXELER1, MAXELER3
+        //PERFORMANCE_RETIMING -> MAXELER2
+        //CONGESTION_SSI_SPREAD_LOGIC_HIGH -> MAXELER4
+        //Ranking best to worst: 
+        conf.setImplementationStrategies(probeStrategies);
+        conf.setParallelism(5);
 
-        manager.setDefaultStreamClockFrequency(250);
+        manager.setDefaultStreamClockFrequency(200);
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
