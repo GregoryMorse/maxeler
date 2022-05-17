@@ -833,7 +833,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
         DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64)) << msizeadj;
         DFEVar tickCount, isCalc = null;
-        DFEVar isLocal = null;
+        DFEVar isLocal = null, parity = null, curMplicity = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
         if (colMux) {
             DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(6));
@@ -875,7 +875,14 @@ public class PermanentGlynnDFEKernel extends Kernel {
             
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-                colmnSumVector <== io.input("colSums" + j, colSumType, isCalc);
+                if (j == 0) {
+                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + 38), isCalc);
+                    colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
+                    curMplicity = rawBits.slice(colSumType.getTotalBits(), 38).reinterpret(dfeUInt(38));
+                    parity = rawBits.slice(colSumType.getTotalBits() + 38, 1).reinterpret(dfeBool());
+                } else {
+                    colmnSumVector <== io.input("colSums" + j, colSumType, isCalc);
+                }
                 //debug.simPrintf("%KObj%\n", colmnSumVector);
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
@@ -904,7 +911,14 @@ public class PermanentGlynnDFEKernel extends Kernel {
             tickCount = control.count.simpleCounter(64, ticksBeforeCols);
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-                colmnSumVector <== io.input("colSums" + j, colSumType);
+                if (j == 0) {
+                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + 38));
+                    colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
+                    curMplicity = rawBits.slice(colSumType.getTotalBits(), 38).reinterpret(dfeUInt(38));
+                    parity = rawBits.slice(colSumType.getTotalBits() + 38, 1).reinterpret(dfeBool());
+                } else {
+                    colmnSumVector <== io.input("colSums" + j, colSumType);
+                }
                 //debug.simPrintf("%KObj%\n", colmnSumVector);
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
@@ -974,14 +988,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (extraprec > 63) extraprec = 63;
 
         }
-        DFEVar parity;
-        if (colMux) {
-            for (int i = 0; i < 46; i++) isCalc = optimization.pipeline(isCalc);
-            parity = io.input("curMplicity", dfeUInt(1+38), isCalc);
-        } else parity = io.input("curMplicity", dfeUInt(1+38));
-        DFEVar curMplicity = parity.slice(0, 38).reinterpret(dfeUInt(38));
-        for (int i = 0; i < 9; i++) curMplicity = optimization.pipeline(curMplicity);
-        parity = parity.get(38).reinterpret(dfeBool());
+        for (int i = 0; i < 46+(useFloat ? 219 : 0); i++) parity = optimization.pipeline(parity);
+        for (int i = 0; i < 74+(useFloat ? 219 : 0); i++) curMplicity = optimization.pipeline(curMplicity); 
         if (useFloat) {
             colSumFix[0] = colSumFix[0] * curMplicity.cast(dataTypeFix128); //mixed point floating point ops not supported
         } else {
@@ -992,9 +1000,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar tickParity = tickCount.get(0);
         for (int i = 0; i < 6; i++) tickParity = optimization.pipeline(tickParity); 
         DFEVar sign = ((tickParity ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
-        for (int i = 0; i < 49; i++) sign = optimization.pipeline(sign);
+        for (int i = 0; i < 49+(useFloat ? 219 : 0); i++) sign = optimization.pipeline(sign);
         sign = sign ^ parity;
-        for (int i = 0; i < 10+5 + (useFloat ? 22 : 0); i++) sign = optimization.pipeline(sign);
+        for (int i = 0; i < 34 + (useFloat ? 22 : 0); i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
         if (colMux) {
