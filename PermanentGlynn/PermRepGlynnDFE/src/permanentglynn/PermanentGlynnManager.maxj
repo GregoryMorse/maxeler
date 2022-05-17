@@ -146,14 +146,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             colIndex.setAdditionalRegisters(regPerX); //PCIE->SLR0 - 1 crossings
             colIndexFanout = slrCrossingFanoutChain("colIndex", "", colIndex, 0, 3, regPerX);
         }
-        DFELink binCoeff = initColSumKernels[0].getOutput("bincoeff");
-        binCoeff.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-        Fanout binCoeffFanout[] = slrCrossingFanoutChain("binCoeff", "", binCoeff, 0, 3, regPerX), binCoeffFanout2[] = null;
-        if (dual && isSim) {
-            DFELink binCoeff2 = initColSumKernels[initKerns].getOutput("bincoeff");
-            binCoeff2.setAdditionalRegisters(0); //SLR0->SLR0 - 0 crossings
-            binCoeffFanout2 = slrCrossingFanoutChain("binCoeff", "2", binCoeff2, 0, 3, regPerX);
-        }
         for (int i = 0; i < numkernels; i++) {
             selectSLR(i % 4);
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat, colMux));
@@ -165,11 +157,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 colIndexInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
                 colIndexInput <== colIndexOutput;
             }
-            DFELink mplicityOutput = (dual && isSim && i >= numkernels * numarrays / 2) ? binCoeffFanout2[(i % 4 == 3 ? i-1 : i) % 4].addOutput("curMplicity" + i) : binCoeffFanout[(i % 4 == 3 ? i-1 : i) % 4].addOutput("curMplicity" + i);
-            mplicityOutput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR0->SLR1 or SLR1->SLR2 or SLR2->SLR3 - 1 crossing
-            DFELink mplicityInput = colSumKernels[i].getInput("curMplicity");
-            mplicityInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
-            mplicityInput <== mplicityOutput;
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
