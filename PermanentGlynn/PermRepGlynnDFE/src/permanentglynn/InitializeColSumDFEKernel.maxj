@@ -434,6 +434,13 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar startOfRowLoop71 = repeatPipeline(startOfRowLoop, 71 + (dual ? 2 : 0));
         DFEVar readRow = startOfRowLoop71 & needData;
         readRow = repeatPipeline(readRow, (kernNum == 0 ? 1 : 0));
+        DFEVectorType < DFEVar > oneRowPackedType = new DFEVectorType < DFEVar > (IntType, 2 * cols + 1);
+        //DFEVector < DFEVar > oneRowPacked = oneRowPackedType.newInstance(this);
+        //oneRowPacked <== io.input("mappedInputMtx_Rows", oneRowPackedType, startOfRowLoop);
+        //DFEVector<DFEVar> oneRow = oneRowPacked.slice(0, oneRowType.getTotalBits()).reinterpret(oneRowType);
+        //DFEVar rowChangeIndex = oneRowPacked.slice(oneRowType.getTotalBits(), 6).reinterpret(dfeUInt(6));
+        //DFEVar initDirection = oneRowPacked.slice(oneRowType.getTotalBits() + 6, 1).reinterpret(dfeUInt(1));
+        //DFEVar initBinCoeff = kernNum != 0 ? null : oneRowPacked.slice(oneRowType.getTotalBits() + 6 + 1, 38).reinterpret(dfeUInt(38)); 
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, readRow);
         DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
                 c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
