@@ -340,6 +340,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEComplexType cplxFixCommonAddType = new DFEComplexType(dataTypeFixCommonAdd);
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFixCommonAddType, cols);
         DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (useFloat ? cplxFixCommonAddType : cplxFix64Type, cols);
+        
         int mplicityRows = rows - (basekernpow2 + (dual ? 1 : 0)) - 1;
         int bitsToAddressSum = MathUtils.bitsToAddress(mplicityRows);
 
@@ -431,7 +432,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar mplicityCount = dfeUInt(6).newInstance(this);
         mplicityCount <== startOfLoop ? mplicityCounter[0] : stream.offset(mplicityCount, -1);
         mplicityWrap <== startOfLoop ? mplicityCounter[1] : stream.offset(mplicityWrap, -1);
-        if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
+        //if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
         DFEVar curdir = dfeUInt(8).newInstance(this);
         DFEVar nextCurDir = repeatPipeline(repeatPipeline(initLoops[1], CEPipelining-2) ? io.input("initDirections", dfeUInt(8), initLoops[0]) : repeatPipeline(stream.offset(curdir, -loopLength), loopLength -1 - 7), 7); //divide loop to meet timing in mplicityWrap
         
@@ -480,7 +481,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector<DFEVar> initCounters = mplicityType.newInstance(this);
         initCounters <== initMplicityDelay ? counterInitFanned : repeatVectorPipeline(stream.offset(initCounters, -loopLength), loopLength - 1, mplicityRows/2+1);
         DFEVector<DFEVar> rowMultiplicities = mplicityType.newInstance(this);
-        rowMultiplicities <== initMplicity ? rowChangeIndexFanned : repeatVectorPipeline(stream.offset(rowMultiplicities, -loopLength), loopLength - 1, mplicityRows/2+1);
+        rowMultiplicities <== initMplicity ? rowChangeIndexFanned : stream.offset(rowMultiplicities, -1);
         DFEVector<DFEVar> initMultiplicities = new DFEVectorType<DFEVar>(dfeUInt(7), mplicityRows).newInstance(this);
         initMultiplicities <== initMplicityLongDelay ? gcodeCounterFanned : repeatVectorPipeline(stream.offset(initMultiplicities, -loopLength), loopLength - 1, mplicityRows/2+1);
 
@@ -512,6 +513,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < 2; i++) rowMultiplicities = optimization.pipeline(rowMultiplicities);
         inpmp = optimization.pipeline(control.mux(optimization.pipeline(storeRowIndex), rowMultiplicities.getElementsAsList())).cast(dfeUInt(7));
         rowChangeIsNeg = curmp < inpmp;
+        DFEVar binCoeffOutput = null;
         if (kernNum == 0) { //now we need the next multiplicities
             cpInitGrayCode = repeatPipeline(cpInitGrayCode, 7+(dual ? 1 : 0));
             countersZero = cpInitGrayCode !== rowMultiplicities;
@@ -546,7 +548,8 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar lastMultiplicity = repeatPipeline(isTransition, 3+CEPipelining) ? io.input("initBinCoeff", dfeUInt(64), isTransition).cast(dfeUInt(38)) : stream.offset(cur_multiplicity, -loopLength);
             cur_multiplicity <== (mulExact(mulExact(repeatPipeline(lastMultiplicity, 2), num, 38+4, 38+4), control.mux(denom-1, magicDivisionMpliers.getElementsAsList()), 38+4+38+4, 38+4+38+4) >> repeatPipeline(control.mux(denom-1, magicDivisionShifts.getElementsAsList()), 8)).cast(dfeUInt(38));
             //debug.simPrintf(isCalc, "%d %d %d %d %d %d %d %d %d %KObj% %KObj% %KObj% %KObj%\n", repTickCount.get(0), parity, lastMultiplicity, rowIndex, rowChangeMask, curmp, inpmp, num, denom, rowMultiplicities, initMultiplicities, curMultiplicities, cpInitGrayCode);
-            io.output("bincoeff", repeatPipeline((parity ^ repeatPipeline(repTickCount.get(0), 3)), 88+CEPipelining+(dual ? 5 : 0)).cat(lastMultiplicity).reinterpret(dfeUInt(1+38)), dfeUInt(1+38), repeatPipeline(isCalc, 56));
+            binCoeffOutput = repeatPipeline((parity ^ repeatPipeline(repTickCount.get(0), 3)), 88+CEPipelining+(dual ? 5 : 0)).cat(lastMultiplicity).reinterpret(dfeUInt(1+38));
+            //io.output("bincoeff", binCoeffOutput, dfeUInt(1+38), repeatPipeline(isCalc, 56));
         }       
 
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);
@@ -616,7 +619,11 @@ public class InitializeColSumDFEKernel extends Kernel {
         isCalc = repeatPipeline(isCalc, 57 + (useFloat ? 18 : 0) + (dual ? 2 : 0));
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
-            io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
+            if (kernNum == 0) {
+                io.output("colSums" + i, binCoeffOutput.cat(allColSums[i].cast(colTransferType).reinterpret(dfeRawBits(colTransferType.getTotalBits()))), dfeRawBits(colTransferType.getTotalBits() + 1 + 38), isCalc);
+            } else {
+                io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
+            }
         }
     }
 
