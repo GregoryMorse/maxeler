@@ -281,18 +281,6 @@ union {
     ;
 #endif
 
-#define ROUTING_STRING "InputMtxChain10 -> InputMtxFanout10, "\
-    "InputMtxChain20 -> InputMtxFanout20, InputMtxChain21 -> InputMtxFanout21, "\
-    "InputMtxFanout30 -> InputMtxChain30, InputMtxFanout31 -> InputMtxChain31, InputMtxFanout32 -> InputMtxChain32, "\
-    "colSumsChain021 -> colSumsFanout021, "\
-    "colSumsChain031 -> colSumsFanout031, colSumsChain032 -> colSumsFanout032, "\
-    "colSumsChain132 -> colSumsFanout132, "\
-    "colSumsChain201 -> colSumsFanout201, "\
-    "colSumsChain301 -> colSumsFanout301, colSumsChain302 -> colSumsFanout302, "\
-    "colSumsChain312 -> colSumsFanout312, "\
-    "colProdChain21 -> colProdFanout21, "\
-    "colProdChain31 -> colProdFanout31, colProdChain32 -> colProdFanout32"
-    
     // simulation
 #ifndef DUAL
       actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.param_cols = cols, actions.glynnRowsGray.param_totalPerms = totalPerms;
@@ -301,7 +289,6 @@ union {
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.glynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.glynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.glynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.glynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
-      actions.glynnRowsGray.routing_string = ROUTING_STRING;
 #else
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
@@ -315,18 +302,6 @@ union {
       actions.dualGlynnRowsGray.instream_InputMtx5 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx5 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx6 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx6 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx7 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx7 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
-      actions.dualGlynnRowsGray.routing_string = ROUTING_STRING
-        ", InputMtxChain50 -> InputMtxFanout50, "
-        "InputMtxChain60 -> InputMtxFanout60, InputMtxChain61 -> InputMtxFanout61, "
-        "InputMtxFanout70 -> InputMtxChain70, InputMtxFanout71 -> InputMtxChain71, InputMtxFanout72 -> InputMtxChain72, "
-        "colSumsChain461 -> colSumsFanout461, "
-        "colSumsChain471 -> colSumsFanout471, colSumsChain472 -> colSumsFanout472, "
-        "colSumsChain572 -> colSumsFanout572, "
-        "colSumsChain641 -> colSumsFanout641, "
-        "colSumsChain741 -> colSumsFanout741, colSumsChain742 -> colSumsFanout742, "
-        "colSumsChain752 -> colSumsFanout752, "
-        "colProdChain61 -> colProdFanout61, "
-        "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72";
 #else
       actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.param_cols = cols, actions.dualGlynnRowsGray.param_totalPerms = totalPerms;
       actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = sizeof(__int128)*2*totalPerms;
@@ -334,14 +309,12 @@ union {
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
-      actions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
       dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.param_cols = cols, dualactions.dualGlynnRowsGray.param_totalPerms = totalPerms;
       dualactions.dualGlynnRowsGray.outstream_res = res2, dualactions.dualGlynnRowsGray.outstream_size_res = sizeof(__int128)*2*totalPerms;
       dualactions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; dualactions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*COLDIV*rows*totalPerms;
       dualactions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; dualactions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; dualactions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
       dualactions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; dualactions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*COLDIV*rows*totalPerms : 0;
-      dualactions.dualGlynnRowsGray.routing_string = ROUTING_STRING;
 #endif
 #endif
 
