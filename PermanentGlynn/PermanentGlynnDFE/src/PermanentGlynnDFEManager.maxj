@@ -19,17 +19,18 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.Optimizatio
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
     default DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX) //-1 for PCIE
     {
-        for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
+        /*for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
             selectSLR(i);
             Fanout fo = fanout(name + "Fanout" + suffix + i);
             unselectSLR();
-            DFELink inp = fo.getInput();            
+            DFELink inp = fo.getInput();
             inp.setAdditionalRegisters(regPerX);
             inp <== input;
             input = fo.addOutput(name + "Chain" + suffix + i);
             input.setAdditionalRegisters(regPerX);
             if (slrEnd >= slrStart) i++; else i--;
-        }
+        }*/
+        input.setAdditionalRegisters(regPerX * ((slrEnd >= slrStart) ? slrEnd - slrStart : slrStart - slrEnd));
         return input;
     }
 
