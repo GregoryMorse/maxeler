@@ -721,12 +721,13 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                         }
                         memset(&mtxmuxed[j][offset+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols+1-lastcol));
                         mtxmuxed[j][offset+max_fpga_cols].real = mtxfix[0][idx*loopLength*mtxfix[0].stride+max_fpga_cols].real; //maximum of 40*6=240 bits
-                        memcpy(&mtxmuxed[j][offset+mtxfix[j].stride], &mtxfix[0][(idx*loopLength+1)*mtxfix[0].stride], ((idx == rows-1 ? adjLoopLength : loopLength)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
+                        memcpy(&mtxmuxed[j][offset+mtxmuxed[j].stride], &mtxfix[0][(idx*loopLength+1)*mtxfix[0].stride], ((idx == rows-1 ? adjLoopLength : loopLength)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
                     }
                     for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxmuxed[j][i*mtxsize+jdx].real = useFloat ? fOne : fixpow;
                 }
             }
         }
+        
         
         if (colMux) for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
         //for (size_t i = (rowchange_indices.size() % 16 == 0) ? 0 : (16 - rowchange_indices.size() % 16); i != 0; i--) rowchange_indices.push_back(0); //round up to nearest 16 bytes to allow streaming
