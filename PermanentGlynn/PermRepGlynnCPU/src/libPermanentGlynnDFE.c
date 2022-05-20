@@ -261,7 +261,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 {
     if (!initialized) return;
-    int adjLoopLength = changecount+1 < (unsigned)LOOPLENGTH ? changecount+1 : LOOPLENGTH;
+    int adjLoopLength = changecount+1 < (unsigned)LOOPLENGTH && rowchange_indices[rows-1] == 1 ? changecount+1 : LOOPLENGTH;
     uint64_t numOfPartialPerms = onerows;
     //numOfPartialPerms = max(numOfPartialPerms, BASEKERNPOW2+1+1+(useDual ? 1 : 0));//extra 1 since maxTicks cannot be 1, minimum of 2
 
@@ -357,12 +357,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_colIndex = colIndices;
       actions.dualGlynnRowsGray.instream_size_colIndex = roundUp(photons*totalPerms, 16);
 #endif
-      actions.dualGlynnRowsGray.instream_rowChangeIndices = rowchange_indices;
-      actions.dualGlynnRowsGray.instream_size_rowChangeIndices = roundUp(rows*totalPerms, 16);
-      actions.dualGlynnRowsGray.instream_initBinCoeff = mplicity;
-      actions.dualGlynnRowsGray.instream_size_initBinCoeff = roundUp(sizeof(uint64_t) * adjLoopLength * totalPerms, 16);
-      actions.dualGlynnRowsGray.instream_initDirections = initDirections;
-      actions.dualGlynnRowsGray.instream_size_initDirections = roundUp(numInitDir*totalPerms, 16);      
       dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.outstream_res = res2, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
       dualactions.dualGlynnRowsGray.param_totalPerms = totalPerms, dualactions.dualGlynnRowsGray.param_initParities = initParities,
       //dualactions.dualGlynnRowsGray.param_rows = rows,
