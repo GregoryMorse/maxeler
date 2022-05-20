@@ -533,7 +533,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
-    int adjLoopLength = changecount+1 < (unsigned)loopLength ? changecount+1 : loopLength;
+    int adjLoopLength = changecount+1 < (unsigned)loopLength && rowchange_indices[rows - 1] == 1 ? changecount+1 : loopLength;
     for (size_t i = 0; i < actualinits; i++) {
       mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
       size_t basecol = max_fpga_cols * i;
@@ -654,7 +654,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         matrix_base<ComplexFix16> mtxfix[numinits] = {};
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
-        int adjLoopLength = changecount+1 < (unsigned)loopLength ? changecount+1 : loopLength;
+        int adjLoopLength = changecount+1 < (unsigned)loopLength && rowchange_indices[rows - 1] == 1 ? changecount+1 : loopLength;
         for (size_t i = 0; i < actualinits; i++) {
           mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
           size_t basecol = max_fpga_cols * i;
