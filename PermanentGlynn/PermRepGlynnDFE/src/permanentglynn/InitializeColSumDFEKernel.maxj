@@ -211,8 +211,8 @@ public class InitializeColSumDFEKernel extends Kernel {
             //changePosition = dfeUInt(MathUtils.ceilLog2(64)).newInstance(owner);
 
             grayCount = inCounter ^ (inCounter >> 1);
-            //DFEVar bitDiffMask = grayCount ^ stream.offset(grayCount, -loopLength);
-            DFEVar bitDiffMask = Bitops.trailing1Detect(inCounter);
+            DFEVar bitDiffMask = grayCount ^ stream.offset(grayCount, -1);
+            //DFEVar bitDiffMask = Bitops.trailing1Detect(inCounter);
 
             changeValue = (grayCount & bitDiffMask) !== 0;
             changePosition = Bitops.onehotDecode(bitDiffMask);
@@ -662,7 +662,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVector < DFEComplex >> prevColmnSumVector = allKernsType.newInstance(this);
         for (int i = 0; i < kerns; i++) {
             prevColmnSumVector[i] <== optimization.pipeline(firstTicks[3]) ? constant.zero(colSumType) : repeatPipeline(stream.offset(allColSums[i], -loopLength), loopLength - 1 - (useFloat ? 1+13 : 0));
-        }
+        }        
         allColSums <== prevColmnSumVector + toAdd;
         //for float - mux=1 + float add=13, for fixed piont - mux+add is optimized to conditional add=1
         isCalc = repeatPipeline(isCalc, 30 + CEPipelining + (useFloat ? 18 : 0) + (dual ? 4 : 0));
