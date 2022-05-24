@@ -62,20 +62,20 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         
 
         ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
-            ImplementationStrategy.VIVADO_DEFAULT,
-            //ImplementationStrategy.FLOW_RUN_PHYS_OPT //default placement strategy
-            ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED, ImplementationStrategy.FLOW_QUICK,
+             //for congestion strategies, explore same placement as high, aggressive physical strategy
+            ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
+            ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
             PERFORMANCE_BALANCE_SLRS, PERFORMANCE_HIGH_UTIL_SLRS,
+            ImplementationStrategy.PERFORMANCE_SPREAD_SLLS, ImplementationStrategy.PERFORMANCE_BALANCE_SLLS,
             ImplementationStrategy.PERFORMANCE_EXPLORE,
             ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT, //same placement strategy, different physical strategy
             ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
             ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
             ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
             ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
-            ImplementationStrategy.PERFORMANCE_SPREAD_SLLS, ImplementationStrategy.PERFORMANCE_BALANCE_SLLS,
-             //for congestion strategies, explore same placement as high, aggressive physical strategy
-            ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
-            ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
+            ImplementationStrategy.VIVADO_DEFAULT,
+            //ImplementationStrategy.FLOW_RUN_PHYS_OPT //default placement strategy
+            ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED, ImplementationStrategy.FLOW_QUICK,
             //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP, //default placement strategy
             //ImplementationStrategy.POWER_DEFAULT_OPTS, ImplementationStrategy.POWER_EXPLORE_AREA, //default placement strategy
         };
