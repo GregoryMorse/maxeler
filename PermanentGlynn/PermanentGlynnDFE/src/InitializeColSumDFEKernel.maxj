@@ -101,7 +101,9 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (dual) for (int i = 0; i < 7; i++) initCountM1 = optimization.pipeline(initCountM1);
         DFEVar initToOneHot = isInit;
         if (dual) for (int i = 0; i < 5; i++) initToOneHot = optimization.pipeline(initToOneHot);
-        DFEVector<DFEVar> initOneHot = (initToOneHot.cast(dfeUInt(gcodeRows)) << initCountM1).reinterpret(initOneHotType); //isInit 3 delay
+        DFEVar oneHotInit = initToOneHot.cast(dfeUInt(gcodeRows)) << initCountM1;
+        oneHotInit = optimization.pipeline(oneHotInit.slice(gcodeRows/2, gcodeRows - gcodeRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, gcodeRows/2)));
+        DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType); //isInit 3 delay
         for (int i = 0; i < 2; i++) isInit = optimization.pipeline(isInit);
         if (dual) initCount = optimization.pipeline(initCount);
         DFEVar initCountIsZero = initCount === 0;
@@ -128,7 +130,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
         DFEVector < DFEVar > onerow1 = optimization.pipeline(oneRow);
         for (int i = 0; i < gcodeRows; i++) {
-            allRows[i] <== (i < 32 ? initOneHot[i] : optimization.pipeline(initOneHot[i])) ? (i < 32 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
+            allRows[i] <== initOneHot[i] ? (i < gcodeRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
         }
         //read row from input matrix
         for (int i = 0; i < 6+CEPipelining; i++) grayCounter.changePosition = optimization.pipeline(grayCounter.changePosition);
