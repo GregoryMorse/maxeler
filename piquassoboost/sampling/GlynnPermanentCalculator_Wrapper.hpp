@@ -227,9 +227,9 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
 #endif
     else if (self->lib == GlynnDoubleCPU) {
         self->cpu_double = create_GlynnPermanentCalculatorDouble();
-    } else if (self->lib == BBFGPermanentCalculatorRepeatedDouble)
+    } else if (self->lib == BBFGPermanentCalculatorDouble)
         self->BBFGcalculator = new pic::BBFGPermanentCalculator(); 
-    else if (self->lib == BBFGPermanentCalculatorRepeatedLongDouble)
+    else if (self->lib == BBFGPermanentCalculatorLongDouble)
         self->BBFGcalculator = new pic::BBFGPermanentCalculator();
     else
         PyErr_SetString(PyExc_Exception, "Wrong value set for lib.");
