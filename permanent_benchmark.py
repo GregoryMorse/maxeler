@@ -5,7 +5,7 @@ import numpy as np
 from thewalrus import perm
 def perm_complex(A, quad): return perm(A, "ryser")
 def perm_BBFG_complex(A): return perm(A, "bbfg")
-from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnPermanent, GlynnPermanentInf, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF
+from piquassoboost.sampling.Boson_Sampling_Utilities import GlynnPermanent, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF, GlynnPermanentDoubleCPU, BBFGPermanentDouble, BBFGPermanentLongDouble
 import piquasso as pq
 import random
 from scipy.stats import unitary_group
@@ -17,7 +17,7 @@ def checkSim():
   return 'SLIC_CONF' in os.environ #'MAXELEROSDIR'
 hasSim = checkSim(); hasDFE = not hasSim
 
-DEPTH = 12 if hasSim else 39
+DEPTH = 12 if hasSim else 40
 saveFolder = "results"
 
 def pairwise(t):
@@ -162,10 +162,11 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
   return decPairToCplxFloat(decPairScalarDiv(tot, (1 << (n-1)))) #tot
 
 
-calculators = [None, None, None, None, None, None, None]
+calculators = [None, None, None, None, None, None, None, None, None]
 def batch_adapter(Arep, f):
     if isinstance(Arep, list): return [f(A) for A in Arep]
     else: return f(Arep)
+
 #https://github.com/XanaduAI/thewalrus/issues/319 - 0 case bugged in Ryser/BBFG
 def permanent_walrus_quad_Ryser(Arep):
     def f(Arep):
@@ -203,16 +204,22 @@ def permanent_Glynn_DFEFDual(Arep):
     if calculators[5] is None: calculators[5] = GlynnPermanentDualDFEF(Arep)
     else: calculators[5].matrix = Arep
     return calculators[5].calculate()
-def permanent_ChinHuh_calculator(Arep): #walrus_quad_BBFG, 2^6*Glynn_Cpp, 2^5*walrus_quad_Ryser
-    if calculators[6] is None: calculators[6] = ChinHuhPermanentCalculator(Arep, np.ones(Arep.shape[0], np.int64), np.ones(Arep.shape[0], np.int64))
+def permanent_Glynn_Cpp_Double(Arep):
+    if calculators[6] is None: calculators[6] = GlynnPermanentDoubleCPU(Arep)
     else: calculators[6].matrix = Arep
-    def f(Arep):
-        return calculators[6].calculate()
-    return batch_adapter(Arep, f)
+    return calculators[6].calculate()
+def permanent_BBFG_Double(Arep):
+    if calculators[7] is None: calculators[7] = BBFGPermanentDouble(Arep)
+    else: calculators[7].matrix = Arep
+    return calculators[7].calculate()
+def permanent_BBFG_LongDouble(Arep):
+    if calculators[8] is None: calculators[8] = BBFGPermanentLongDouble(Arep)
+    else: calculators[8].matrix = Arep
+    return calculators[8].calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG, permanent_ChinHuh_calculator)
+largePermFuncs = (permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double, permanent_walrus_quad_Ryser) + dfePermFuncs
+testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG)
 permFuncs = testPermFuncs + largePermFuncs
 
 def load_test_data():
@@ -230,7 +237,7 @@ def load_test_data():
       pickle.dump(gen_test_data, f)
   return gen_test_data
 def verify_timing(nmax, batchsize=1):
-  ERRBOUND = 1e-10
+  ERRBOUND = 1e-7
   suffix = "" if batchsize == 1 else str(batchsize)
   verdata = "verifydata.bin"
   resdata = "resultdata" + suffix + ".bin"
