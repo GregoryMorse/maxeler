@@ -7,9 +7,6 @@
 #include "structmember.h"
 #include "GlynnPermanentCalculator.h"
 #include "BBFGPermanentCalculator.h"
-#ifdef __MPFR__
-#include "GlynnPermanentCalculatorInf.h"
-#endif
 
 #ifdef __DFE__
 #include "GlynnPermanentCalculatorDFE.h"
@@ -47,10 +44,6 @@ typedef struct GlynnPermanentCalculator_wrapper {
         pic::GlynnPermanentCalculatorDouble *cpu_double;
         /// BBFG permanent calculator
         pic::BBFGPermanentCalculator *BBFGcalculator;    
-#ifdef __MPFR__
-        /// infinite precision calculator
-        pic::GlynnPermanentCalculatorInf* cpu_inf;
-#endif
     };
 } GlynnPermanentCalculator_wrapper;
 
@@ -102,33 +95,6 @@ release_GlynnPermanentCalculatorDouble( pic::GlynnPermanentCalculatorDouble* ins
     return;
 }
 
-#ifdef __MPFR__
-
-/**
-@brief Creates an instance of class GlynnPermanentCalculatorInf and return with a pointer pointing to the class instance (C++ linking is needed)
-@return Return with a void pointer pointing to an instance of GlynnPermanentCalculatorInf.
-*/
-pic::GlynnPermanentCalculatorInf*
-create_GlynnPermanentCalculatorInf() {
-
-    return new pic::GlynnPermanentCalculatorInf();
-}
-
-/**
-@brief Call to deallocate an instance of GlynnPermanentCalculatorInf class
-@param ptr A pointer pointing to an instance of GlynnPermanentCalculatorInf class.
-*/
-void
-release_GlynnPermanentCalculatorInf ( pic::GlynnPermanentCalculatorInf*  instance ) {
-    if ( instance != NULL ) {
-        delete instance;
-    }
-    return;
-}
-
-
-#endif
-
 extern "C"
 {
 
@@ -151,7 +117,7 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
     else if (self->lib == BBFGPermanentCalculatorDouble && self->BBFGcalculator != NULL) delete self->BBFGcalculator;
     else if (self->lib == BBFGPermanentCalculatorLongDouble && self->BBFGcalculator != NULL) delete self->BBFGcalculator;
 #ifdef __MPFR__
-    else if (self->lib == GlynnInf && self->cpu_inf != NULL) release_GlynnPermanentCalculatorInf( self->cpu_inf );
+    else if (self->lib == GlynnInf && self->BBFGcalculator != NULL) delete self->BBFGcalculator;
 #endif
     else if (
         self->lib == GlynnDoubleCPU
@@ -219,7 +185,7 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
     // create instance of class GlynnPermanentCalculator
     if (self->lib == GlynnCPP) self->cpu_long_double = create_GlynnPermanentCalculatorLongDouble();
 #ifdef __MPFR__    
-    else if (self->lib == GlynnInf) self->cpu_inf = new pic::GlynnPermanentCalculatorInf();
+    else if (self->lib == GlynnInf) self->BBFGcalculator = new pic::BBFGPermanentCalculator();
 #endif
 #ifdef __DFE__
     else if (self->lib == GlynnSingleDFE || self->lib == GlynnDualDFE || self->lib == GlynnSingleDFEF || self->lib == GlynnDualDFEF)
@@ -275,11 +241,11 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
             for (size_t i = 0; i < matrices.size(); i++) {
                 if (self->lib == GlynnCPP) ret[i] = self->cpu_long_double->calculate(matrices[i]);
 #ifdef __MPFR__
-                else if (self->lib == GlynnInf) ret[i] = self->cpu_inf->calculate(matrices[i]);
+                else if (self->lib == GlynnInf) ret[i] = self->BBFGcalculator->calculate(matrices[i], false, true);
 #endif
                 else if (self->lib == GlynnDoubleCPU) ret[i] = self->cpu_double->calculate(matrices[i]);
-                else if (self->lib == BBFGPermanentCalculatorDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], false);
-                else if (self->lib == BBFGPermanentCalculatorLongDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], true);
+                else if (self->lib == BBFGPermanentCalculatorDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], false, false);
+                else if (self->lib == BBFGPermanentCalculatorLongDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], true, false);
             }
         }    
         
@@ -305,11 +271,11 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
 #endif
         if (self->lib == GlynnCPP) ret = self->cpu_long_double->calculate(matrix_mtx);
 #ifdef __MPFR__
-        else if (self->lib == GlynnInf) ret = self->cpu_inf->calculate(matrix_mtx);
+        else if (self->lib == GlynnInf) ret = self->BBFGcalculator->calculate(matrix_mtx, false, true);
 #endif
         else if (self->lib == GlynnDoubleCPU) ret = self->cpu_double->calculate(matrix_mtx);
-        else if (self->lib == BBFGPermanentCalculatorDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, false);
-        else if (self->lib == BBFGPermanentCalculatorLongDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, true);
+        else if (self->lib == BBFGPermanentCalculatorDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, false, false);
+        else if (self->lib == BBFGPermanentCalculatorLongDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, true, false);
     
         return Py_BuildValue("D", &ret);
     }
