@@ -25,8 +25,6 @@
 #include "GlynnPermanentCalculatorRepeated.h"
 #include "BBFGPermanentCalculatorRepeated.h"
 
-#include "GlynnPermanentCalculatorRepeatedInf.h"
-
 #ifdef __DFE__
 #include "GlynnPermanentCalculatorDFE.h"
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
@@ -65,7 +63,6 @@ typedef struct ChinHuhPermanentCalculator_wrapper {
         pic::CChinHuhPermanentCalculator* calculator;
         pic::GlynnPermanentCalculatorRepeatedDouble* calculatorRepDouble;
         pic::GlynnPermanentCalculatorRepeatedLongDouble* calculatorRepLongDouble;
-        pic::GlynnPermanentCalculatorRepeatedInf* calculatorRepInf;
         pic::BBFGPermanentCalculatorRepeated* BBFGcalculatorRep;
     };
 } ChinHuhPermanentCalculator_wrapper;
@@ -124,7 +121,7 @@ ChinHuhPermanentCalculator_wrapper_dealloc(ChinHuhPermanentCalculator_wrapper *s
     else if (self->lib == GlynnRepCPUDouble && self->calculatorRepDouble != NULL) delete self->calculatorRepDouble;
     else if (self->lib == BBFGPermanentCalculatorRepeatedDouble && self->BBFGcalculatorRep != NULL) delete self->BBFGcalculatorRep;
     else if (self->lib == BBFGPermanentCalculatorRepeatedLongDouble && self->BBFGcalculatorRep != NULL) delete self->BBFGcalculatorRep;    
-    else if (self->lib == GlynnRepInf && self->calculatorRepInf != NULL) delete self->calculatorRepInf;
+    else if (self->lib == GlynnRepInf && self->BBFGcalculatorRep != NULL) delete self->BBFGcalculatorRep;
     // release numpy arrays
     Py_DECREF(self->matrix);
     Py_DECREF(self->input_state);
@@ -211,7 +208,7 @@ ChinHuhPermanentCalculator_wrapper_init(ChinHuhPermanentCalculator_wrapper *self
     // create instance of class ChinHuhPermanentCalculator
     if (self->lib == ChinHuh) self->calculator = create_ChinHuhPermanentCalculator();
     else if (self->lib == GlynnRep) self->calculatorRepLongDouble = new pic::GlynnPermanentCalculatorRepeatedLongDouble();
-    else if (self->lib == GlynnRepInf) self->calculatorRepInf = new pic::GlynnPermanentCalculatorRepeatedInf();
+    else if (self->lib == GlynnRepInf) self->BBFGcalculatorRep = new pic::BBFGPermanentCalculatorRepeated();
 #ifdef __DFE__
     else if (self->lib == GlynnRepSingleDFE || self->lib == GlynnRepDualDFE ||
         self->lib == GlynnRepSingleDFEF || self->lib == GlynnRepDualDFEF ||
@@ -303,11 +300,11 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
                     else if (self->lib == GlynnRepCPUDouble)
                         ret[i][j] = self->calculatorRepDouble->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
                     else if (self->lib == BBFGPermanentCalculatorRepeatedDouble)
-                        ret[i][j] = self->BBFGcalculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j], false);
+                        ret[i][j] = self->BBFGcalculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j], false, false);
                     else if (self->lib == BBFGPermanentCalculatorRepeatedLongDouble)
-                        ret[i][j] = self->BBFGcalculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j], true);
+                        ret[i][j] = self->BBFGcalculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j], true, false);
                     else if (self->lib == GlynnRepInf)
-                        ret[i][j] = self->calculatorRepInf->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j]);
+                        ret[i][j] = self->BBFGcalculatorRep->calculate(matrix_mtx, multiInput ? output_states[i][j] : input_states[i], multiInput ? input_states[i] : output_states[i][j], false, true);
                 }
             }
         }
@@ -344,11 +341,11 @@ ChinHuhPermanentCalculator_Wrapper_calculate(ChinHuhPermanentCalculator_wrapper 
         else if (self->lib == GlynnRepCPUDouble)
             ret = self->calculatorRepDouble->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
         else if (self->lib == BBFGPermanentCalculatorRepeatedDouble)
-            ret = self->BBFGcalculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx, false);
+            ret = self->BBFGcalculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx, false, false);
         else if (self->lib == BBFGPermanentCalculatorRepeatedLongDouble)
-            ret = self->BBFGcalculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx, true);
+            ret = self->BBFGcalculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx, true, false);
         else if (self->lib == GlynnRepInf)
-            ret = self->calculatorRepInf->calculate(matrix_mtx, input_state_mtx, output_state_mtx);
+            ret = self->BBFGcalculatorRep->calculate(matrix_mtx, input_state_mtx, output_state_mtx, false, true);
         return Py_BuildValue("D", &ret);
     }
 }
