@@ -52,6 +52,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < count; i++) var = optimization.pipeline(var);
         return var;
     }
+    <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split) //do not yet need to generalize for >64 or triple stage even at >1024... 
+    {
+        int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
+        DFEVar[] sels = new DFEVar[] { optimization.pipeline(sel), optimization.pipeline(sel) };
+        return repeatPipeline(sel.get(bitsToAddress-1), 2) ?
+            control.mux(sels[1].slice(0, MathUtils.bitsToAddress(values.size()-split)), values.subList(split, values.size())) :
+            control.mux(sels[0].slice(0, MathUtils.bitsToAddress(split)), values.subList(0, split));
+    }
     public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
         int CEPipelining = getKernelConfig().optimization.getCEPipelining();
@@ -63,7 +71,6 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFixCommonAddType, cols);
         DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (useFloat ? cplxFixCommonAddType : cplxFix64Type, cols);
         int gcodeRows = rows - (basekernpow2 + (dual ? 1 : 0)) - 1;
-        int bitsToAddressSum = MathUtils.bitsToAddress(gcodeRows);
 
         DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFix64 : IntType, 2 * cols);
         DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFixCommonAdd : dfeInt(64 + 1), 2 * cols);
@@ -110,20 +117,22 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int i = 0; i < (dual ? 3 : 2); i++) initCountIsZero = optimization.pipeline(initCountIsZero);
         DFEVar firstTick = isInit & initCountIsZero; //isInit 3+2 delay
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
-        DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
-                c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
-
-        List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
-        initChoices.add(constant.zero(oneRowType));
-        List<DFEVar> allOnes = new ArrayList<>(); 
-        for (int i = 0; i < maxdim / initKerns; i++) {
-            allOnes.add(c1); allOnes.add(c0);
-        }
-        initChoices.add(oneRowType.newInstance(this, allOnes));
-        initChoices.add(oneRow);
-        initChoices.add(oneRow);
         if (dual) for (int i = 0; i < 5; i++) firstTick = optimization.pipeline(firstTick);
-        oneRow = control.mux(needData.cat(firstTick), initChoices);
+        if (kernNum != 0) {
+            DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
+                    c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
+    
+            List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
+            initChoices.add(constant.zero(oneRowType));
+            List<DFEVar> allOnes = new ArrayList<>(); 
+            for (int i = 0; i < maxdim / initKerns; i++) {
+                allOnes.add(c1); allOnes.add(c0);
+            }
+            initChoices.add(oneRowType.newInstance(this, allOnes));
+            initChoices.add(oneRow);
+            initChoices.add(oneRow);
+            oneRow = control.mux(needData.cat(firstTick), initChoices);
+        } else oneRow = optimization.pipeline(oneRow);
         //oneRow = optimization.limitFanout(oneRow, 20);
         //debug.simPrintf(isInit, "%d %d %KObj%\n", kernNum, needData, oneRow);
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
@@ -139,11 +148,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);       
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
         if (dual) grayCounter.changePosition = optimization.pipeline(grayCounter.changePosition);
-        DFEVar[] changePositions = new DFEVar[] { optimization.pipeline(grayCounter.changePosition), optimization.pipeline(grayCounter.changePosition) };
-        DFEVector < DFEVar > useRow = optimization.pipeline(optimization.pipeline(grayCounter.changePosition.get(bitsToAddressSum-1))) ?
-            control.mux(changePositions[1].slice(0, MathUtils.bitsToAddress(gcodeRows-32)), allRows.getElementsAsList().subList(32, gcodeRows)) :
-            control.mux(changePositions[0].slice(0, bitsToAddressSum-1), allRows.getElementsAsList().subList(0, 32));
-        //DFEVector < DFEVar > useRow = control.mux(grayCounter.changePosition.cast(dfeUInt(bitsToAddressSum)), allRows.getElementsAsList());
+        DFEVector < DFEVar > useRow = mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), gcodeRows/2);
         DFEVector < DFEComplex > rowToAdd;
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
             DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
