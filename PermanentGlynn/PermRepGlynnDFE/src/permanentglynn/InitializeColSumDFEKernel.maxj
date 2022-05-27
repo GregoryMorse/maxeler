@@ -319,9 +319,10 @@ public class InitializeColSumDFEKernel extends Kernel {
     <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit)
     {
         DFEVar v = var.reinterpret(dfeUInt(var.getType().getTotalBits()));
+        int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();
         DFEVar out = null;
         for (int i = 0; i < 2; i++) {
-            DFEVar chunk = repeatPipeline(v.slice(i*limit, i == 0 ? limit : var.getType().getTotalBits() - i * limit), count);
+            DFEVar chunk = repeatPipeline(v.slice(i*limit*sz, i == 0 ? limit*sz : var.getType().getTotalBits() - i*limit*sz), count);
             if (i == 0) out = chunk;
             else out = chunk.cat(out);
         }
