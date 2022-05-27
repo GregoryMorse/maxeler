@@ -1,5 +1,5 @@
 #include "GlynnPermanentCalculatorDFE.h"
-#include "GlynnPermanentCalculator.h"
+#include "BBFGPermanentCalculator.h"
 
 #ifndef CPYTHON
 #include <tbb/tbb.h>
@@ -177,9 +177,9 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
 
     if (!calcPermanentGlynnDFE ||
         matrices.begin()->rows < 1+dfe_basekernpow2 || matrices.begin()->cols == 0 || matrices.begin()->rows >= matrices.begin()->cols + 2) { //compute with other method
-      GlynnPermanentCalculatorLongDouble gpc;
+      BBFGPermanentCalculator gpc;
       for (size_t i = 0; i < matrices.size(); i++)
-          perm[i] = gpc.calculate(matrices[i]);
+          perm[i] = gpc.calculate(matrices[i], true, false);
       unlock_lib();
       return;
     }
@@ -283,8 +283,8 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
 
     if (!calcPermanentGlynnDFE ||
         matrix_mtx.rows < 1+dfe_basekernpow2 || matrix_mtx.cols == 0 || matrix_mtx.rows >= matrix_mtx.cols + 2) { //compute with other method
-      GlynnPermanentCalculatorLongDouble gpc;
-      perm = gpc.calculate(matrix_mtx);
+      BBFGPermanentCalculator gpc;
+      perm = gpc.calculate(matrix_mtx, true, false);
       unlock_lib();
       return;
     }
