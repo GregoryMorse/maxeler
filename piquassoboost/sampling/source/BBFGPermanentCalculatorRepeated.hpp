@@ -196,7 +196,7 @@ Complex16 calculate() {
         int64_t binomial_coeff = 1;
 
         matrix_base<scalar_type> colsum( 1, col_mult.size());
-        std::copy_n(mtx.get_data(), colsum.size(), colsum.get_data());  
+        std::uninitialized_copy_n(mtx.get_data(), colsum.size(), colsum.get_data());  
         auto mtx_data = mtx.get_data() + mtx.stride;
 
         // variable to count all the -1 elements in the delta vector
