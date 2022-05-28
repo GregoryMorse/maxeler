@@ -141,7 +141,7 @@ Complex16 calculate() {
     
         // determine initial columsn sum corresponding to the given intial delta vector. 
         matrix_base<scalar_type> colsum( 1, mtx.cols);
-        std::copy_n(mtx.get_data(), colsum.size(), colsum.get_data());
+        std::uninitialized_copy_n(mtx.get_data(), colsum.size(), colsum.get_data());
 
         size_t initial_offset_gray_code = initial_offset ^ (initial_offset >> 1);
 
