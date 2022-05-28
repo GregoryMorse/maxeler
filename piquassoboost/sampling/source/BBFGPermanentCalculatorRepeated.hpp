@@ -225,7 +225,7 @@ Complex16 calculate() {
         // variable to refer to the parity of the delta vector (+1 if the number of -1 elements in delta vector is even, -1 otherwise)
         char parity = (minus_signs_all % 2 == 0) ? 1 : -1; 
 
-        scalar_type colsum_prod((precision_type)parity, 0.0);
+        scalar_type colsum_prod((precision_type)parity, (precision_type)0.0);
         for( size_t idx=0; idx<col_mult.size(); idx++ ) {
             for (size_t jdx=0; jdx<col_mult[idx]; jdx++) {
                 colsum_prod *= colsum[idx];
@@ -256,7 +256,7 @@ Complex16 calculate() {
             // update column sum and calculate the product of the elements
             int row_offset = (changed_index+1)*mtx.stride;
             auto mtx_data = mtx2.get_data() + row_offset;
-            scalar_type colsum_prod((precision_type)parity, 0.0);
+            scalar_type colsum_prod((precision_type)parity, (precision_type)0.0);
             for( size_t col_idx=0; col_idx<col_mult.size(); col_idx++) {
                 if ( value_prev < value ) {
                     colsum[col_idx] -= mtx_data[col_idx];
@@ -283,6 +283,9 @@ Complex16 calculate() {
 
     
         }
+
+        for (size_t n = colsum.size(); n > 0; --n)
+            colsum[n-1].~scalar_type();
 
 
 
