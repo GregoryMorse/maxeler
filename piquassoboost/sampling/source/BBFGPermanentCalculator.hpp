@@ -87,10 +87,12 @@ virtual ~BBFGPermanentCalculator_Tasks() {
 Complex16 calculate() {
 
 
-    if (mtx.rows == 0) {
+    if (mtx.rows == 0 || mtx.cols == 0) {
         // the permanent of an empty matrix is 1 by definition
         return 1.0;
     }
+    if (mtx.rows >= mtx.cols + 2)
+        return Complex16(0.0, 0.0);    
 
 #if BLAS==0 // undefined BLAS
     int NumThreads = omp_get_max_threads();
@@ -219,8 +221,8 @@ Complex16 calculate() {
 
 
         }
-  
-
+        for (size_t n = colsum.size(); n > 0; --n)
+            colsum[n-1].~scalar_type();
 //    }
     });
 
