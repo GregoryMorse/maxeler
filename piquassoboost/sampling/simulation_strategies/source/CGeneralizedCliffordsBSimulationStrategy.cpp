@@ -433,7 +433,7 @@ CGeneralizedCliffordsBSimulationStrategy::compute_pmf( PicState_int64& sample ) 
             matrix&& modifiedInterferometerMatrix = adaptInterferometer( interferometer_matrix, input_state_loc, sample );
             PicState_int64 adapted_input_state = input_state_loc.filter(filterNonZero);
             PicState_int64 adapted_output_state = sample.filter(filterNonZero);
-            permanent_addends[colIndices[idx]] = calcPerm( modifiedInterferometerMatrix, adapted_input_state, adapted_output_state, false);
+            permanent_addends[colIndices[idx]] = calcPerm( modifiedInterferometerMatrix, adapted_input_state, adapted_output_state, lib);
 
             //tbb::tick_count t1 = tbb::tick_count::now();////////////////////////// 
             //t_CPU_permanent += (t1-t0).seconds();    //////////////////////////             
