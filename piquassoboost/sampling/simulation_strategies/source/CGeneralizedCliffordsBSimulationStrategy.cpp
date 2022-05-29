@@ -238,7 +238,7 @@ tbb::tick_count t0cpu = tbb::tick_count::now();
             fill_r_sample( sample );
             
 #ifdef __DFE__
-            if (out_of_memory) {
+            if ((lib == GlynnRepSingleDFE || lib == GlynnRepDualDFE || lib == GlynnRepMultiSingleDFE || lib == GlynnRepMultiDualDFE) && out_of_memory) {
                 out_of_memory = false;
                 continue;
             }
@@ -249,10 +249,10 @@ tbb::tick_count t0cpu = tbb::tick_count::now();
 //sample.print_matrix();
 tbb::tick_count t1cpu = tbb::tick_count::now();
 t_CPU += (t1cpu-t0cpu).seconds();            
-std::cout << "DFE all time: " << t_DFE << ", cpu permanent: " << t_CPU_permanent << " " << t_CPU_permanent_Glynn << std::endl;
+//std::cout << "DFE all time: " << t_DFE << ", cpu permanent: " << t_CPU_permanent << " " << t_CPU_permanent_Glynn << std::endl;
 //std::cout << "DFE_pure time: " << t_DFE_pure << std::endl;
-std::cout << "DFE_prepare time: " << t_DFE_prepare << std::endl;
-std::cout << idx << " total sampling time: " << t_CPU << std::endl;
+//std::cout << "DFE_prepare time: " << t_DFE_prepare << std::endl;
+//std::cout << idx << " total sampling time: " << t_CPU << std::endl;
 
         }
 
@@ -290,7 +290,7 @@ CGeneralizedCliffordsBSimulationStrategy::fill_r_sample( PicState_int64& sample 
         compute_pmf( sample );
         
 #ifdef __DFE__
-        if (out_of_memory) {
+        if ((lib == GlynnRepSingleDFE || lib == GlynnRepDualDFE || lib == GlynnRepMultiSingleDFE || lib == GlynnRepMultiDualDFE) && out_of_memory) {
             return;
         }
 #endif
