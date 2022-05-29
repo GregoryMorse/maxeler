@@ -20,6 +20,7 @@
 #include "GlynnPermanentCalculator.h"
 #include "GlynnPermanentCalculatorDFE.h"
 #include "GlynnPermanentCalculatorRepeated.h"
+#include "BBFGPermanentCalculatorRepeated.h"
 #include "GlynnPermanentCalculatorRepeatedDFE.h"
 #include "CChinHuhPermanentCalculator.h"
 #include "common_functionalities.h"
@@ -550,7 +551,7 @@ calculate_outputs_probability(
     Complex16 permanent;
 
  
-    if (lib == GlynnRep) {
+    if (lib == GlynnRep || lib == GlynnRepCPUDouble || lib == BBFGPermanentCalculatorRepeatedDouble || lib == BBFGPermanentCalculatorRepeatedLongDouble) {
 
         matrix modifiedInterferometerMatrix = adaptInterferometer(
             interferometer_mtx,
@@ -565,13 +566,35 @@ calculate_outputs_probability(
         PicState_int64 adapted_input_state = input_state.filter(filterNonZero);
         PicState_int64 adapted_output_state = output_state.filter(filterNonZero);
     
-        
-        GlynnPermanentCalculatorRepeatedLongDouble permanentCalculatorRecursive;
-        permanent = permanentCalculatorRecursive.calculate(
-            modifiedInterferometerMatrix,
-            adapted_input_state,
-            adapted_output_state
-        );
+        if (lib == GlynnRep) {
+            GlynnPermanentCalculatorRepeatedLongDouble permanentCalculatorRecursive;
+            permanent = permanentCalculatorRecursive.calculate(
+                modifiedInterferometerMatrix,
+                adapted_input_state,
+                adapted_output_state
+            );
+        } else if (lib == GlynnRepCPUDouble) {
+            GlynnPermanentCalculatorRepeatedDouble permanentCalculatorRecursive;
+            permanent = permanentCalculatorRecursive.calculate(
+                modifiedInterferometerMatrix,
+                adapted_input_state,
+                adapted_output_state
+            );
+        } else if (lib == BBFGPermanentCalculatorRepeatedDouble) {
+            BBFGPermanentCalculatorRepeated permanentCalculatorRecursive;
+            permanent = permanentCalculatorRecursive.calculate(
+                modifiedInterferometerMatrix,
+                adapted_input_state,
+                adapted_output_state, false, false
+            );
+        } else if (lib == lib == BBFGPermanentCalculatorRepeatedLongDouble) {
+            BBFGPermanentCalculatorRepeated permanentCalculatorRecursive;
+            permanent = permanentCalculatorRecursive.calculate(
+                modifiedInterferometerMatrix,
+                adapted_input_state,
+                adapted_output_state, true, false
+            );
+        }
 
     } else if (lib == ChinHuh) {
         CChinHuhPermanentCalculator permanentCalculatorChinHuh;
