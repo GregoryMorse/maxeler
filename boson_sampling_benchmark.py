@@ -99,7 +99,7 @@ bcm = get_bincoeff_magic()
 print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
 #test_complex_sampling(print_histogram())
 
-DEPTH = 40 if hasSim else 40
+DEPTH = 40 if hasSim else 36
 saveFolder = "resultsbs"
 
 
@@ -252,8 +252,8 @@ def permanent_glynn_gray(mat): #optimal row-major order
   return tot / (1 << (n-1)) #tot
   
 from scipy.stats import unitary_group
-from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedSingleDFEFPermanentCalculator, GlynnRepeatedDualDFEFPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator
-calculators = [None, None, None, None, None, None, None, None]
+from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedSingleDFEFPermanentCalculator, GlynnRepeatedDualDFEFPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator, BBFGRepeatedPermanentCalculatorDouble, BBFGRepeatedPermanentCalculatorLongDouble, GlynnRepeatedInfPermanentCalculator
+calculators = [None, None, None, None, None, None, None, None, None, None, None]
 
 def permanent_Glynn_Cpp(Arep, input_state, output_state):
   #if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
@@ -289,6 +289,19 @@ def permanent_Glynn_MultiDFEDual(Arep, input_state, output_state):
   if calculators[7] is None: calculators[7] = GlynnRepeatedMultiDualDFEPermanentCalculator(Arep, input_state, output_state)
   else: calculators[7].matrix, calculators[7].input_state, calculators[7].output_state = Arep, input_state, output_state  
   return calculators[7].calculate()
+def permanent_BBFG_Double(Arep, input_state, output_state):
+  if calculators[8] is None: calculators[8] = BBFGRepeatedPermanentCalculatorDouble(Arep, input_state, output_state)
+  else: calculators[8].matrix, calculators[8].input_state, calculators[8].output_state = Arep, input_state, output_state  
+  return calculators[8].calculate()
+def permanent_BBFG_LongDouble(Arep, input_state, output_state):
+  if calculators[9] is None: calculators[9] = BBFGRepeatedPermanentCalculatorLongDouble(Arep, input_state, output_state)
+  else: calculators[9].matrix, calculators[9].input_state, calculators[9].output_state = Arep, input_state, output_state  
+  return calculators[9].calculate()
+def permanent_Glynn_Inf(Arep, input_state, output_state):
+  #if len(Arep) == 0 or not input_state.any() or not output_state.any(): return 1+0j
+  if calculators[10] is None: calculators[10] = GlynnRepeatedInfPermanentCalculator(Arep, input_state, output_state)
+  else: calculators[10].matrix, calculators[10].input_state, calculators[10].output_state = Arep, input_state, output_state  
+  return calculators[10].calculate()
 
 samplers = [None, None, None, None, None, None]
 seed = 0x123456789ABCDEF
@@ -324,8 +337,8 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   return samplers[5].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
-dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
-largePermFuncs = (permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
+dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_DFE,)#, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
+largePermFuncs = (permanent_Glynn_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs
 testSamplingFuncs = ()
 dfeSamplingFuncs = ((boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
 samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh) + dfeSamplingFuncs
@@ -375,13 +388,14 @@ def other_stability(nmax, photons, times=1):
             pq.Q() | pq.Sampling()
         simulator = BoostedSamplingSimulator(d=dim)
         result = simulator.execute(program=program, shots=shots)
-def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column testing
+def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeated row/column testing
   ERRBOUND = 1e-8 #1e-10
   testFuncs = testPermFuncs if shots is None else testSamplingFuncs
   dfeFuncs = dfePermFuncs if shots is None else dfeSamplingFuncs
   largeFuncs = largePermFuncs if shots is None else samplingFuncs
-  suffix = str(photons) + ("" if shots is None else ("-" + str(shots)))
-  verdata = "repverifydata" + suffix + ".bin"
+  verifysuffix = str(photons) + ("" if shots is None else ("-" + str(shots)))
+  suffix = verifysuffix + ("" if batchsize == 1 else ("-" + str(batchsize)))
+  verdata = "repverifydata" + verifysuffix + ".bin"
   resdata = "represultdata" + suffix + ".bin"
   xaxis = list(range(nmax+1))
   gen_test_data = load_test_data()
@@ -411,15 +425,21 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
           mplier = 1#5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
-          print(A[dim][1][photons], A[dim][2][photons])
           def save_result():
               #v[0] = func(A[dim][0], [A[dim][1][photons]], [[A[dim][2][photons] for _ in range(3)]])
-              if shots is None: v[0] = func(A[dim][0], [[A[dim][1][photons] for _ in range(3)]], [A[dim][2][photons]]) #v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+              if shots is None:
+                  if batchsize == 1: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+                  else: v[0] = func(A[dim][0], [[A[dim][1][photons] for _ in range(batchsize)]], [A[dim][2][photons]])
               else: v[0] = func(A[dim][0], A[dim][1][photons], shots)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfeFuncs: print(check_power())
-          if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
-          else: res[key][func.__name__][dim] = v[0]
+          if batchsize != 1:
+            if dim != 0:
+              #assert all(abs(res[key][func.__name__][dim] - x) < ERRBOUND for x in v[0][0]), (v[0], res[key][func.__name__][dim])
+              v[0] = v[0][0][0]
+          else:
+            if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
+            else: res[key][func.__name__][dim] = v[0]
           if len(results[key][func.__name__]) <= dim: results[key][func.__name__].append(r)
           else: results[key][func.__name__][dim] = r
           if dim < 24: print(photons, dim, v[0], r, A[dim][1][photons], A[dim][2][photons] if shots is None else None)
@@ -429,7 +449,7 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
             pickle.dump(results, f)
         if dim >= 24: print(photons, dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim], A[dim][1][photons], A[dim][2][photons] if shots is None else None)
     if shots is None:
-      with open(os.path.join(saveFolder, "repverifydata.csv"), "w") as f:
+      with open(os.path.join(saveFolder, "repverifydata" + verifysuffix + ".csv"), "w") as f:
           import csv
           writer = csv.writer(f, delimiter='\t')
           writer.writerow(["Absolute Error compared to " + largeFuncs[0].__name__]) 
@@ -459,10 +479,10 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
     for i in xaxis:
       #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
       failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
-      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); assert False, failures
+      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); #assert False, failures
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
+    verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time (log10 s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
         fig = plt.figure()
@@ -487,8 +507,9 @@ def verify_timing(nmax, photons, shots=10): #shots=None for repeated row/column 
         plt.close(fig)
 #other_stability(40, 30)
 #stability(40, 30)
-for i in range(8 if hasSim else 0, 40+1):
-    verify_timing(DEPTH, i, None)
+for i in (10, 20, 30): #range(19 if hasSim else 0, 40+1):
+    verify_timing(DEPTH, i, None, batchsize=1)
+    verify_timing(DEPTH, i, None, batchsize=3)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
 #verify_timing(DEPTH, 20, 10)
