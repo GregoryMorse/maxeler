@@ -169,7 +169,6 @@ Complex16 calculate() {
     unsigned int nthreads = std::thread::hardware_concurrency();
     int64_t concurrency = (int64_t)nthreads * 4;
     concurrency = concurrency < Idx_max ? concurrency : (int64_t)Idx_max;
-    concurrency = 1;
     
     tbb::parallel_for( (int64_t)0, concurrency, (int64_t)1, [&](int64_t job_idx) {
 //    for( int64_t job_idx=0; job_idx<concurrency; job_idx++) {
