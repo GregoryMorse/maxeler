@@ -82,8 +82,8 @@ BBFGPermanentCalculatorRepeated_Tasks( matrix_type &mtx_in, PicState_int& col_mu
         memcpy( row_mult.get_data()+1, row_mult_in.get_data(), row_mult_in.size()*sizeof(int) );
         row_mult[1+(minelem - &row_mult_in[0])]--;
         mtx = matrix_type( mtx_in.rows+1, mtx_in.cols );
-        memcpy( mtx.get_data(), mtx_in.get_data()+mtx_in.stride*(minelem - &row_mult_in[0]), mtx_in.cols*sizeof(scalar_type) );
-        memcpy( mtx.get_data()+mtx.stride, mtx_in.get_data(), mtx_in.cols*mtx_in.rows*sizeof(scalar_type) );
+        memcpy( mtx.get_data(), mtx_in.get_data()+mtx_in.stride*(minelem - &row_mult_in[0]), mtx_in.cols*sizeof(*mtx.get_data()) );
+        memcpy( mtx.get_data()+mtx.stride, mtx_in.get_data(), mtx_in.cols*mtx_in.rows*sizeof(*mtx.get_data()) );
     }
     else {
         row_mult = row_mult_in;
@@ -116,7 +116,7 @@ Complex16 calculate() {
         throw error;
     }
 
-    if (mtx.rows == 0 || sum_row_mult == 0 || sum_col_mult == 0)
+    if (mtx.rows == 0 || mtx.cols == 0 || sum_row_mult == 0 || sum_col_mult == 0)
         // the permanent of an empty matrix is 1 by definition
         return Complex16(1.0, 0.0);
 
@@ -245,7 +245,6 @@ Complex16 calculate() {
 
             int changed_index, value_prev, value;
             if ( gcode_counter.next(changed_index, value_prev, value) ) {
-                std::cout << std::endl;
                 break;
             }
 
