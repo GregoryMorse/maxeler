@@ -332,7 +332,7 @@ Complex16 calcPerm(matrix& mtx, PicState_int64& input_state, PicState_int64& out
             input_state,
             output_state, false, false
         );
-    } else if (lib == lib == BBFGPermanentCalculatorRepeatedLongDouble) {
+    } else if (lib == BBFGPermanentCalculatorRepeatedLongDouble) {
         BBFGPermanentCalculatorRepeated permanentCalculatorRecursive;
         permanent = permanentCalculatorRecursive.calculate(
             mtx,
@@ -474,7 +474,8 @@ CGeneralizedCliffordsBSimulationStrategy::compute_pmf( PicState_int64& sample ) 
                     PicState_int64 adapted_input_state = input_state_loc.filter(filterNonZero);
                     PicState_int64 adapted_output_state = sample.filter(filterNonZero);
 
-                    permanent_addends_tmp[colIndices[idx]] = permanentCalculator.calculate( modifiedInterferometerMatrix, adapted_input_state, adapted_output_state);     
+                    permanent_addends_tmp[colIndices[idx]] = calcPerm( modifiedInterferometerMatrix, adapted_input_state, adapted_output_state,
+                    (lib == GlynnRepMultiSingleDFE || lib == GlynnRepMultiDualDFE || lib == GlynnRepSingleDFE || lib == GlynnRepDualDFE) ? BBFGPermanentCalculatorRepeatedLongDouble : lib);     
                     
                 });     
             
