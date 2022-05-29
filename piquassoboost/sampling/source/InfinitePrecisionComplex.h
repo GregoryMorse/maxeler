@@ -14,12 +14,13 @@ public:
   FloatInf(const double d) { init = 1; mpfr_init2(this->f, IEEE_DBL_MANT_DIG); mpfr_set_d(this->f, d, MPFR_RNDN); }
   FloatInf(const long double ld) { init = 1; mpfr_init2(this->f, MPFR_LDBL_MANT_DIG); mpfr_set_ld(this->f, ld, MPFR_RNDN); }
   FloatInf(const long long unsigned int uj) { init = 1; mpfr_init2(this->f, sizeof(uintmax_t)*8); mpfr_set_uj(this->f, uj, MPFR_RNDN); }
-  FloatInf(const int i) { init = 1; mpfr_init2(this->f, sizeof(long int)); mpfr_set_si(this->f, (long int)i, MPFR_RNDN); }
+  FloatInf(const int64_t i) { init = 1; mpfr_init2(this->f, sizeof(intmax_t)*8); mpfr_set_sj(this->f, i, MPFR_RNDN); }
+  FloatInf(const char c) { init = 1; mpfr_init2(this->f, sizeof(char)*8); mpfr_set_si(this->f, c, MPFR_RNDN); }
   FloatInf(const int oinit, const mpfr_t& f) {      
       init = oinit;
       if (init) { mpfr_init2(this->f, mpfr_get_prec(f)); mpfr_set(this->f, f, MPFR_RNDN); }
   }
-  FloatInf(mpfr_prec_t prec) { init = 1; mpfr_init2(this->f, prec); }
+  FloatInf(const int oinit, mpfr_prec_t prec) { init = oinit; mpfr_init2(this->f, prec); }
   FloatInf(const FloatInf& f) : FloatInf(f.init, f.f) {}
   FloatInf(FloatInf&& f) {
       init = f.init;
@@ -129,22 +130,22 @@ public:
     return *this;
   }
   FloatInf operator+(const FloatInf& f) const {
-    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    FloatInf newf(1, bound_prec_addsub(this->f, f.f));
     mpfr_add(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
   }  
   FloatInf operator-(const FloatInf& f) const {
-    FloatInf newf(bound_prec_addsub(this->f, f.f));
+    FloatInf newf(1, bound_prec_addsub(this->f, f.f));
     mpfr_sub(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
   }  
   FloatInf operator*(const FloatInf& f) const {
-    FloatInf newf(bound_prec_mul(this->f, f.f));
+    FloatInf newf(1, bound_prec_mul(this->f, f.f));
     mpfr_mul(newf.f, this->f, f.f, MPFR_RNDN);
     return newf;
   }
   FloatInf operator*(const double& f) const {
-    FloatInf newf(bound_prec_mul(this->f, f));
+    FloatInf newf(1, bound_prec_mul(this->f, f));
     mpfr_mul_d(newf.f, this->f, f, MPFR_RNDN);
     return newf;
   }
