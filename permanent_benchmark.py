@@ -1,10 +1,13 @@
 #pip install numpy, scipy, piquasso, thewalrus, matplotlib, tikzplotlib
 import numpy as np
 #from thewalrus.libwalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
-#from thewalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
-from thewalrus import perm
-def perm_complex(A, quad): return perm(A, "ryser")
-def perm_BBFG_complex(A): return perm(A, "bbfg")
+import thewalrus
+if thewalrus.version() in ("0.7.0", "0.8.0", "0.10.0", "0.11.0", "0.12.0", "0.13.0rc1", "0.13.0", "0.14.0", "0.15.0", "0.15.1", "0.16.0", "0.16.1", "0.16.2", "0.17.0"):
+    from thewalrus import perm_complex, perm_real, perm_BBFG_real, perm_BBFG_complex
+else:
+    from thewalrus import perm
+    def perm_complex(A, quad): return perm(A, "ryser")
+    def perm_BBFG_complex(A): return perm(A, "bbfg")
 from piquassoboost.sampling.Boson_Sampling_Utilities import GlynnPermanent, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF, GlynnPermanentDoubleCPU, BBFGPermanentDouble, BBFGPermanentLongDouble
 import piquasso as pq
 import random
@@ -218,7 +221,7 @@ def permanent_BBFG_LongDouble(Arep):
     return calculators[8].calculate()
 
 dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp_Inf, permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double, permanent_walrus_quad_Ryser) + dfePermFuncs
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double, permanent_walrus_quad_Ryser) + dfePermFuncs
 testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG)
 permFuncs = testPermFuncs + largePermFuncs
 
@@ -237,7 +240,7 @@ def load_test_data():
       pickle.dump(gen_test_data, f)
   return gen_test_data
 def verify_timing(nmax, batchsize=1):
-  ERRBOUND = 1e-7
+  ERRBOUND = 1e-6
   suffix = "" if batchsize == 1 else str(batchsize)
   verdata = "verifydata.bin"
   resdata = "resultdata" + suffix + ".bin"
@@ -265,7 +268,7 @@ def verify_timing(nmax, batchsize=1):
       for dim in xaxis:
         #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
         #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:# or func == permanent_Glynn_Cpp_Inf:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_BBFG_LongDouble:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -353,7 +356,7 @@ def verify_rectangular(nmax):
             #A = [np.random.random((x, y))+np.random.random((x, y))*1j for _ in range(10000)]
             A = np.random.random((x, y))+np.random.random((x, y))*1j
             r = permanent_Glynn_Cpp_Inf(A)
-            res1, res2 = permanent_Glynn_Cpp(A), permanent_Glynn_DFE(A)
+            res1, res2 = permanent_Glynn_Cpp(A), permanent_BBFG_LongDouble(A)# permanent_Glynn_DFE(A)
             if x == 0 or y == 0: assert res1 == 1 and res2 == 1 and r == 1, (res1, res2, r)
             elif x >= y + 2: assert res1 == 0 and res2 == 0 and r == 0, (res1, res2, r)
             #assert all((abs(r1-r2) / abs(r1)) <= 1e-10 for r1, r2 in zip(res1, res2)), (x, y, r1, r2)
