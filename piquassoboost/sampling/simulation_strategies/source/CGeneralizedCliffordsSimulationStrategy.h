@@ -31,6 +31,9 @@
 #define GlynnRepDualDFE 3
 #define GlynnRepMultiSingleDFE 4
 #define GlynnRepMultiDualDFE 5
+#define GlynnRepCPUDouble 6
+#define BBFGPermanentCalculatorRepeatedDouble 7
+#define BBFGPermanentCalculatorRepeatedLongDouble 8
 
 namespace pic {
 
