@@ -17,11 +17,14 @@ from .GeneralizedCliffordsSimulationStrategy_wrapper import (
     GeneralizedCliffordsSimulationStrategy_wrapper
 )
 
+from .GeneralizedCliffordsBSimulationStrategy_wrapper import (
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+)
 
 class GeneralizedCliffordsSimulationStrategy(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 0)
 
@@ -38,7 +41,7 @@ class GeneralizedCliffordsSimulationStrategy(
 class GeneralizedCliffordsSimulationStrategyChinHuh(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 1)
 
@@ -55,7 +58,7 @@ class GeneralizedCliffordsSimulationStrategyChinHuh(
 class GeneralizedCliffordsSimulationStrategySingleDFE(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 2)
 
@@ -72,7 +75,7 @@ class GeneralizedCliffordsSimulationStrategySingleDFE(
 class GeneralizedCliffordsSimulationStrategyDualDFE(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 3)
 
@@ -88,7 +91,7 @@ class GeneralizedCliffordsSimulationStrategyDualDFE(
 class GeneralizedCliffordsSimulationStrategyMultiSingleDFE(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 4)
 
@@ -105,7 +108,7 @@ class GeneralizedCliffordsSimulationStrategyMultiSingleDFE(
 class GeneralizedCliffordsSimulationStrategyMultiDualDFE(
     GeneralizedCliffordsSimulationStrategy_wrapper
 ):
-    def __init__(self, interferometer_matrix):
+    def __init__(self, interferometer_matrix, seed):
 
         super().__init__(interferometer_matrix, 5)
 
@@ -119,3 +122,208 @@ class GeneralizedCliffordsSimulationStrategyMultiDualDFE(
 
         return super().simulate(input_state, samples_number)
 
+class GeneralizedCliffordsSimulationStrategyDouble(
+    GeneralizedCliffordsSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 6)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsSimulationStrategyBBFGDouble(
+    GeneralizedCliffordsSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 7)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+        
+class GeneralizedCliffordsSimulationStrategyBBFGLongDouble(
+    GeneralizedCliffordsSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 8)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+
+
+
+class GeneralizedCliffordsBSimulationStrategy(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 0)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategyChinHuh(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 1)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategySingleDFE(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 2)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategyDualDFE(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 3)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+class GeneralizedCliffordsBSimulationStrategyMultiSingleDFE(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 4)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategyMultiDualDFE(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 5)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategyDouble(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 6)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+
+class GeneralizedCliffordsBSimulationStrategyBBFGDouble(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 7)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
+        
+class GeneralizedCliffordsBSimulationStrategyBBFGLongDouble(
+    GeneralizedCliffordsBSimulationStrategy_wrapper
+):
+    def __init__(self, interferometer_matrix, seed):
+
+        super().__init__(interferometer_matrix, 8)
+
+
+    def simulate(self, input_state, samples_number: int = 1):
+        """
+            Returns sample from linear optics experiments given output state.
+            :param input_state: Input state in particle basis.
+            :return: A resultant state after traversing through interferometer.
+        """
+
+        return super().simulate(input_state, samples_number)
