@@ -7,7 +7,9 @@ import piquasso as pq
 import piquassoboost as pqb
 from piquassoboost.sampling.simulator import BoostedSamplingSimulator
 from piquassoboost.sampling.BosonSamplingSimulator import BosonSamplingSimulator
-from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE, GeneralizedCliffordsSimulationStrategyMultiSingleDFE, GeneralizedCliffordsSimulationStrategyMultiDualDFE
+from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsSimulationStrategy, GeneralizedCliffordsSimulationStrategyChinHuh, GeneralizedCliffordsSimulationStrategySingleDFE, GeneralizedCliffordsSimulationStrategyDualDFE, GeneralizedCliffordsSimulationStrategyMultiSingleDFE, GeneralizedCliffordsSimulationStrategyMultiDualDFE, GeneralizedCliffordsSimulationStrategyDouble, GeneralizedCliffordsSimulationStrategyBBFGDouble, GeneralizedCliffordsSimulationStrategyBBFGLongDouble
+
+from piquassoboost.sampling.simulation_strategies.GeneralizedCliffordsSimulationStrategy import GeneralizedCliffordsBSimulationStrategy, GeneralizedCliffordsBSimulationStrategyChinHuh, GeneralizedCliffordsBSimulationStrategySingleDFE, GeneralizedCliffordsBSimulationStrategyDualDFE, GeneralizedCliffordsBSimulationStrategyMultiSingleDFE, GeneralizedCliffordsBSimulationStrategyMultiDualDFE, GeneralizedCliffordsBSimulationStrategyDouble, GeneralizedCliffordsBSimulationStrategyBBFGDouble, GeneralizedCliffordsBSimulationStrategyBBFGLongDouble
 
 def checkSim():
   import os
@@ -303,7 +305,7 @@ def permanent_Glynn_Inf(Arep, input_state, output_state):
   else: calculators[10].matrix, calculators[10].input_state, calculators[10].output_state = Arep, input_state, output_state  
   return calculators[10].calculate()
 
-samplers = [None, None, None, None, None, None]
+samplers = [None, None, None, None, None, None, None, None, None]
 seed = 0x123456789ABCDEF
 def boson_sampling_Clifford_GlynnRep(Arep, input_state, shots):
   if samplers[0] is None: samplers[0] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategy(Arep, seed))
@@ -335,6 +337,21 @@ def boson_sampling_Clifford_GlynnRepMultiDualDFE(Arep, input_state, shots):
   else: samplers[5].simulation_strategy.interferometer_matrix = Arep
   samplers[5].simulation_strategy.seed(seed)
   return samplers[5].get_classical_simulation_results(input_state, shots)
+def boson_sampling_Clifford_GlynnRepDouble(Arep, input_state, shots):
+  if samplers[6] is None: samplers[6] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyDouble(Arep, seed))
+  else: samplers[6].simulation_strategy.interferometer_matrix = Arep
+  samplers[6].simulation_strategy.seed(seed)  
+  return samplers[6].get_classical_simulation_results(input_state, shots)
+def boson_sampling_Clifford_BBFGDouble(Arep, input_state, shots):
+  if samplers[7] is None: samplers[7] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyBBFGDouble(Arep, seed))
+  else: samplers[7].simulation_strategy.interferometer_matrix = Arep
+  samplers[7].simulation_strategy.seed(seed)  
+  return samplers[7].get_classical_simulation_results(input_state, shots)
+def boson_sampling_Clifford_BBFGLongDouble(Arep, input_state, shots):
+  if samplers[8] is None: samplers[6] = BosonSamplingSimulator(GeneralizedCliffordsSimulationStrategyBBFGLongDouble(Arep, seed))
+  else: samplers[8].simulation_strategy.interferometer_matrix = Arep
+  samplers[8].simulation_strategy.seed(seed)  
+  return samplers[8].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
 dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_DFE,)#, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
@@ -421,7 +438,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs or True:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
           mplier = 1#5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
@@ -508,8 +525,9 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
 #other_stability(40, 30)
 #stability(40, 30)
 for i in (10, 20, 30): #range(19 if hasSim else 0, 40+1):
-    verify_timing(DEPTH, i, None, batchsize=1)
-    verify_timing(DEPTH, i, None, batchsize=3)
+    #verify_timing(DEPTH, i, None, batchsize=1)
+    verify_timing(DEPTH, i, None, shots=10)
+    #verify_timing(DEPTH, i, None, batchsize=3)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
 #verify_timing(DEPTH, 20, 10)
