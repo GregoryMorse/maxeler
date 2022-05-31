@@ -121,7 +121,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     
     public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
-        //int CEPipelining = getKernelConfig().optimization.getCEPipelining();
+        int CEPipelining = getKernelConfig().optimization.getCEPipelining();
         DFEType IntType = dfeInt(64);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(15, 64) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
@@ -156,7 +156,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         //isReset <== mainCounter.getWrap();
         DFEVar mainCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(ticksMax)).getCount();
         DFEVar isInit = mainCount <= msizem1cast;
-        mainCount = repeatPipeline(mainCount, 4);
+        mainCount = repeatPipeline(mainCount, 1+CEPipelining);
         DFEVar firstTick = repeatPipeline(mainCount === 0, 3 + (kernNum == 0 ? 0 : 1)+(dual ? 1 : 0)+(kernNum!=0 && dual && !useFloat ? 1 : 0));
         DFEVar altFirstTick = kernNum == 0 ? firstTick : repeatPipeline(firstTick, 2);
         if (kernNum != 0) mainCount = repeatPipeline(mainCount, 3+(kernNum!=0 && dual && !useFloat ? 1 : 0));
@@ -232,7 +232,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
             rowToAdd = (repeatPipeline(useRow.slice(63, 1), 3).cat(repeatPipeline(exponent.reinterpret(expType), 2) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(repeatPipeline(useRow.slice(0, 53-1), 3))).reinterpret(cplxRowType).cast(colSumType);
         } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
-        isInit = repeatPipeline(isInit, 9+(kernNum == 0 ? 0  : 1)+(useFloat ? 5 : 0));
+        isInit = repeatPipeline(isInit, 6+CEPipelining+(kernNum == 0 ? 0  : 1)+(useFloat ? 5 : 0));
         rowToAdd = isInit ? repeatPipeline(oneRow, 3 + (useFloat ? 3 : 0)).cast(oneRowFixType).reinterpret(colSumType) : rowToAdd;
         altFirstTick = repeatPipeline(altFirstTick, 3 + (useFloat ? 3 : 0));
         //update sum vector
