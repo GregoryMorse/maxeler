@@ -51,7 +51,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
-        conf.setSynthesisStrategy(SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
+        
+        int bufg = 4+16+4+1; //base on number of streams, rather than default of 12
+        int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
+        //rather than FsmExtraction.ONE_HOT, AUTO may be better
+        //Directive.ALTERNATE_ROUTABILITY may be better than Directive.DEFAULT
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        conf.setSynthesisStrategy(customPerfOptHigh); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
         
         //route options: RouteOpt.ALTERNATE_CLB_ROUTING, RouteOpt.EXPLORE, RouteOpt.createCustom(RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), RouteOpt.createCustom(RouteOpt.EXPLORE, true, false, "")
         
