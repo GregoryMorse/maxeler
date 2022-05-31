@@ -339,6 +339,7 @@ public class InitializeColSumDFEKernel extends Kernel {
     
     List<DFEVector<DFEVar>> counterChainWithInit(DFEVar enable, DFEVector<DFEVar> max, DFEVar initValue, DFEVar nextInitValue, DFEVector<DFEVar> userReset, int inc, int loopLength, boolean needWraps, KernelLib owner) //DFEVar[] initValue, 
     {
+        //final int counterChainWrapPipeliningLimit = 4;
         final int counterChainWrapPipelining = 1;
         DFEVector<DFEVar> counterChain = new DFEVectorType<DFEVar>(max[0].getType(), max.getType().getSize()).newInstance(this);
         DFEVector<DFEVar> wraps = needWraps ? new DFEVectorType<DFEVar>(dfeBool(), max.getType().getSize()).newInstance(this) : null;
