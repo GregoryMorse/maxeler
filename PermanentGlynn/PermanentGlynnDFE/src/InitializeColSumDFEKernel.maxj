@@ -157,7 +157,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar mainCount = control.count.makeCounter(control.count.makeParams(maxdim - basekernpow2 - (dual ? 1 : 0)).withMax(ticksMax)).getCount();
         DFEVar isInit = mainCount <= msizem1cast;
         mainCount = repeatPipeline(mainCount, 4);
-        DFEVar firstTick = repeatPipeline(mainCount === 0, 3 + (kernNum == 0 ? 0 : 1)+(dual ? 1 : 0));
+        DFEVar firstTick = repeatPipeline(mainCount === 0, 3 + (kernNum == 0 ? 0 : 1)+(dual ? 1 : 0)+(kernNum!=0 && dual && !useFloat ? 1 : 0));
         DFEVar altFirstTick = kernNum == 0 ? firstTick : repeatPipeline(firstTick, 2);
         if (kernNum != 0) mainCount = repeatPipeline(mainCount, 3+(kernNum!=0 && dual && !useFloat ? 1 : 0));
         DFEVar tickCount = (mainCount - msizem1cast).slice(0, gcodeRows).reinterpret(dfeUInt(gcodeRows));        
@@ -211,7 +211,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             }
             initChoices.add(oneRowType.newInstance(this, allOnes));
             initChoices.add(oneRow);
-            oneRow = control.oneHotMux(needData.cat(repeatPipeline(firstTick, (kernNum!=0 && dual && !useFloat ? 1 : 0)) & notNeedData).cat(notFirstTick & notNeedData), initChoices);
+            oneRow = control.oneHotMux(needData.cat(firstTick & notNeedData).cat(notFirstTick & notNeedData), initChoices);
         }
         //debug.simPrintf(isInit, "%d %d %KObj%\n", kernNum, needData, oneRow);
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
