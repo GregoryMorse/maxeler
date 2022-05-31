@@ -856,7 +856,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat) {
         super(parameters);
-        //optimization.pushFanoutLimit(4, FanoutLimitType.TREE);
 
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
         DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
@@ -955,7 +954,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
 
         io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type);
-        //optimization.popFanoutLimit();
     }
 
 }
