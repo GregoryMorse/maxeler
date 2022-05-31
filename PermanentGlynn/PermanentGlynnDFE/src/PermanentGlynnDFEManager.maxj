@@ -163,8 +163,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         InterfaceParam totalPerms = ei.addParam("totalPerms", CPUTypes.UINT64);
         if (dual && !isSim) {
             InterfaceParam isLocal = ei.addParam("isLocal", CPUTypes.UINT8);
-            for (int kernel_n = 0; kernel_n < numkernels; kernel_n++)
-                ei.setScalar("PermanentGlynnDFEKernel_" + kernel_n, "isLocal", isLocal);
             for (int i = 0; i < initKerns; i++)
                 ei.setScalar("InitializeColSumDFEKernel_" + i, "isLocal", isLocal);
         }
