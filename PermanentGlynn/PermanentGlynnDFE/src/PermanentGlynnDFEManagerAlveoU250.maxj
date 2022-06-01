@@ -45,7 +45,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         final PermanentGlynnEngineParameters params = new PermanentGlynnEngineParameters(argv);
 
         final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
-
+        manager.getManagerConfig().setDefaultStreamFifoDepth(64);
         BuildConfig conf = manager.getBuildConfig();
         /*
         System.out.println("Bram Mapping Scale Factor: " + conf.getBramMappingScaleFactor()); //1.0
