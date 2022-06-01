@@ -36,34 +36,36 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
 
     //40x40 is a large enough limit in all cases
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
-        /*OptimizationOptions config = getCurrentKernelConfig().optimization;
-
-        System.out.println("CEPipelining: " + config.getCEPipelining());
-        System.out.println("CEReplicationNumPartitions: " + config.getCEReplicationNumPartitions());
-        System.out.println("ClockPhaseBalanceThreshold: " + config.getClockPhaseBalanceThreshold());
-        System.out.println("ClockPhaseRetries: " + config.getClockPhaseRetries());
-        System.out.println("ConditionalArithmeticEnabled: " + config.getConditionalArithmeticEnabled());
-        System.out.println("ConstantMultiplicationWithShiftAddThreshold: " + config.getConstantMultiplicationWithShiftAddThreshold());
-        System.out.println("DeleteRedundantNodes: " + config.getDeleteRedundantNodes());
-        System.out.println("DSPMulAddChainBehavior: " + config.getDSPMulAddChainBehavior());
-        System.out.println("FIFOCoalescingEnabled: " + config.getFIFOCoalescingEnabled());
-        System.out.println("FIFOImplementationBRAMThreshold: " + config.getFIFOImplementationBRAMThreshold());
-        System.out.println("Inlining: " + config.getInlining());
-        System.out.println("MinimumStaticFIFOSplitDepth: " + config.getMinimumStaticFIFOSplitDepth());
-        System.out.println("NumberOfPacketsInFlight: " + config.getNumberOfPacketsInFlight());
-        System.out.println("OptimizationTechnique: " + config.getOptimizationTechnique());
-        System.out.println("OptimizePowerTwoFloatMultEnabled: " + config.getOptimizePowerTwoFloatMultEnabled());
-        System.out.println("PreserveNodeRegisters: " + config.getPreserveNodeRegisters());
-        System.out.println("ROMImplementationBRAMThreshold: " + config.getROMImplementationBRAMThreshold());
-        System.out.println("TriAddsEnabled: " + config.getTriAddsEnabled());
-        System.out.println("UseAsapScheduler: " + config.getUseAsapScheduler());
-        System.out.println("UseGlobalClockBuffer: " + config.getUseGlobalClockBuffer());
-        System.out.println("UseGlobalClockLinesRst: " + config.getUseGlobalClockLinesRst());*/
+        OptimizationOptions opt = getCurrentKernelConfig().optimization;
+        
+        /*
+        System.out.println("CEPipelining: " + opt.getCEPipelining()); //2
+        System.out.println("CEReplicationNumPartitions: " + opt.getCEReplicationNumPartitions()); //0
+        System.out.println("ClockPhaseBalanceThreshold: " + opt.getClockPhaseBalanceThreshold()); //0.1
+        System.out.println("ClockPhaseRetries: " + opt.getClockPhaseRetries()); //50
+        System.out.println("ConditionalArithmeticEnabled: " + opt.getConditionalArithmeticEnabled()); //true
+        System.out.println("ConstantMultiplicationWithShiftAddThreshold: " + opt.getConstantMultiplicationWithShiftAddThreshold()); //3
+        System.out.println("DeleteRedundantNodes: " + opt.getDeleteRedundantNodes()); //true
+        System.out.println("DSPMulAddChainBehavior: " + opt.getDSPMulAddChainBehavior()); //OPTIMISE
+        System.out.println("FIFOCoalescingEnabled: " + opt.getFIFOCoalescingEnabled()); //true
+        System.out.println("FIFOImplementationBRAMThreshold: " + opt.getFIFOImplementationBRAMThreshold()); //2080
+        System.out.println("Inlining: " + opt.getInlining()); //false
+        System.out.println("MinimumStaticFIFOSplitDepth: " + opt.getMinimumStaticFIFOSplitDepth()); //1
+        System.out.println("NumberOfPacketsInFlight: " + opt.getNumberOfPacketsInFlight()); //1
+        System.out.println("OptimizationTechnique: " + opt.getOptimizationTechnique()); //DEFAULT
+        System.out.println("OptimizePowerTwoFloatMultEnabled: " + opt.getOptimizePowerTwoFloatMultEnabled()); //true
+        System.out.println("PreserveNodeRegisters: " + opt.getPreserveNodeRegisters()); //true
+        System.out.println("ROMImplementationBRAMThreshold: " + opt.getROMImplementationBRAMThreshold()); //2080
+        System.out.println("TriAddsEnabled: " + opt.getTriAddsEnabled()); //true
+        System.out.println("UseAsapScheduler: " + opt.getUseAsapScheduler()); //false
+        System.out.println("UseGlobalClockBuffer: " + opt.getUseGlobalClockBuffer()); //false
+        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false
+        */
         getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
-        getCurrentKernelConfig().optimization.setCEPipelining(3);
-        getCurrentKernelConfig().optimization.setInlining(true);
-        getCurrentKernelConfig().optimization.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
-        getCurrentKernelConfig().optimization.setPreserveNodeRegisters(false);
+        opt.setCEPipelining(3);
+        opt.setInlining(true);
+        opt.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
+        opt.setPreserveNodeRegisters(false);
 
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
