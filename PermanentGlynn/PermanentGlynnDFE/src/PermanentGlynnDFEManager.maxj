@@ -37,7 +37,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
     //40x40 is a large enough limit in all cases
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
         OptimizationOptions opt = getCurrentKernelConfig().optimization;
-        
+        //minimumStreamFifoDepth = 64
+        //defaultStreamFifoDepth = 512
+        //defaultAdditionalRegisters = 0
+        //allowNonMultipleTransitions = false
+        //streamClockFrq = 100
+        //Stream FIFOs are placed on input placement regions
         /*
         System.out.println("CEPipelining: " + opt.getCEPipelining()); //2
         System.out.println("CEReplicationNumPartitions: " + opt.getCEReplicationNumPartitions()); //0
