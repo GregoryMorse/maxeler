@@ -392,6 +392,7 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
     inp.push_back(input_state[mrows[i]]+1);
     mulsum += input_state[mrows[i]];
   }
+
   matrix matrix_rows = transpose_reorder_rows(matrix_mtx, row_indices, transpose);
   for (size_t i = 0; i < row_indices.size(); i++) {
       rowchange_indices.push_back(i < onerows ? 1 : input_state[row_indices[i]]); 
@@ -554,7 +555,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       } 
       for (size_t idx = 0; idx < mplicity.size(); idx++) {
           mtxfix[i][((rows-1)*loopLength+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
-      }  
+      }
     }
 
     //note: stride must equal number of columns, or this will not work as the C call expects contiguous data
@@ -648,7 +649,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t rows = matrix_mtx.rows;
         const size_t numinits = 4;
         const size_t max_fpga_cols = max_dim / numinits;
-        size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
+        const size_t cols = colMux ? matrix_mtx.cols : photons;
+        size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[numinits] = {};
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
@@ -656,7 +658,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         for (size_t i = 0; i < actualinits; i++) {
           mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
           size_t basecol = max_fpga_cols * i;
-          size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
+          size_t lastcol = cols<=basecol ? 0 : std::min(max_fpga_cols, cols-basecol);
           for (size_t idx=0; idx < rows; idx++) {
             size_t offset = idx * matrix_mtx.stride;
             size_t offset_small = idx*loopLength*mtxfix[i].stride;
