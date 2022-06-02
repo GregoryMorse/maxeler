@@ -649,16 +649,15 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t rows = matrix_mtx.rows;
         const size_t numinits = 4;
         const size_t max_fpga_cols = max_dim / numinits;
-        const size_t cols = colMux ? matrix_mtx.cols : photons;
-        size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
-        matrix_base<ComplexFix16> mtxfix[numinits] = {};
+        size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
+        matrix_base<ComplexFix16> mtxfix[colMux ? numinits : actualinits];
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
         int adjLoopLength = changecount+1 < (unsigned)loopLength && rowchange_indices[rows - 1] == 1 ? changecount+1 : loopLength;
         for (size_t i = 0; i < actualinits; i++) {
           mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
           size_t basecol = max_fpga_cols * i;
-          size_t lastcol = cols<=basecol ? 0 : std::min(max_fpga_cols, cols-basecol);
+          size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
           for (size_t idx=0; idx < rows; idx++) {
             size_t offset = idx * matrix_mtx.stride;
             size_t offset_small = idx*loopLength*mtxfix[i].stride;
