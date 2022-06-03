@@ -174,7 +174,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
     lock_lib();
     if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
     else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
-
+    if (matrices.size() == 0) return;
     if (!calcPermanentGlynnDFE ||
         matrices.begin()->rows < 1+dfe_basekernpow2 || matrices.begin()->cols == 0 || matrices.begin()->rows >= matrices.begin()->cols + 2) { //compute with other method
       BBFGPermanentCalculator gpc;
