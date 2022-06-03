@@ -241,6 +241,8 @@ def load_test_data():
   return gen_test_data
 def verify_timing(nmax, batchsize=1):
   ERRBOUND = 1e-6
+  largeFuncs = largePermFuncs
+  if batchsize != 1 and permanent_Glynn_Cpp_Inf in largeFuncs: largeFuncs = [x for x in largeFuncs if x != permanent_Glynn_Cpp_Inf]
   suffix = "" if batchsize == 1 else str(batchsize)
   verdata = "verifydata.bin"
   resdata = "resultdata" + suffix + ".bin"
@@ -261,14 +263,14 @@ def verify_timing(nmax, batchsize=1):
     if not key in results: results[key] = {}
     for func in testPermFuncs:
       if func.__name__ in res[key]: del res[key][func.__name__]
-    for func in largePermFuncs:
+    for func in largeFuncs:
       if not func.__name__ in res[key]: res[key][func.__name__] = []
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
         #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
         #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or func == permanent_BBFG_LongDouble:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or True:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -276,12 +278,12 @@ def verify_timing(nmax, batchsize=1):
           #    v[0] = func(A[dim])
           def save_result():
               if batchsize == 1: v[0] = func(A[dim])
-              else: v[0] = func([A[dim]] * batchsize)
+              else: v[0] = func([A[dim]] * dim) #batchsize)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
           #if func in dfePermFuncs: print(check_power())
           if batchsize != 1:
             assert all(abs(res[key][func.__name__][dim] - x) < ERRBOUND for x in v[0])
-            v[0] = v[0][0]
+            if len(v[0]) != 0: v[0] = v[0][0]
           else:
             if len(res[key][func.__name__]) <= dim: res[key][func.__name__].append(v[0])
             else: res[key][func.__name__][dim] = v[0]
@@ -298,15 +300,15 @@ def verify_timing(nmax, batchsize=1):
       with open(os.path.join(saveFolder, "verifydata.csv"), "w") as f:
           import csv
           writer = csv.writer(f, delimiter='\t')
-          writer.writerow(["Absolute Error compared to " + largePermFuncs[0].__name__]) 
-          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-          writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largePermFuncs] for i in xaxis])
-          writer.writerow(["Relative Error compared to " + largePermFuncs[0].__name__]) 
-          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-          writer.writerows([[i] + [abs(res[key][largePermFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for x in largePermFuncs] for i in xaxis])
+          writer.writerow(["Absolute Error compared to " + largeFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largeFuncs] for i in xaxis])
+          writer.writerow(["Relative Error compared to " + largeFuncs[0].__name__]) 
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for x in largeFuncs] for i in xaxis])
           writer.writerow(["Permanent Computation Raw Results"])
-          writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-          writer.writerows([[i] + [res[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
+          writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+          writer.writerows([[i] + [res[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
           for dim in range(nmax+1):
             writer.writerow(["Random Unitary Test Matrix " + str(dim) + "x" + str(dim)])
             if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
@@ -315,18 +317,18 @@ def verify_timing(nmax, batchsize=1):
     with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
-      writer.writerow(["Size (n)"] + [f.__name__ for f in largePermFuncs])
-      writer.writerows([[i] + [results[key][x.__name__][i] for x in largePermFuncs] for i in xaxis])
+      writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
+      writer.writerows([[i] + [results[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
 
     for i in xaxis:
-      #assert all(abs(res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largePermFuncs[0].__name__)
-      failures = [(i, x, res[key][x][i], res[key][largePermFuncs[0].__name__][i], abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i]))) for x in (y.__name__ for y in largePermFuncs) if x != largePermFuncs[0].__name__ and abs((res[key][largePermFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largePermFuncs[0].__name__][i])) > ERRBOUND]
+      #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
+      failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
       if len(failures) != 0: print("ACCURACY FAILURES: ", failures); assert False, failures
 
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    verinfo = ([(f, [abs(res[key][largePermFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largePermFuncs[0].__name__][i]) for i in xaxis]) for f in largePermFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largePermFuncs[0].__name__ + " (log10)")
-    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largePermFuncs], "glynnpermtime" + suffix, "Time (log10 s)")
+    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "glynnpermtime" + suffix, "Time (log10 s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
@@ -364,6 +366,9 @@ def verify_rectangular(nmax):
             #print(x, y, r1, r2, "None" if abs(r1)==0 else (abs(r1-r2) / abs(r1)) <= 1e-10)
             #if y>=2 and y <= x-2:
 #verify_rectangular(20)
-verify_timing(DEPTH, 1)
+def paper_tests():
+    #verify_timing(DEPTH, 1)
+    verify_timing(30, 30)
+paper_tests()
 #for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
 #    verify_timing(DEPTH if hasSim else 22, batch_size)
