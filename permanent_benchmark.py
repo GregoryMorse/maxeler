@@ -270,7 +270,7 @@ def verify_timing(nmax, batchsize=1):
       for dim in xaxis:
         #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
         #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs or True:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim: # or func in dfePermFuncs:
           mplier = 5 if dim < 24 else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
@@ -314,6 +314,11 @@ def verify_timing(nmax, batchsize=1):
             if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
             for i in range(dim):
               writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
+    for p in dfePermFuncs:
+        for x in largeFuncs:
+            if not x in dfePermFuncs:
+                print("Speed-up", p.__name__, "vs.", x.__name__, results[key][x.__name__][nmax] / results[key][p.__name__][nmax],
+                    "Cross-over threshold", max((i for i in range(nmax) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1)
     with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
@@ -367,8 +372,8 @@ def verify_rectangular(nmax):
             #if y>=2 and y <= x-2:
 #verify_rectangular(20)
 def paper_tests():
-    #verify_timing(DEPTH, 1)
+    verify_timing(DEPTH, 1)
     verify_timing(30, 30)
-paper_tests()
+if not hasSim: paper_tests()
 #for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
 #    verify_timing(DEPTH if hasSim else 22, batch_size)
