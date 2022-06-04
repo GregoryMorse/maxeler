@@ -440,7 +440,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim: #or func in dfeFuncs:
           mplier = 1#5 if photons < 8 else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
@@ -489,6 +489,11 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
             for i in range(dim): writer.writerow([i, *A[dim][1][i]])
             writer.writerow(["Random multinomial distributed output states"])
             for i in range(dim): writer.writerow([i, *A[dim][2][i]])
+    for p in dfeFuncs:
+        for x in largeFuncs:
+            if not x in dfeFuncs:
+                print("Speed-up", p.__name__, "vs.", x.__name__, results[key][x.__name__][nmax] / results[key][p.__name__][nmax],
+                    "Cross-over threshold", max((i for i in range(nmax+1) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1)
     with open(os.path.join(saveFolder, "represultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
@@ -531,7 +536,7 @@ def paper_tests():
     for i in (10, 20, 30):
         verify_timing(DEPTH, i, None, batchsize=1)
         verify_timing(DEPTH, i, None, batchsize=DEPTH)
-#paper_tests()
+if not hasSim: paper_tests()
 for i in range(24 if hasSim else 0, 40+1):
     verify_timing(2, i, None, batchsize=1)
     #verify_timing(DEPTH, i, None, batchsize=3)
