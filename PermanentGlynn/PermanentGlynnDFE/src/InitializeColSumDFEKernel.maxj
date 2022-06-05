@@ -2,6 +2,7 @@ package permanentglynn;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
@@ -14,14 +15,17 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorTypeBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.VectorMemory;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.Counter;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count.WrapMode;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 
@@ -82,13 +86,31 @@ public class InitializeColSumDFEKernel extends Kernel {
             control.mux(sels[1], values.subList(split, values.size())) :
             control.mux(sels[0], values.subList(0, split));
     }
-    <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split) //do not yet need to generalize for >64 or triple stage even at >1024... 
+    <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split) //do not yet need to generalize for >64 or triple stage even at >1024...
     {
         DFEVar upper = sel.slice(split, values.size()-split);
+        DFEVar isUpper = upper !== 0;
         DFEVar[] sels = new DFEVar[] { optimization.pipeline(sel.slice(0, split)), optimization.pipeline(upper) };
-        return upper !== 0 ?
+        return isUpper ?
             control.oneHotMux(sels[1], values.subList(split, values.size())) :
             control.oneHotMux(sels[0], values.subList(0, split));
+    }
+    <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
+    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split)
+    {
+        DFEVar upper = sel.slice(split, values.size()-split);
+        DFEVar isUpper = upper !== 0;
+        DFEVar[] sels = new DFEVar[] { optimization.pipeline(sel.slice(0, split)), optimization.pipeline(upper) };
+        int innerSize = values[0].getSize();
+        M returnVal = values[0].getType().newInstance(this);
+        for (int i = 0; i < innerSize; i++) {
+            final int j = i;
+            List<P> curVals = values.stream().map(x -> x[j]).collect(Collectors.toList());
+            returnVal[i] <== optimization.pipeline(isUpper) ?
+                control.oneHotMux(optimization.pipeline(sels[1]), curVals.subList(split, curVals.size())) :
+                control.oneHotMux(optimization.pipeline(sels[0]), curVals.subList(0, split));
+        }
+        return returnVal;
     }
     DFEVector<DFEVar> oneHotEncode(DFEVar shift, int bits, int limit)
     {
@@ -218,13 +240,13 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
         DFEVector < DFEVar > onerow1 = optimization.pipeline(oneRow);
         for (int i = 0; i < gcodeRows; i++) {
-            allRows[i] <== Reductions.streamHold(i < gcodeRows/2 ? onerow0 : onerow1, initOneHot[i]);
+            allRows[i] <== initOneHot[i] ? (i < gcodeRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1); //Reductions.streamHold(i < gcodeRows/2 ? onerow0 : onerow1, initOneHot[i]);
         }
         //read row from input matrix
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);       
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
         //DFEVector < DFEVar > useRow = mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), gcodeRows/2);
-        DFEVector < DFEVar > useRow = oneHotMux32to64(repeatPipeline(grayCounter.bitDiffMask, 1+(dual ? 1 : 0)), allRows.getElementsAsList(), gcodeRows/2);
+        DFEVector < DFEVar > useRow = oneHotMuxVector32to64(repeatPipeline(grayCounter.bitDiffMask, dual ? 1 : 0), allRows.getElementsAsList(), gcodeRows/2);
         DFEVector < DFEComplex > rowToAdd;
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
             DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
