@@ -818,6 +818,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //Ungar: (ac - bd)+((a+b)*(c+d)-ac-bd)
         //Ungar is more numerically stable than Knuth, even if dataflow more even in Knuth!
         //if M=3A then 4M+2A=12A+2A=14A, 3M+5A=9A+5A=14A
+        //if (useFloat) return n1 * n2;
         DFEVar a = n1.getReal();
         DFEVar c = n2.getReal();
         DFEVar b = n1.getImaginary();
@@ -868,27 +869,22 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEComplex[] colSumFix = new DFEComplex[cols];
 
         // tick count
-        DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
-        DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64)) << msizeadj;
-        DFEVar tickCount, isCalc = null;
+        DFEVar isCalc = null;
         DFEVar isLocal = null, parity = null, curMplicity = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
         if (colMux) {
+            DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64));
             DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(6));
             DFEVar photonsm1cast = photonsm1.cast(dfeUInt(64));
             DFEVar mainCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeCols + photonsm1cast)).getCount();
             DFEVar initCount = mainCount.slice(0, 6).cast(dfeUInt(6));
             for (int i = 0; i < (dual ? 7 : 6); i++) initCount = optimization.pipeline(initCount);
     
-            tickCount = mainCount - photonsm1cast;
-            DFEVar isTransition = tickCount === 0;
-            DFEVar isInit = optimization.pipeline(tickCount.get(tickCount.getType().getTotalBits()-1).reinterpret(dfeBool())) | isTransition;
-    
+            DFEVar isInit = mainCount <= photonsm1cast;
     
             DFEVectorType < DFEVar > colIndexType = new DFEVectorType < DFEVar > (dfeUInt(6), cols);
             isInit = optimization.pipeline(isInit);
-            for (int i = 0; i < 3; i++) isTransition = optimization.pipeline(isTransition); 
-            isCalc = optimization.pipeline(~optimization.pipeline(isInit) | isTransition);
+            isCalc = mainCount >= photonsm1cast;
             if (dual) isCalc = optimization.pipeline(isCalc);
             for (int i = 0; i < (dual ? 2 : 1); i++) isInit = optimization.pipeline(isInit);
             DFEVar colIndex = io.input("colIndex", dfeUInt(8), isInit).cast(dfeUInt(6));
@@ -946,7 +942,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }*/
             }
         } else {
-            tickCount = control.count.simpleCounter(64, ticksBeforeCols);
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
                 if (j == 0) {
@@ -964,7 +959,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }
             }
         }
-        DFEVar gcodeDir = optimization.pipeline(optimization.pipeline((tickCount >> msizeadj).get(0)));
         //System.out.println("Graph Pipelining: " + optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
         //System.out.println("Node Pipelining: " + optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
         //System.out.println("DSP Factor: " + optimization.peekDSPFactor(MathOps.ALL)); //default 0.5
@@ -1036,11 +1030,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
         }
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
-        DFEVar tickParity = tickCount.get(0);
-        for (int i = 0; i < 6; i++) tickParity = optimization.pipeline(tickParity); 
-        DFEVar sign = ((tickParity ^ gcodeDir) & (msizeadj !== 0)) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        DFEVar sign = dual ? isLocal ^ parity : (((kernNum & 1) != 0) ^ parity);
         for (int i = 0; i < 49+(useFloat ? 219 : 0); i++) sign = optimization.pipeline(sign);
-        sign = sign ^ parity;
         for (int i = 0; i < 34 + (useFloat ? 22 : 0); i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
