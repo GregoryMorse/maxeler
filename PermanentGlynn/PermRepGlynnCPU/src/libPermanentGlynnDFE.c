@@ -116,9 +116,9 @@ void releive_DFE();
 @brief Interface function to initialize DFE array
 */
 #ifdef USE_FLOAT
-int initializeRep_DFEF(int groupMode, size_t* mtx_size, size_t* basekernpow2)
+int initializeRep_DFEF(int groupMode, size_t* mtx_size, size_t* basekernpow2, size_t* loopLength)
 #else
-int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2)
+int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2, size_t* loopLength)
 #endif
 {
 
@@ -189,6 +189,7 @@ int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2)
 
     *mtx_size = MTX_SIZE;
     *basekernpow2 = BASEKERNPOW2;
+    *loopLength = LOOPLENGTH;
     return 1;
 }
 
@@ -316,9 +317,8 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
     // simulation
 #ifndef DUAL
-      actions.glynnRowsGray.param_ticksMax = numOfPartialPerms, actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
+      actions.glynnRowsGray.outstream_res = res, actions.glynnRowsGray.outstream_size_res = resbytes;
       actions.glynnRowsGray.param_totalPerms = totalPerms, actions.glynnRowsGray.param_initParities = initParities,
-      //actions.glynnRowsGray.param_rows = rows,
       actions.glynnRowsGray.param_msize = cols, actions.glynnRowsGray.param_photons = photons, actions.glynnRowsGray.param_changeCount = changecount+1;
       actions.glynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.glynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms;
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
@@ -331,10 +331,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #else
       //Simulation of manager I/Os of purpose OTHER_FPGA not yet supported.
 #ifdef MAXELER_SIM
-      actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
+      actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.outstream_res2 = res2, actions.dualGlynnRowsGray.outstream_size_res2 = resbytes;
       actions.dualGlynnRowsGray.param_totalPerms = totalPerms, actions.dualGlynnRowsGray.param_initParities = initParities,
-      //actions.dualGlynnRowsGray.param_rows = rows,
       actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
@@ -345,17 +344,15 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.dualGlynnRowsGray.instream_InputMtx6 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx6 = cols > 2*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx7 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx7 = cols > 3*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
 #else
-      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
+      actions.dualGlynnRowsGray.param_isLocal = 1, actions.dualGlynnRowsGray.outstream_res = res, actions.dualGlynnRowsGray.outstream_size_res = resbytes;
       actions.dualGlynnRowsGray.param_totalPerms = totalPerms, actions.dualGlynnRowsGray.param_initParities = initParities,
-      //actions.dualGlynnRowsGray.param_rows = rows,
       actions.dualGlynnRowsGray.param_msize = cols, actions.dualGlynnRowsGray.param_photons = photons, actions.dualGlynnRowsGray.param_changeCount = changecount+1;
       actions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; actions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms;
       actions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.dualGlynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
       actions.dualGlynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.dualGlynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
-      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.param_ticksMax = numOfPartialPerms, dualactions.dualGlynnRowsGray.outstream_res = res2, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
+      dualactions.dualGlynnRowsGray.param_isLocal = 0, dualactions.dualGlynnRowsGray.outstream_res = res2, dualactions.dualGlynnRowsGray.outstream_size_res = 0;
       dualactions.dualGlynnRowsGray.param_totalPerms = totalPerms, dualactions.dualGlynnRowsGray.param_initParities = initParities,
-      //dualactions.dualGlynnRowsGray.param_rows = rows,
       dualactions.dualGlynnRowsGray.param_msize = cols, dualactions.dualGlynnRowsGray.param_photons = photons, dualactions.dualGlynnRowsGray.param_changeCount = changecount+1;
       dualactions.dualGlynnRowsGray.instream_InputMtx0 = (__int64_t*)mtx_data[0]; dualactions.dualGlynnRowsGray.instream_size_InputMtx0 = sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms;
       dualactions.dualGlynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; dualactions.dualGlynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
@@ -386,8 +383,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 
     //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
-    numOfPartialPerms = 1ULL << (numOfPartialPerms-1);
-    uint64_t mulSumPerms = 1ULL << mulsum;
+    uint64_t mulSumPerms = 1ULL << (mulsum + numOfPartialPerms-1);
     //perm->real = 0, perm->imag = 0;
     //int parity = 0;
     for (uint64_t i = 0; i < totalPerms; i++) {
@@ -398,8 +394,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].real += dfeFloatToLD(res2[i*2]);
     perm[i].imag += dfeFloatToLD(res2[i*2+1]);
 #endif
-    perm[i].real /= numOfPartialPerms;
-    perm[i].imag /= numOfPartialPerms;
     perm[i].real /= mulSumPerms, perm[i].imag /= mulSumPerms;
 #else
     long double factor = (long double)(1ULL<<62);
@@ -410,8 +404,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
         long double real = ((long double)res[i*2])/factor/factor;
         long double imag = ((long double)res[i*2+1])/factor/factor;
     
-        real /= numOfPartialPerms;
-        imag /= numOfPartialPerms;
         real /= mulSumPerms, imag /= mulSumPerms;
         // renormalize the result according to the normalization of the input matrix
         for (int jdx=0; jdx<photons; jdx++ ) {
