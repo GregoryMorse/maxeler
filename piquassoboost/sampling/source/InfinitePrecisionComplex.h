@@ -9,8 +9,8 @@ namespace pic {
 class FloatInf
 {
 public:
-  FloatInf() : FloatInf(0.0) {} //{ init = 0; }
-  virtual ~FloatInf() { uninit(); }
+  FloatInf() { init = 0; }
+  ~FloatInf() { uninit(); }
   FloatInf(const double d) { init = 1; mpfr_init2(this->f, IEEE_DBL_MANT_DIG); mpfr_set_d(this->f, d, MPFR_RNDN); }
   FloatInf(const long double ld) { init = 1; mpfr_init2(this->f, MPFR_LDBL_MANT_DIG); mpfr_set_ld(this->f, ld, MPFR_RNDN); }
   FloatInf(const long long unsigned int uj) { init = 1; mpfr_init2(this->f, sizeof(uintmax_t)*8); mpfr_set_uj(this->f, uj, MPFR_RNDN); }
