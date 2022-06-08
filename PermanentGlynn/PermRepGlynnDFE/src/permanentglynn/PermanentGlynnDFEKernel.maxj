@@ -222,7 +222,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
     DFEVar[] splitInt(DFEVar a, int bits, int signbits)
     {
         DFEFix aType = (DFEFix) a.getType();
-        int num = 1+(aType.getTotalBits()-signbits+bits-1)/bits;
+        int num = aType.getSignMode() == SignMode.UNSIGNED ? (aType.getTotalBits()+bits-1)/bits : 1+(aType.getTotalBits()-signbits+bits-1)/bits;
         if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && ((aType.getTotalBits()-signbits)%bits == 1)) num--; //cannot have sign bit isolated
         DFEVar[] vars = new DFEVar[num];
         for (int i = 0; i < num; i++) {
@@ -818,7 +818,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //Ungar: (ac - bd)+((a+b)*(c+d)-ac-bd)
         //Ungar is more numerically stable than Knuth, even if dataflow more even in Knuth!
         //if M=3A then 4M+2A=12A+2A=14A, 3M+5A=9A+5A=14A
-        //if (useFloat) return n1 * n2;
+        if (useFloat) return n1 * n2;
         DFEVar a = n1.getReal();
         DFEVar c = n2.getReal();
         DFEVar b = n1.getImaginary();
