@@ -189,7 +189,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar isPreGcode = altFirstTick | repeatPipeline(mainCount < rowpow2.cast(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0))), 3+(dual ? 1 : 0));
         if (useFloat) isPreGcode = repeatPipeline(isPreGcode, 5);
         GrayCounter grayCounter = new GrayCounter(tickCount, this);
-        DFEVar changePosIsZero = grayCounter.bitDiffMask === (rowpow2shift.reinterpret(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0))).cast(dfeUInt(gcodeRows)) >> 1);
+        DFEVar changePosIsZero = grayCounter.bitDiffMask === (rowpow2shift.reinterpret(dfeUInt(maxdim - basekernpow2 - (dual ? 1 : 0))) >> 1).cast(dfeUInt(gcodeRows));
         if (dual) changePosIsZero = isLocal & changePosIsZero;
         grayCounter.changeValue = repeatPipeline(grayCounter.changeValue, 1+(dual ? 1 : 0));
         DFEVar isNeg = (changePosIsZero ^ grayCounter.changeValue) & notIsInit;
