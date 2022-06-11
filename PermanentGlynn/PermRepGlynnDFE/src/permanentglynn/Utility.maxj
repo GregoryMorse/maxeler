@@ -10,6 +10,15 @@ import java.util.HashSet;
 
 import maxpower.utils.CollectionUtils;
 
+import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
+import com.maxeler.platform.max5.manager.BuildConfig;
+
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
+
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -1288,5 +1297,107 @@ public class Utility {
         System.out.println("Fanout Limit Type: " + owner.optimization.peekFanoutLimitType()); //default CHAIN
         System.out.println("Rounding Mode: " + owner.optimization.getRoundingMode()); //default TONEAREVEN
     }
-
+    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner) //-1 for PCIE
+    {
+        if (owner != null) {
+            for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
+                selectSLR(i, (XilinxAlveoU250Manager)owner);
+                Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
+                unselectSLR((XilinxAlveoU250Manager)owner);
+                DFELink inp = fo.getInput();            
+                inp.setAdditionalRegisters(regPerX);
+                inp <== input;
+                input = fo.addOutput(name + "Chain" + suffix + i);
+                input.setAdditionalRegisters(regPerX);
+                if (slrEnd >= slrStart) i++; else i--;
+            }
+        } else
+            input.setAdditionalRegisters(regPerX * ((slrEnd >= slrStart) ? slrEnd - slrStart : slrStart - slrEnd));
+        return input;
+    }
+    public static Fanout[] slrCrossingFanoutChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner) //slrStart is inclusive here
+    {
+        Fanout fanouts[] = new Fanout[slrEnd - slrStart];
+        for (int i = slrStart; i < slrEnd; i++) {
+            selectSLR(i, (XilinxAlveoU250Manager)owner);
+            fanouts[i] = owner.fanout(name + "Fanout" + suffix + i);
+            unselectSLR((XilinxAlveoU250Manager)owner);
+        }
+        for (int i = slrStart; i < slrEnd; i++) {
+            if (i == slrStart) {
+                DFELink inp = fanouts[0].getInput();
+                inp.setAdditionalRegisters(input.getAdditionalRegisters()); //PCIE->SLR0 - 1 crossing
+                inp <== input;
+            }
+            if (i != slrEnd - 1) {
+                DFELink chain = fanouts[i].addOutput(name + "Chain" + suffix + i);
+                chain.setAdditionalRegisters(regPerX); //PCIE->SLR0 or SLR0->SLR1 or SLR1->SLR2- 1 crossing
+                DFELink inp = fanouts[i+1].getInput();
+                inp.setAdditionalRegisters(regPerX); //SLR0->SLR1 or SLR1->SLR2- 1 crossing
+                inp <== chain;
+            }             
+        }
+        return fanouts;
+    }
+    public static void printKernelConfigurationOptimizationDefaults(ManagerKernelBase owner)
+    {
+        OptimizationOptions opt = owner.getCurrentKernelConfig().optimization;
+        System.out.println("CEPipelining: " + opt.getCEPipelining()); //2
+        System.out.println("CEReplicationNumPartitions: " + opt.getCEReplicationNumPartitions()); //0
+        System.out.println("ClockPhaseBalanceThreshold: " + opt.getClockPhaseBalanceThreshold()); //0.1
+        System.out.println("ClockPhaseRetries: " + opt.getClockPhaseRetries()); //50
+        System.out.println("ConditionalArithmeticEnabled: " + opt.getConditionalArithmeticEnabled()); //true
+        System.out.println("ConstantMultiplicationWithShiftAddThreshold: " + opt.getConstantMultiplicationWithShiftAddThreshold()); //3
+        System.out.println("DeleteRedundantNodes: " + opt.getDeleteRedundantNodes()); //true
+        System.out.println("DSPMulAddChainBehavior: " + opt.getDSPMulAddChainBehavior()); //OPTIMISE
+        System.out.println("FIFOCoalescingEnabled: " + opt.getFIFOCoalescingEnabled()); //true
+        System.out.println("FIFOImplementationBRAMThreshold: " + opt.getFIFOImplementationBRAMThreshold()); //2080
+        System.out.println("Inlining: " + opt.getInlining()); //false
+        System.out.println("MinimumStaticFIFOSplitDepth: " + opt.getMinimumStaticFIFOSplitDepth()); //1
+        System.out.println("NumberOfPacketsInFlight: " + opt.getNumberOfPacketsInFlight()); //1
+        System.out.println("OptimizationTechnique: " + opt.getOptimizationTechnique()); //DEFAULT
+        System.out.println("OptimizePowerTwoFloatMultEnabled: " + opt.getOptimizePowerTwoFloatMultEnabled()); //true
+        System.out.println("PreserveNodeRegisters: " + opt.getPreserveNodeRegisters()); //true
+        System.out.println("ROMImplementationBRAMThreshold: " + opt.getROMImplementationBRAMThreshold()); //2080
+        System.out.println("TriAddsEnabled: " + opt.getTriAddsEnabled()); //true
+        System.out.println("UseAsapScheduler: " + opt.getUseAsapScheduler()); //false
+        System.out.println("UseGlobalClockBuffer: " + opt.getUseGlobalClockBuffer()); //false
+        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false        
+    }
+    public static void selectSLR(int slr_index, XilinxAlveoU250Manager owner) {
+        XilinxAlveoU250Manager.NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
+        if (slr_index < 0 || slr_index >= availableRegions.length) {
+            throw new IllegalArgumentException();
+        }
+        owner.pushNamedRegion(availableRegions[slr_index]);
+    }
+    public static void unselectSLR(XilinxAlveoU250Manager owner) { owner.popRegion(); }
+    public static void printManagerConfigurationDefaults(BuildConfig conf)
+    {
+        System.out.println("Bram Mapping Scale Factor: " + conf.getBramMappingScaleFactor()); //1.0
+        System.out.println("Build Effort: " + conf.getBuildEffort()); //MEDIUM
+        System.out.println("Build Level: " + conf.getBuildLevel()); //FULL_BUILD
+        System.out.println("Continue After Meeting Timing: " + conf.getContinueAfterMeetingTiming()); //false
+        System.out.println("Enable Chipscope Inserter: " + conf.getEnableChipscopeInserter()); //false
+        System.out.println("Enable Gen Max File: " + conf.getEnableGenMaxFile()); //true
+        System.out.println("Enable Pcie Ibert: " + conf.getEnablePcieIbert()); //false
+        System.out.println("Enable Pcie Jtag: " + conf.getEnablePcieJtag()); //false
+        System.out.println("Enable Tandom Boot: " + conf.getEnableTandemBoot()); //false
+        System.out.println("Enable Timing Analysis: " + conf.getEnableTimingAnalysis()); //true
+        System.out.println("Enable Xpm Macro: " + conf.getEnableXpmMacro()); //true
+        System.out.println("External Xdc Files: " + conf.getExternalXdcFiles()); //[]
+        System.out.println("Generate Hex Bit File: " + conf.getGenerateHexBitfile()); //false
+        System.out.println("Implementation Near Miss Retries: " + conf.getImplementationNearMissRetries()); //0
+        System.out.println("Implementation Near Miss Threshold: " + conf.getImplementationNearMissThreshold()); //0
+        System.out.println("Keep Wrapper Node Hierarchy: " + conf.getKeepWrapperNodeHierarchy()); //true
+        System.out.println("Logic Mapping Scale Factor: " + conf.getLogicMappingScaleFactor()); //1.0
+        System.out.println("Optimization Goal: " + conf.getOptimizationGoal()); //BALANCED
+        System.out.println("Override System Jitter: " + conf.getOverrideSystemJitter()); //false
+        System.out.println("Parallelism: " + conf.getParallelism()); //1
+        System.out.println("Power Consumption Critical Warning Threshold: " + conf.getPowerConsumptionCriticalWarningThreshold()); //112.5
+        System.out.println("Power Consumption Error Threshold: " + conf.getPowerConsumptionErrorThreshold()); //135.0
+        System.out.println("Power Consumption Warning Threshold: " + conf.getPowerConsumptionWarningThreshold()); //112.5
+        System.out.println("Suppress Uram Cascading Warning: " + conf.getSuppressUramCascadingWarning()); //false
+        System.out.println("System Jitter: " + conf.getSystemJitter()); //0.2        
+    }
 }
