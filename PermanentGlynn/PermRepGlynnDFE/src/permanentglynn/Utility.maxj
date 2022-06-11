@@ -840,7 +840,7 @@ public class Utility {
         base.optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
-    public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, KernelBase<?> base)
+    public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
         /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
@@ -850,9 +850,17 @@ public class Utility {
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
         DFEVar shift2 = n1e >= n2e ? n1e - n2e : 0,
-               shift1 = n1e >= n2e ? 0 : n2e - n1e;*/
-        //Bitops.leading1detect();
-        //Bitops.oneHotDecode();
+               shift1 = n1e >= n2e ? 0 : n2e - n1e;
+        DFEVar resExp = n1e >= n2e ? n1e : n2e;
+        DFEVar n1mshifted = n1m >> shift1, n2mshifted = n2m >> shift2;
+        DFEVar signParity = n1sign ^ n2sign;
+        DFEVar sum = n1mshifted + (signParity ? n2mshifted : -n2mshifted);
+        DFEVar oneHotShift = Bitops.leading1detect(sum);
+        DFEVar expAdjust = Bitops.oneHotDecode(oneHotShift);
+        DFEVar sumshifted = ;
+        DFEVar result = signParity.cat(resExp + expAdjust).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        return result;
+        */
         return n1 + n2;
     }
     public static DFEVar doFloatMult(DFEVar n1, DFEVar n2, KernelBase<?> base) //default long double multiplication latency is 22, we achieve 7 and less DSPs
@@ -869,7 +877,7 @@ public class Utility {
         int bigMant = Math.max(n1mant, n2mant);
         int totalDelay = 6; //for long double, 64x64 has 6 delay 
         DFEVar mult = mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, base);
-        DFEVar adjustExp = base.constant.var(KernelBase.dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1);
+        DFEVar adjustExp = base.constant.var(KernelBase.dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1); //is a second normalization required after rounding?  No, it should not be mathematically possible as with multiplication with more than 1 bit, at least one or more 0s are always present in the significant part of the result 
         DFEVar expUpdate = repeatPipeline(isZero ? base.constant.zero(KernelBase.dfeInt(Math.max(n1exp, n2exp)+1+1)) : base.optimization.pipeline(triAddExact(n1e, n2e, adjustExp, false, true, base)), totalDelay-3, base);
         DFEVar incExp = mult.get(n1mant + n2mant - 1).reinterpret(KernelBase.dfeBool());
         isZero = repeatPipeline(isZero, totalDelay-2, base);
