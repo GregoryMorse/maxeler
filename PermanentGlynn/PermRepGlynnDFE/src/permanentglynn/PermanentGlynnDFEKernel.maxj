@@ -124,14 +124,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }
             }
         }
-        //System.out.println("Graph Pipelining: " + optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
-        //System.out.println("Node Pipelining: " + optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
-        //System.out.println("DSP Factor: " + optimization.peekDSPFactor(MathOps.ALL)); //default 0.5
-        //System.out.println("Enable Growth: " + optimization.getEnableBitGrowth()); //default false
-        //System.out.println("Enable Saturating Arithmetic: " + optimization.peekEnableSaturatingArithmetic()); //default false
-        //System.out.println("Fanout Limit: " + optimization.peekFanoutLimit()); //default 32
-        //System.out.println("Fanout Limit Type: " + optimization.peekFanoutLimitType()); //default CHAIN
-        //System.out.println("Rounding Mode: " + optimization.getRoundingMode()); //default TONEAREVEN
         //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
         //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
         //optimization.pushDSPFactor(0.0, MathOps.MUL);
