@@ -3,6 +3,7 @@ package permanentglynn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,9 +16,14 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorTypeBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
@@ -25,6 +31,19 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
+import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmStateValue;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmExpr;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmInput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmOutput;
+import com.maxeler.maxcompiler.v2.statemachine.DFEsmValue;
+//import com.maxeler.maxcompiler.v2.statemachine.StateMachine;
+import com.maxeler.maxcompiler.v2.statemachine.StateMachineLib;
+import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
+import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 
 public class Utility {
     /**
@@ -32,13 +51,18 @@ public class Utility {
     @param n An natural number
     @return Returns with the n-th power of 2.
     */
-    static long power_of_2(long n) {
+    public static long power_of_2(long n) {
         if (n == 0) return 1;
         if (n == 1) return 2;
 
         return 2 * power_of_2(n - 1);
     }
-
+    public static int bitlength(long i) {
+        int r = 0;
+        while ((i >>= 1) != 0) r++;
+        return r + 1;
+    }
+    
     public static enum ReduceOperations {
         ADD,
         MUL
@@ -807,11 +831,6 @@ public class Utility {
         base.optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
-    public static <T extends KernelObject<T>> T repeatPipeline(T var, int count, KernelBase<?> base)
-    {
-        for (int i = 0; i < count; i++) var = base.optimization.pipeline(var);
-        return var;
-    }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, KernelBase<?> base)
     {
         /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
@@ -899,5 +918,365 @@ public class Utility {
         int z = ((x-18)%17==0 || (x-18)%17>7) ? 1 : 0;
         return 1-z+(1+(y-25+17-1)/17)*(z+(x-18+17-1)/17); //25x18 signed tiles Virtex 5 DSP48E 24x17 unsigned
     }
+    public static DFEVar smallConstMul(DFEVar val, int arg, KernelBase<?> owner)
+    {
+        switch (arg) {
+        case 0: return owner.constant.zero(val.getType());
+        case 1: return val;
+        case 2: return val << 1;
+        case 3: return (val << 1) + val;
+        case 4: return val << 2;
+        case 5: return (val << 2) + val;
+        case 6: return (val << 2) + (val << 1);
+        case 7: return (val << 3) - val;
+        case 8: return val << 3;
+        case 9: return (val << 3) + val;
+        case 10: return (val << 3) + (val << 1);
+        case 11: return (val << 3) + (val << 1) + val;
+        case 12: return (val << 4) - (val << 2);
+        case 13: return (val << 3) + (val << 2) + val;
+        case 14: return (val << 4) - (val << 1);
+        case 15: return (val << 4) - val;
+        case 16: return val << 4;
+        case 17: return (val << 4) + val;
+        case 18: return (val << 4) + (val << 1);
+        case 19: return (val << 4) + (val << 1) + val;
+        case 20: return (val << 4) + (val << 2);
+        default: return null;
+        }
+    }
+    
+
+    static int id = 0;    
+    public static DFEVar[] makeCounterWithInitValue(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar nextInitValue, DFEVar userReset, boolean needWrap, int loopLength, KernelLib owner)
+    {
+        int wrap_value = 0;
+        SMIO smio = owner.addStateMachine("CounterWithInitValue_" + bit_width + "_NUMERIC_INCREMENTING_" + inc + "_" + wrap_value + "_" + (needWrap ? 1 : 0) + "_COUNT_LT_MAX_THEN_WRAP_" + (bit_width+1) + "_" + loopLength + "_" + id++,
+            new CounterWithInitValue(owner, bit_width, max.getType().isConcreteType() ? max.getType().getTotalBits() : bit_width + 1, wrap_value, inc, needWrap, loopLength));
+        smio.connectInput("initValue", initValue);
+        smio.connectInput("nextInitValue", nextInitValue);
+        smio.connectInput("max", max);
+        if (userReset != null) smio.connectInput("userReset", userReset);
+        smio.connectInput("enable", enable);
+        return new DFEVar[] { smio.getOutput("count"), needWrap ? smio.getOutput("wrap") : null };
+    }
+
+    public static class CounterWithInitValue extends KernelStateMachine //requires a reset signal for initialization, reset happens on current tick, not next tick
+    {
+        private final int m_bit_width;
+        private final long m_inc;
+        private final long m_wrap_value;
+        private final boolean m_needWrap;
+        private final int m_loopLength;
+        private final DFEsmValueType m_count_type;
+        private final DFEsmValueType m_count_type_int;
+        private final DFEsmOutput m_count;
+        private final DFEsmOutput m_wrap;
+        private final DFEsmStateValue[] m_counter_values;
+        private final DFEsmStateValue[] m_counter_next_values;
+        private final DFEsmStateValue[] m_counter_onext_values;
+        private final DFEsmStateValue[] m_has_wrappeds;
+        private DFEsmValue m_user_enable;
+        private DFEsmInput m_user_reset;
+        private final DFEsmValue m_limit;
+        private final DFEsmValue m_init_value;
+        private final DFEsmValue m_next_init_value;
+        private DFEsmValue wrap;
+        private DFEsmValue enable_i;
+        public CounterWithInitValue(KernelLib owner, int bit_width, int max_width, long wrap_value, long inc, boolean needWrap, int loopLength)
+        {
+            super(owner);
+            m_bit_width = bit_width;
+            m_wrap_value = wrap_value;
+            m_inc = inc;
+            m_needWrap = needWrap;
+            m_loopLength = loopLength;
+            m_user_enable = null;
+            m_user_reset = null;
+            wrap = null;
+            enable_i = null;
+            m_count_type = StateMachineLib.dfeUInt(m_bit_width);
+            m_count_type_int = StateMachineLib.dfeUInt(m_bit_width + 1);
+            m_init_value = io.input("initValue", m_count_type).cast(m_count_type_int);
+            m_next_init_value = io.input("nextInitValue", m_count_type).cast(m_count_type_int);
+            m_count = io.output("count", m_count_type);
+            m_wrap = needWrap ? io.output("wrap", StateMachineLib.dfeBool()) : null;
+            m_limit = io.input("max", StateMachineLib.dfeUInt(max_width)).cast(m_count_type_int);
+            m_user_enable = io.input("enable", StateMachineLib.dfeBool());
+            m_user_reset = io.input("userReset", StateMachineLib.dfeBool());
+            enable_i = m_user_enable.or(m_user_reset);
+            m_counter_values = new DFEsmStateValue[loopLength];
+            m_counter_next_values = new DFEsmStateValue[loopLength];
+            m_counter_onext_values = new DFEsmStateValue[loopLength];
+            m_has_wrappeds = new DFEsmStateValue[loopLength];
+            for (int i = 0; i < loopLength; i++) {
+                m_counter_values[i] = state.value(m_count_type_int);
+                m_counter_next_values[i] = state.value(m_count_type_int);
+                m_counter_onext_values[i] = state.value(m_count_type_int);
+                m_has_wrappeds[i] = state.value(StateMachineLib.dfeBool()); //, false
+            }
+            for (int i = 0; i < m_loopLength-1; i++) {
+                m_counter_values[i+1].next.connect(m_counter_values[i]);
+                m_counter_next_values[i+1].next.connect(m_counter_next_values[i]);
+                m_counter_onext_values[i+1].next.connect(m_counter_onext_values[i]);
+                m_has_wrappeds[i+1].next.connect(m_has_wrappeds[i]);
+            }
+            //wrap = m_counter_next_values[loopLength-1].gte(m_limit);
+        }
+        
+        @Override
+        protected void nextState() {
+            if (m_user_reset != null) {
+                _IF(m_user_reset);
+                _IF(m_user_enable);
+                m_counter_values[0].next.connect(m_next_init_value);
+                m_counter_next_values[0].next.connect(m_next_init_value.add(m_inc));
+                m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc * 2));
+                _ELSE();
+                m_counter_values[0].next.connect(m_init_value);
+                m_counter_next_values[0].next.connect(m_next_init_value);
+                m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc));
+                _END_IF();
+                m_has_wrappeds[0].next.connect(false);
+                _ELSE();
+                nextStateProcessEnable();
+                _END_IF();
+            }
+            else {
+                nextStateProcessEnable();
+            }
+        }
+        
+        void nextStateProcessEnable() {
+            if (m_user_enable != null) {
+                _IF(m_user_enable);
+                genNextState();
+                if (m_loopLength != 1) {
+                    _ELSE();
+                    m_counter_values[0].next.connect(m_counter_values[m_loopLength-1]);
+                    m_counter_next_values[0].next.connect(m_counter_next_values[m_loopLength-1]);
+                    m_counter_onext_values[0].next.connect(m_counter_onext_values[m_loopLength-1]);
+                    m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
+                }
+                _END_IF();
+            }
+            else {
+                genNextState();
+            }
+        }
+        
+        private void genNextState() {
+            m_counter_onext_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1].add(2L * m_inc));
+            wrap = m_counter_next_values[m_loopLength-1].gte(m_limit);
+            _IF(wrap);
+            m_has_wrappeds[0].next.connect(true);
+            m_counter_values[0].next.connect(m_wrap_value);
+            m_counter_next_values[0].next.connect(m_wrap_value + m_inc);
+            _ELSE();
+            _IF(m_has_wrappeds[m_loopLength-1]);
+            m_has_wrappeds[0].next.connect(false);
+            m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
+            m_counter_next_values[0].next.connect(m_wrap_value + m_inc * 2);
+            _ELSE();
+            if (m_loopLength != 1) m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
+            m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
+            m_counter_next_values[0].next.connect((DFEsmExpr)m_counter_onext_values[m_loopLength-1]);
+            _END_IF();
+            _END_IF();
+        }
+        
+        @Override
+        protected void outputFunction() {
+            _IF(m_user_reset);
+            m_count.connect((DFEsmExpr)m_init_value.cast(m_count_type));
+            if (m_needWrap) m_wrap.connect(m_next_init_value.gte(m_limit).and(enable_i));
+            _ELSE();
+            m_count.connect((DFEsmExpr)m_counter_values[m_loopLength-1].slice(0, m_bit_width));
+            if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(enable_i));
+            _END_IF();
+        }
+    }
+    
+    public static DFEVar[] counterWithInit(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar userReset, DFEVar nextUserReset, int loopLength, boolean needWrap, boolean pipelineMax, KernelBase<?> owner)
+    {
+        //return makeCounterWithInitValue(bit_width, max, enable, inc, initValue, initValue+inc, userReset, needWrap, owner);
+        // max>0 required
+        
+        //Addition-based method
+        DFEVar count = KernelBase.dfeUInt(bit_width).newInstance(owner);
+        DFEVar wrap = KernelBase.dfeBool().newInstance(owner);
+        DFEVar maxWrap = max-1;
+        if (pipelineMax) maxWrap = owner.optimization.pipeline(maxWrap);
+        DFEVar streamWrap = Utility.repeatPipeline(owner.stream.offset(wrap, -loopLength), loopLength - 4, owner);
+        DFEVar wrapValue = needWrap ? owner.control.mux(enable.cat(nextUserReset), owner.constant.zero(KernelBase.dfeBool()), owner.constant.zero(KernelBase.dfeBool()), streamWrap, initValue === maxWrap) : null;
+        DFEVar lastWrap = nextUserReset ? initValue === maxWrap : streamWrap; //lastCount 2 delay, streamWrap 1 delay
+        //DFEVar lastCount = userReset ? initValue + ((enable & (initValue !== maxWrap)) ? owner.constant.var(KernelBase.dfeUInt(bit_width), inc) : owner.constant.zero(KernelBase.dfeUInt(bit_width))) : owner.stream.offset(count, -loopLength);
+        DFEVar lastCount = userReset ? initValue : Utility.repeatPipeline(owner.stream.offset(count, -loopLength), loopLength - 4, owner);
+        DFEVar countValue = lastCount;
+        for (int i = 0; i < 2; i++) lastCount = owner.optimization.pipeline(lastCount);
+        maxWrap = owner.optimization.pipeline(maxWrap);
+        for (int i = 0; i < 2; i++) enable = owner.optimization.pipeline(enable);
+        //owner.optimization.pushNoPipelining(); //conditional addition=1, double mux=1, >= is 1, so loop offset too 3 not 1...
+        lastCount = lastCount + (enable ? (lastWrap ? ~maxWrap+1 : owner.constant.var(KernelBase.dfeUInt(bit_width), inc)) : owner.constant.zero(KernelBase.dfeUInt(bit_width))); //lastCount 1 delay, lastWrap 2 delay
+        //owner.optimization.popNoPipelining();
+        for (int i = 0; i < 3; i++) maxWrap = owner.optimization.pipeline(maxWrap);
+        lastWrap = lastCount >= maxWrap; //1 delay
+        //for (int i = 0; i < loopLength - 4; i++) lastCount = owner.optimization.pipeline(lastCount);
+        //for (int i = 0; i < loopLength - 4; i++) lastWrap = owner.optimization.pipeline(lastWrap);
+        count <== lastCount;
+        wrap <== lastWrap;
+        return new DFEVar[] {countValue, wrapValue};
+        
+        /*
+        //State-machine based method
+        //DFEVar userReset = owner.constant.zero(KernelBase.dfeBool());
+        initValue = initValue.cast(KernelBase.dfeUInt(bit_width+1));
+        max = max.cast(KernelBase.dfeUInt(bit_width+1));
+        DFEVar wrapValue = owner.constant.zero(KernelBase.dfeUInt(bit_width+1));
+        DFEVar count = KernelBase.dfeUInt(bit_width+1).newInstance(owner);
+        DFEVar next_value = KernelBase.dfeUInt(bit_width+1).newInstance(owner);
+        DFEVar onext_value = KernelBase.dfeUInt(bit_width+1).newInstance(owner);
+        DFEVar has_wrapped = KernelBase.dfeBool().newInstance(owner);
+        DFEVar nv = owner.stream.offset(next_value, -loopLength);
+        DFEVar wrap = nv >= max | userReset;
+        DFEVar lastCount = userReset ? initValue : owner.stream.offset(count, -loopLength);
+        DFEVar lastHasWrapped = userReset ? false : owner.stream.offset(has_wrapped, -loopLength);
+        DFEVar lastONextValue = userReset ? initValue+2*inc : owner.stream.offset(onext_value, -loopLength);
+        count <== enable ? (wrap ? wrapValue : nv) : lastCount;
+        //owner.optimization.pushNoPipelining();
+        next_value <== control.mux(enable.cat(lastHasWrapped.cat(wrap)), lastONextValue, wrapValue+inc, wrapValue+2*inc, wrapValue+inc, nv, nv, nv, nv);
+        //owner.optimization.popNoPipelining();
+        onext_value <== enable ? nv + 2*inc : lastONextValue;
+        has_wrapped <== enable ? wrap : lastHasWrapped;        
+        return new DFEVar[] {lastCount.slice(0, bit_width).cast(KernelBase.dfeUInt(bit_width)), enable & wrap};*/
+        
+        /*
+        //Counter-adjustment based method - not loopLength sensitive
+        DFEVar initMax = KernelBase.dfeBool().newInstance(owner);
+        DFEVar useMax = userReset ? false : owner.stream.offset(initMax, -1);
+        Count.Counter counter = control.count.makeCounter(control.count.makeParams(bit_width).withMax(max - (useMax ? owner.constant.zero(KernelBase.dfeUInt(bit_width)) : initValue)).withInc(inc).withEnable(enable).withReset(userReset));
+        DFEVar wrap = counter.getWrap();
+        initMax <== useMax | wrap;
+        return new DFEVar[] {counter.getCount() + (useMax ? owner.constant.zero(KernelBase.dfeUInt(bit_width)) : initValue), wrap};*/
+        
+        /*
+        //Double counter method - not loopLength sensitive
+        DFEVar afterInit = KernelBase.dfeBool().newInstance(owner);
+        Count.Counter initCounter = control.count.makeCounter(control.count.makeParams(bit_width).withMax(max-initValue).withInc(inc).withEnable(enable).withReset(userReset));
+        DFEVar wrap = initCounter.getWrap();
+        afterInit <== userReset ? false : (owner.stream.offset(afterInit, -1) | owner.stream.offset(wrap, -1));
+        Count.Counter counter = control.count.makeCounter(control.count.makeParams(bit_width).withMax(max).withInc(inc).withEnable(enable & afterInit));
+        return new DFEVar[] { afterInit ? counter.getCount() : initCounter.getCount() + initValue, afterInit ? counter.getWrap() : wrap };*/
+    }
+
+    public static List<DFEVector<DFEVar>> counterChainWithInit(DFEVar enable, DFEVector<DFEVar> max, DFEVar initValue, DFEVar nextInitValue, DFEVector<DFEVar> userReset, int inc, int loopLength, boolean needWraps, KernelLib owner) //DFEVar[] initValue, 
+    {
+        final int counterChainWrapPipeliningLimit = 4;
+        final int counterChainWrapPipelining = 1;
+        DFEVector<DFEVar> counterChain = new DFEVectorType<DFEVar>(max[0].getType(), max.getType().getSize()).newInstance(owner);
+        DFEVector<DFEVar> wraps = needWraps ? new DFEVectorType<DFEVar>(KernelBase.dfeBool(), max.getType().getSize()).newInstance(owner) : null;
+        DFEVar wrap = null;
+        int pipelineLimit = (max.getType().getSize()-1) / counterChainWrapPipeliningLimit;
+        int currentPipelineOffset = 0;
+        for (int i = 0; i < max.getType().getSize(); i++) {
+            DFEVar[] counter = makeCounterWithInitValue(max[i].getType().getTotalBits(), Utility.repeatPipeline(max[i], currentPipelineOffset, owner), i == 0 ? enable : wrap, inc, initValue,
+                    nextInitValue, Utility.repeatPipeline(userReset[i], currentPipelineOffset, owner), i != max.getType().getSize()-1 || needWraps, loopLength, owner);
+            //DFEVar[] counter = counterWithInit(max[i].getType().getTotalBits(), Utility.repeatPipeline(max[i], currentPipelineOffset, owner), i == 0 ? enable : wrap, inc, initValue, userReset[i], userReset[i], loopLength, i != max.getType().getSize()-1 || needWraps, i==0, owner);            
+            counterChain[i] <== Utility.repeatPipeline(counter[0], pipelineLimit - currentPipelineOffset, owner); //counter.getCount();
+            if (i != max.getType().getSize()-1) {
+                int newPipelining = i != 0 && (i % counterChainWrapPipeliningLimit == 0) ? counterChainWrapPipelining : 0;
+                wrap = Utility.repeatPipeline(counter[1], newPipelining, owner); //counter.getWrap();
+                initValue = Utility.repeatPipeline(initValue, newPipelining, owner);
+                nextInitValue = Utility.repeatPipeline(nextInitValue, newPipelining, owner);
+                currentPipelineOffset += newPipelining;
+            } else if (needWraps) wrap = counter[1];
+            if (needWraps) wraps[i] <== Utility.repeatPipeline(wrap, pipelineLimit - currentPipelineOffset, owner);
+        }
+        List<DFEVector<DFEVar>> ret = new ArrayList<DFEVector<DFEVar>>();
+        ret.add(counterChain); ret.add(needWraps ? wraps : null);
+        return ret;
+    }
+    
+
+
+    public static DFEVar[] parallelFanout(DFEVar var, int count, int limit, KernelBase<?> base)
+    {
+        if (count <= limit) return new DFEVar[] { var };
+        DFEVar[] fanout = new DFEVar[(count+limit-1)/limit];
+        for (int i = 0; i < (count+limit-1)/limit; i++) {
+            fanout[i] = base.optimization.pipeline(var);
+        }
+        return fanout;
+    }
+    public static <T extends KernelObject<T>> T repeatPipeline(T var, int count, KernelBase<?> base)
+    {
+        for (int i = 0; i < count; i++) var = base.optimization.pipeline(var);
+        return var;
+    }
+    public static DFEVar[] pipelineStaggered(DFEVar var, int[] counts, KernelBase<?> base)
+    {
+        DFEVar[] stagger = new DFEVar[counts.length];
+        for (int i = 0; i < counts.length; i++) {
+            var = repeatPipeline(var, counts[i], base);
+            stagger[i] = var;
+        }
+        return stagger;
+    }
+    public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
+    {
+        DFEVar v = var.reinterpret(KernelBase.dfeUInt(var.getType().getTotalBits()));
+        int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();
+        DFEVar out = null;
+        for (int i = 0; i < 2; i++) {
+            DFEVar chunk = repeatPipeline(v.slice(i*limit*sz, i == 0 ? limit*sz : var.getType().getTotalBits() - i*limit*sz), count, base);
+            if (i == 0) out = chunk;
+            else out = chunk.cat(out);
+        }
+        return out.reinterpret(var.getType());
+    }
+    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //do not yet need to generalize for >64 or triple stage even at >1024... 
+    {
+        int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
+        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel), base.optimization.pipeline(sel) };
+        return repeatPipeline(sel.get(bitsToAddress-1), 2, base) ?
+            base.control.mux(sels[1].slice(0, MathUtils.bitsToAddress(values.size()-split)), values.subList(split, values.size())) :
+            base.control.mux(sels[0].slice(0, MathUtils.bitsToAddress(split)), values.subList(0, split));
+    }
+    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //do not yet need to generalize for >64 or triple stage even at >1024...
+    {
+        DFEVar upper = sel.slice(split, values.size()-split);
+        DFEVar isUpper = upper !== 0;
+        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel.slice(0, split)), base.optimization.pipeline(upper) };
+        return isUpper ?
+            base.control.oneHotMux(sels[1], values.subList(split, values.size())) :
+            base.control.oneHotMux(sels[0], values.subList(0, split));
+    }
+    public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
+    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base)
+    {
+        DFEVar upper = sel.slice(split, values.size()-split);
+        DFEVar isUpper = upper !== 0;
+        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel.slice(0, split)), base.optimization.pipeline(upper) };
+        int innerSize = values[0].getSize();
+        M returnVal = values[0].getType().newInstance(base);
+        for (int i = 0; i < innerSize; i++) {
+            final int j = i;
+            List<P> curVals = values.stream().map(x -> x[j]).collect(Collectors.toList());
+            returnVal[i] <== base.optimization.pipeline(isUpper) ?
+                base.control.oneHotMux(base.optimization.pipeline(sels[1]), curVals.subList(split, curVals.size())) :
+                base.control.oneHotMux(base.optimization.pipeline(sels[0]), curVals.subList(0, split));
+        }
+        return returnVal;
+    }
+    public static DFEVector<DFEVar> oneHotEncode(DFEVar shift, int bits, int limit, KernelBase<?> base)
+    {
+        DFEVar[] shifts = parallelFanout(shift, bits, 32, base); 
+        DFEVector<DFEVar> res = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bits).newInstance(base);
+        for (int i = 0; i < bits; i++) {
+            res[i] <== shifts[i < limit ? 0 : 1] === i;
+        }
+        return res;
+    }
+
 
 }
