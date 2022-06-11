@@ -245,7 +245,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         result = result
             .reinterpret(dfeFixOffset(getMulOutpBits(aType, bType), -(aType.getFractionBits() + bType.getFractionBits()), ((DFEFix)result.getType()).getSignMode()))
             .cast(dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()));
-        //debug.simPrintf(result !== mulExact(a, b, bits, intBits), "%d %X %X %X\n", aType.getTotalBits(), result.reinterpret(dfeUInt(result.getType().getTotalBits())), mulKaratsubaExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())), mulExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())));
+        //debug.simPrintf(result !== mulExact(a, b, bits, intBits), "%d %X %X %X %X\n", aType.getTotalBits(), result.reinterpret(dfeUInt(result.getType().getTotalBits())), mulExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())), a.reinterpret(dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())), b.reinterpret(dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode()))); //mulKaratsubaExact(a, b, bits, intBits).reinterpret(dfeUInt(result.getType().getTotalBits())),
         return result;
     }
     DFEVar signedMulKaratsubaRectangular(DFEVar a, DFEVar b, int tileMode, Integer[] totalDelay)
@@ -743,11 +743,15 @@ public class PermanentGlynnDFEKernel extends Kernel {
         optimization.pushFixOpMode(Optimization.bitSizeExact(1 + 1 + (growSign ? 1 : 0) + Math.max(Math.max(aType.getIntegerBits(), bType.getIntegerBits()), cType.getIntegerBits()) +
                 fracBits),
             Optimization.offsetExact(-fracBits), MathOps.ADD_SUB);
+        //optimization.pushEnableBitGrowth(true);
         DFEVar result;
         if (isBSub) result = isCSub ? (a - b - c) : (a - b + c);
         else result = isCSub ? (a + b - c) : (a + b + c);
         optimization.popFixOpMode(MathOps.ADD_SUB);
-        return result;
+        //optimization.popEnableBitGrowth();
+        //return result;
+        return (isBSub || isCSub) && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(dfeFixOffset(1 + 1 + (growSign ? 1 : 0) + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
+                fracBits, -fracBits, SignMode.TWOSCOMPLEMENT)) : result;
     }
     DFEVar mulFrac(DFEVar a, DFEVar b) //a is between -1 and 1, b is between -2 and 2
     {
@@ -789,8 +793,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
         optimization.pushFixOpMode(Optimization.bitSizeExact(1 + (growSign ? 1 : 0) + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
                 fracBits),
             Optimization.offsetExact(-fracBits), MathOps.ADD_SUB);
+        optimization.pushEnableBitGrowth(true);
         DFEVar result = isSub ? (a - b) : (a + b);
         optimization.popFixOpMode(MathOps.ADD_SUB);
+        optimization.popEnableBitGrowth();
+        //return result;
         return isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(dfeFixOffset(1 + (growSign ? 1 : 0) + Math.max(aType.getIntegerBits(), bType.getIntegerBits()) +
                 fracBits, -fracBits, SignMode.TWOSCOMPLEMENT)) : result;
     }
@@ -812,7 +819,22 @@ public class PermanentGlynnDFEKernel extends Kernel {
         for (int i = 0; i < count; i++) var = optimization.pipeline(var);
         return var;
     }
-    DFEVar doFloatMult(DFEVar n1, DFEVar n2)
+    DFEVar doFloatAdd(DFEVar n1, DFEVar n2)
+    {
+        /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
+        int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
+        int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
+        DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
+        DFEVar n1m = constant.var(dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).reinterpret(dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)),
+               n2m = constant.var(dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
+        DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(dfeUInt(n2exp));
+        DFEVar shift2 = n1e >= n2e ? n1e - n2e : 0,
+               shift1 = n1e >= n2e ? 0 : n2e - n1e;*/
+        //Bitops.leading1detect();
+        //Bitops.oneHotDecode();
+        return n1 + n2;
+    }
+    DFEVar doFloatMult(DFEVar n1, DFEVar n2) //default long double multiplication latency is 22, we achieve 7 and less DSPs
     {
         DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
@@ -821,14 +843,19 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVar n1m = constant.var(dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).reinterpret(dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)),
                n2m = constant.var(dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(dfeUInt(n2exp));
-        int bigMant = Math.max(n1mant, n2mant);
-        DFEVar adjustExp = constant.var(dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1);
-        DFEVar mult = mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2);
-        DFEVar incExp = mult.get(n1mant + n2mant - 1).reinterpret(dfeBool());
-        mult = incExp ? mult.reinterpret(dfeFixOffset(n1mant + n2mant, -(n1mant + n2mant) + 1, SignMode.UNSIGNED)).cast(dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)) : mult.cast(dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar isZero = n1e === 0 | n2e === 0; //2 delay for comparison and bitwise or
         DFEVar sign = n1sign ^ n2sign;
-        DFEVar result = sign.cat(addExact(triAddExact(n1e, n2e, adjustExp, false, true), incExp, false).cast(dfeUInt(Math.max(n1exp, n2exp)))).cat(mult).reinterpret(dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        result = n1e === 0 | n2e === 0 ? sign.cat(constant.zero(dfeUInt(Math.max(n1exp, n2exp) + bigMant-1))).reinterpret(dfeFloat(Math.max(n1exp, n2exp), bigMant)) : result;
+        int bigMant = Math.max(n1mant, n2mant);
+        int totalDelay = 6; //for long double, 64x64 has 6 delay 
+        DFEVar mult = mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2);
+        DFEVar adjustExp = constant.var(dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1);
+        DFEVar expUpdate = repeatPipeline(isZero ? constant.zero(dfeInt(Math.max(n1exp, n2exp)+1+1)) : optimization.pipeline(triAddExact(n1e, n2e, adjustExp, false, true)), totalDelay-3);
+        DFEVar incExp = mult.get(n1mant + n2mant - 1).reinterpret(dfeBool());
+        isZero = repeatPipeline(isZero, totalDelay-2);
+        DFEVar selMult = control.mux(isZero.cat(incExp), constant.var(dfeUInt(2), 2), constant.var(dfeUInt(2), 1), constant.zero(dfeUInt(2)), constant.zero(dfeUInt(2))).cat(optimization.pipeline(isZero));
+        mult = control.oneHotMux(selMult, constant.zero(dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.reinterpret(dfeFixOffset(n1mant + n2mant, -(n1mant + n2mant) + 1, SignMode.UNSIGNED)).cast(dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.cast(dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))); //1 rounding delay on cast, 1 delay on multiplexer
+        DFEVar newExp = addExact(expUpdate, incExp, false).cast(dfeUInt(Math.max(n1exp, n2exp)));
+        DFEVar result = repeatPipeline(sign, totalDelay).cat(newExp).cat(mult).reinterpret(dfeFloat(Math.max(n1exp, n2exp), bigMant));
         //debug.simPrintf(result !== n1 * n2, "%f %f %f %f %f %f %f\n", n1, n2, n1 * n2, result, n1m, n2m, mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2));
         return result; //return n1 * n2;
     }
@@ -848,7 +875,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
         if (useFloat) {
             //since addition is more expensive for floating point, the 4M+2A formula is optimal!
-            return DFEComplexType.newInstance(owner, doFloatMult(a, c) - doFloatMult(b, d), doFloatMult(b, c) + doFloatMult(a, d));
+            //return n1 * n2;
+            return DFEComplexType.newInstance(owner, doFloatMult(a, c) - doFloatMult(b, d), doFloatMult(c, b) + doFloatMult(d, a));
             /*if (useUngar) {
                 DFEVar ac = a * c;
                 DFEVar bd = b * d;
@@ -858,6 +886,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 return DFEComplexType.newInstance(owner, cab - repeatPipeline(b, 14) * (c + d), cab + repeatPipeline(a, 14) * (d - c));
             }*/
         } else { //3M+5A formulas for complex fixed point is optimal DSP usage wise
+            //return n1.cast(new DFEComplexType(dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT))) * n2.cast(new DFEComplexType(dfeFixOffset(bits, -bits + 2, SignMode.TWOSCOMPLEMENT))); 
             if (useUngar) {
                 DFEVar ac = mulExact(a, c, bits, 2);
                 DFEVar bd = mulExact(b, d, bits, 2);
@@ -882,7 +911,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         super(parameters);
         //optimization.pushFanoutLimit(4, FanoutLimitType.TREE);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -122, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
@@ -943,7 +972,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //debug.simPrintf("%KObj%\n", colmnSumVector);
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
-                    colSumPreFix[j * (cols / initKerns) + idx] <== useFloat ? colmnSumVector[idx].cast(cplxFix128Type) : colmnSumVector[idx];
+                    colSumPreFix[j * (cols / initKerns) + idx] <== colmnSumVector[idx];
                 }
             }
             //colSumPreFix = optimization.limitFanout(colSumPreFix, 16);
@@ -977,7 +1006,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
-                    colSumFix[j * (cols / initKerns) + idx] = colmnSumVector[idx];
+                    colSumFix[j * (cols / initKerns) + idx] = useFloat ? optimization.pipeline(colmnSumVector[idx]) : colmnSumVector[idx];
                 }
             }
         }
@@ -1033,9 +1062,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (2 * limitNew < limit) {
                 limitNew++;
                 colSumFix[limitNew - 1] = colSumFix[limit - 1];
-                for (int i = 0; i < 8+4 + (useFloat ? 38 : 0); i++) {
-                    colSumFix[limitNew - 1] = optimization.pipeline(colSumFix[limitNew - 1]);
-                }
+                colSumFix[limitNew - 1] = repeatPipeline(colSumFix[limitNew - 1], 8+4 + (useFloat ? 2+7 : 0));
             }
 
             limit = limitNew;
@@ -1043,8 +1070,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
             if (extraprec > 63) extraprec = 63;
 
         }
-        for (int i = 0; i < 36+(useFloat ? 229 : 0); i++) parity = optimization.pipeline(parity);
-        for (int i = 0; i < 65+(useFloat ? 228 : 0); i++) curMplicity = optimization.pipeline(curMplicity);
+        for (int i = 0; i < 72+(useFloat ? 61+1 : 0); i++) parity = optimization.pipeline(parity);
+        for (int i = 0; i < 65+(useFloat ? 54+1 : 0); i++) curMplicity = optimization.pipeline(curMplicity);
         //DFEComplex save = colSumFix[0];
         if (useFloat) {
             DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
@@ -1052,14 +1079,12 @@ public class PermanentGlynnDFEKernel extends Kernel {
             colSumFix[0] = DFEComplexType.newInstance(this, doFloatMult(colSumFix[0].getReal(), mplicityFloat), doFloatMult(colSumFix[0].getImaginary(), mplicityFloat));
         } else {
             //colSumFix[0] = DFEComplexType.newInstance(this, mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 127, 2), mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 127, 2));
-            colSumFix[0] = DFEComplexType.newInstance(this, mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 128, 4), mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 128, 4));
+            colSumFix[0] = DFEComplexType.newInstance(this, mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 128, 6), mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 128, 6));
         }
         //if (!dual) debug.simPrintf("%KObj% %KObj% %d\n", save, colSumFix[0], curMplicity); 
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
         DFEVar sign = dual ? isLocal ^ parity : (((kernNum & 1) != 0) ^ parity);
-        for (int i = 0; i < 49+(useFloat ? 219 : 0); i++) sign = optimization.pipeline(sign);
-        for (int i = 0; i < 34 + (useFloat ? 22 : 0); i++) sign = optimization.pipeline(sign);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
 
         if (colMux) {
