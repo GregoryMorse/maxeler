@@ -1277,6 +1277,16 @@ public class Utility {
         }
         return res;
     }
-
+    public static void printKernelOptimizationDefaults(KernelBase<?> owner)
+    {
+        System.out.println("Graph Pipelining: " + owner.optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
+        System.out.println("Node Pipelining: " + owner.optimization.peekNodePipelining(PipelinedOps.ALL)); //default 1.0
+        System.out.println("DSP Factor: " + owner.optimization.peekDSPFactor(MathOps.ALL)); //default 0.5
+        System.out.println("Enable Growth: " + owner.optimization.getEnableBitGrowth()); //default false
+        System.out.println("Enable Saturating Arithmetic: " + owner.optimization.peekEnableSaturatingArithmetic()); //default false
+        System.out.println("Fanout Limit: " + owner.optimization.peekFanoutLimit()); //default 32
+        System.out.println("Fanout Limit Type: " + owner.optimization.peekFanoutLimitType()); //default CHAIN
+        System.out.println("Rounding Mode: " + owner.optimization.getRoundingMode()); //default TONEAREVEN
+    }
 
 }
