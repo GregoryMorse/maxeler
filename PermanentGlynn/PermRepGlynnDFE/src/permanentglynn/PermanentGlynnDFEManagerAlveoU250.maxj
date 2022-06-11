@@ -33,48 +33,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         setup(this, params.dual(), params.isSim(), params.useFloat());
     }
 
-    public void selectSLR(int slr_index) {
-        NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
-        if (slr_index < 0 || slr_index >= availableRegions.length) {
-            throw new IllegalArgumentException();
-        }
-        pushNamedRegion(availableRegions[slr_index]);
-    }
-    public void unselectSLR() { popRegion(); }
-
     public static void main(final String[] argv) {
         final PermanentGlynnEngineParameters params = new PermanentGlynnEngineParameters(argv);
 
         final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
-        manager.getManagerConfig().setDefaultStreamFifoDepth(64);
+        manager.getManagerConfig().setDefaultStreamFifoDepth(512);
         BuildConfig conf = manager.getBuildConfig();
-        /*
-        System.out.println("Bram Mapping Scale Factor: " + conf.getBramMappingScaleFactor()); //1.0
-        System.out.println("Build Effort: " + conf.getBuildEffort()); //MEDIUM
-        System.out.println("Build Level: " + conf.getBuildLevel()); //FULL_BUILD
-        System.out.println("Continue After Meeting Timing: " + conf.getContinueAfterMeetingTiming()); //false
-        System.out.println("Enable Chipscope Inserter: " + conf.getEnableChipscopeInserter()); //false
-        System.out.println("Enable Gen Max File: " + conf.getEnableGenMaxFile()); //true
-        System.out.println("Enable Pcie Ibert: " + conf.getEnablePcieIbert()); //false
-        System.out.println("Enable Pcie Jtag: " + conf.getEnablePcieJtag()); //false
-        System.out.println("Enable Tandom Boot: " + conf.getEnableTandemBoot()); //false
-        System.out.println("Enable Timing Analysis: " + conf.getEnableTimingAnalysis()); //true
-        System.out.println("Enable Xpm Macro: " + conf.getEnableXpmMacro()); //true
-        System.out.println("External Xdc Files: " + conf.getExternalXdcFiles()); //[]
-        System.out.println("Generate Hex Bit File: " + conf.getGenerateHexBitfile()); //false
-        System.out.println("Implementation Near Miss Retries: " + conf.getImplementationNearMissRetries()); //0
-        System.out.println("Implementation Near Miss Threshold: " + conf.getImplementationNearMissThreshold()); //0
-        System.out.println("Keep Wrapper Node Hierarchy: " + conf.getKeepWrapperNodeHierarchy()); //true
-        System.out.println("Logic Mapping Scale Factor: " + conf.getLogicMappingScaleFactor()); //1.0
-        System.out.println("Optimization Goal: " + conf.getOptimizationGoal()); //BALANCED
-        System.out.println("Override System Jitter: " + conf.getOverrideSystemJitter()); //false
-        System.out.println("Parallelism: " + conf.getParallelism()); //1
-        System.out.println("Power Consumption Critical Warning Threshold: " + conf.getPowerConsumptionCriticalWarningThreshold()); //112.5
-        System.out.println("Power Consumption Error Threshold: " + conf.getPowerConsumptionErrorThreshold()); //135.0
-        System.out.println("Power Consumption Warning Threshold: " + conf.getPowerConsumptionWarningThreshold()); //112.5
-        System.out.println("Suppress Uram Cascading Warning: " + conf.getSuppressUramCascadingWarning()); //false
-        System.out.println("System Jitter: " + conf.getSystemJitter()); //0.2
-        */
+
         conf.setOptimizationGoal(BuildConfig.OptimizationGoal.SPEED);
         conf.setBuildEffort(BuildConfig.Effort.HIGH);
         conf.setImplementationNearMissRetries(2);
