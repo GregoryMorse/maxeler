@@ -60,21 +60,21 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar mainCount = control.count.makeCounter(control.count.makeParams(64).withMax(ticksBeforeReset).withReset(Utility.repeatPipeline(resetSignal, 7, this)).withEnable(Utility.repeatPipeline(loopCounter.getWrap(), 7, this)).withInc(1)).getCount(); //64 bits
         DFEVar loopCount = loopCounter.getCount();
         DFEVar isInit = mainCount <= photonsm1cast;
-        DFEVar isInits[] = Utility.pipelineStaggered(isInit, new int[] { 29 + (kernNum == 0 ? 1 : 0), 5 }, this);
+        DFEVar isInits[] = Utility.pipelineStaggered(isInit, new int[] { 29 + (kernNum == 0 ? 5 : 0), 5, kernNum == 0 ? 15 : 0 }, this);
         DFEVar notIsInit = Utility.repeatPipeline(mainCount > photonsm1cast, 27, this);
         DFEVar isCalc = mainCount >= photonsm1cast;
-        DFEVar isInitGcode = Utility.repeatPipeline(mainCount <= rowpowadj2, 4, this);
+        DFEVar isInitGcode = Utility.repeatPipeline(mainCount <= rowpowadj2, 4 + (kernNum == 0 ? 5 : 0), this);
         DFEVar isInitMplicity = mainCount > rowpowadj2 & isInit;
-        DFEVar[] isInitMplicities = Utility.pipelineStaggered(isInitMplicity, new int[] { 3, 1, 14 }, this);
+        DFEVar[] isInitMplicities = Utility.pipelineStaggered(isInitMplicity, new int[] { 3 + (kernNum == 0 ? 5 : 0), 1, 14 }, this);
         //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", ticksBeforeCols, ticksBeforeReset, mainCount, loopCount, resetSignal);
         isCalc = Utility.repeatPipeline(isCalc, 16+(kernNum==0 ? 5 : 0)+(dual ? 4 : 0), this);
         DFEVar firstTick = mainCount === 0;
-        DFEVar[] firstTicks = Utility.pipelineStaggered(firstTick, new int [] { 4, 4, 18, 9, 12 }, this);
+        DFEVar[] firstTicks = Utility.pipelineStaggered(firstTick, new int [] { 4 + (kernNum == 0 ? 5 : 0), 4, 18 + (kernNum == 0 ? 1 : 0), 9, 12 }, this);
         DFEVar notFirstTick = kernNum == 0 ? null : Utility.repeatPipeline(mainCount !== 0, 26, this);
         DFEVar needData = kernNum == 0 ? null : msizem1 >= (kernNum * maxdim / initKerns);
         DFEVar notNeedData = kernNum == 0 ? null : msizem1 < (kernNum * maxdim / initKerns);
         DFEVar startOfLoop = loopCount === 0;
-        DFEVar[] startOfLoops = Utility.pipelineStaggered(startOfLoop, new int[] { 11, 3, 5 }, this);
+        DFEVar[] startOfLoops = Utility.pipelineStaggered(startOfLoop, new int[] { 11 + (kernNum == 0 ? 5 : 0), 3, 5 }, this);
         
         DFEVar mplicityWrap = dfeBool().newInstance(this);
         
@@ -131,7 +131,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         counterInit <== Utility.repeatPipeline(nextCounterInit, 5, this);
         curdir <== kernNum == 0 ? optimization.pipeline(cDir) : (needData ? cDir : 1);
         DFEVar initBinCoeff = kernNum != 0 ? null : dfeUInt(38).newInstance(this);
-        if (kernNum == 0) initBinCoeff <== Utility.repeatPipeline(Utility.repeatPipeline(rowData, 3+CEPipelining, this) ? oneRowPacked[2*cols].slice(6 + 6 + 1, 38).reinterpret(dfeUInt(38)) : stream.offset(initBinCoeff, -loopLength), 0, this);
+        if (kernNum == 0) initBinCoeff <== Utility.repeatPipeline(Utility.repeatPipeline(rowData, 3+CEPipelining, this) ? oneRowPacked[2*cols].slice(6 + 6 + 1, 38).reinterpret(dfeUInt(38)) : stream.offset(initBinCoeff, -loopLength), 8, this);
         
         DFEVar inpmp = rowChangeIndex + 1;
         
@@ -152,7 +152,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             initChoices.add(oneRow);
             oneRow = control.oneHotMux(needData.cat(firstTicks[2] & notNeedData).cat(notFirstTick & notNeedData), initChoices);
         }
-        oneRow = Utility.repeatPipeline(oneRow, 4, this);
+        oneRow = Utility.repeatPipeline(oneRow, 4+(kernNum == 0 && useFloat ? 14 : 0), this);
         
         //if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
         DFEVar initDirection = Utility.repeatPipeline(mplicityCount, 3, this) >= (curdir ? (Utility.repeatPipeline(rowChangeIndex, 1, this) - nextCounterInit) : optimization.pipeline(nextCounterInit));
@@ -167,7 +167,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), mplicityRows);
         startOfRowLoop = Utility.repeatPipeline(startOfRowLoop, 1, this);
         DFEVar oneHotInit = startOfRowLoop ? storeRowIndex12 : 0;
-        oneHotInit = Utility.repeatPipeline(oneHotInit, 4, this);
+        oneHotInit = Utility.repeatPipeline(oneHotInit, 4+(kernNum == 0 && useFloat ? 14 : 0), this);
         oneHotInit = optimization.pipeline(oneHotInit.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, mplicityRows/2)));
         DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);        
         DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
@@ -205,8 +205,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector<DFEVar> curMultiplicities = curMplicityType.newInstance(this);
         DFEVar nextEnable = (rowChangeMask<<1)-1;
         nextEnable = optimization.pipeline(nextEnable.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(nextEnable.slice(0, mplicityRows/2)));
-        DFEVar[] nextRowIdxFanout = Utility.parallelFanout(notIsInit, mplicityRows, 32, this);
-        rowMultiplicities = Utility.repeatVectorPipeline(rowMultiplicities, 6+(dual ? 1 : 0)+(kernNum==0 ? 1 : 9), mplicityRows/2, this);
+        DFEVar[] nextRowIdxFanout = Utility.parallelFanout(Utility.repeatPipeline(notIsInit, kernNum == 0 ? 5 : 0, this), mplicityRows, 32, this);
+        rowMultiplicities = Utility.repeatVectorPipeline(rowMultiplicities, 6+(dual ? 1 : 0)+9, mplicityRows/2, this);
         DFEVar[] gcodeCounters = Utility.parallelFanout(Utility.repeatPipeline(gcodeCounter, 6+(dual ? 1 : 0), this), mplicityRows, 32, this);
         DFEVar[] gcodeCountersPlusInc = Utility.parallelFanout(Utility.repeatPipeline(gcodeCounter+1, 5+(dual ? 1 : 0), this), mplicityRows, 32, this);
         for (int i = 0; i < mplicityRows; i++) {
@@ -225,10 +225,12 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (dual) changePosIsZero = isLocal & changePosIsZero;
         if (dual) changeValue = optimization.pipeline(changeValue);
         notIsInit = Utility.repeatPipeline(notIsInit, 5, this);
-        DFEVar isNeg = (Utility.repeatPipeline(changePosIsZero, 2, this) ^ changeValue) & notIsInit;
+        DFEVar nextNotIsInit = Utility.repeatPipeline(notIsInit, kernNum == 0 ? 5 : 0, this);
+        DFEVar isNeg = (Utility.repeatPipeline(changePosIsZero, 2, this) ^ changeValue) & nextNotIsInit;
+        if (kernNum == 0) isNeg = optimization.pipeline(isNeg);
         if (dual) isNeg = optimization.pipeline(isNeg);
-        DFEVar isNegEven = dual ? null : (optimization.pipeline(changeValue) & notIsInit);
-        DFEVar isMplicityNeg = Utility.repeatPipeline(isInitMplicities[2] & Utility.repeatPipeline(initDirection, 2, this), 17, this);
+        DFEVar isNegEven = dual ? null : Utility.repeatPipeline(optimization.pipeline(changeValue) & nextNotIsInit, kernNum == 0 ? 1 : 0, this);
+        DFEVar isMplicityNeg = Utility.repeatPipeline(isInitMplicities[2] & Utility.repeatPipeline(initDirection, 2, this), 17+(kernNum == 0 ? 1 : 0), this);
         DFEVar[] negations = new DFEVar[kerns];
         DFEVector<DFEVar> initGcodeBits = new DFEVectorType<DFEVar>(dfeUInt(1+1+basekernpow2+(dual ? 1 : 0)), kerns).newInstance(this);
         for (int kern = 0; kern < kerns; kern++) {
@@ -236,7 +238,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar initGcode = dual ? constant.var(dfeUInt(1+basekernpow2), gcode >> 1).cat(((gcode & 1) != 0) ^ isLocal).cat(isLocal).reinterpret(dfeUInt(1+1+basekernpow2+(dual ? 1 : 0))) : constant.var(dfeUInt(1+1+basekernpow2), gcode);
             initGcodeBits[kern] <== firstTicks[3] ?
                 initGcode.slice(1, 1+basekernpow2+(dual ? 1 : 0)).cat(constant.zero(dfeBool())).reinterpret(dfeUInt(1+1+basekernpow2+(dual ? 1 : 0))) :
-                Utility.repeatPipeline(stream.offset(initGcodeBits[kern], -loopLength) >> 1, loopLength - 1, this);
+                Utility.repeatPipeline(stream.offset(initGcodeBits[kern], -loopLength) >> 1, 8, this);
             negations[kern] = (dual || ((kern & 1) != 0) ? isNeg : isNegEven) | initGcodeBits[kern].get(0).reinterpret(dfeBool()) | isMplicityNeg;
         }        
         
@@ -244,11 +246,11 @@ public class InitializeColSumDFEKernel extends Kernel {
         if (kernNum == 0) { //now we need the next multiplicities
             //cpInitGrayCode = Utility.repeatPipeline(cpInitGrayCode, 7+(dual ? 1 : 0), this);
             countersZero = ~cpChain[1]; //cpInitGrayCode !== rowMultiplicities-1;
-            rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
+            rowChangeMask = optimization.pipeline(Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows))));
             DFEVar rowIndex = Utility.repeatPipeline(rowChangeMask, 3+(dual ? 1 : 0), this);
-            inpmp = optimization.pipeline(Utility.oneHotMux32to64(rowIndex, rowMultiplicities.getElementsAsList(), mplicityRows/2, this)).cast(dfeUInt(7))-1;
+            inpmp = Utility.repeatPipeline(Utility.oneHotMux32to64(rowIndex, rowMultiplicities.getElementsAsList(), mplicityRows/2, this), 2, this).cast(dfeUInt(7))-1;
             rowIndex = optimization.pipeline(rowIndex);
-            curmp = Utility.oneHotMux32to64(rowIndex, curMultiplicities.getElementsAsList(), mplicityRows/2, this)+Utility.repeatPipeline(Utility.repeatPipeline(notIsInit, 2, this) & (rowIndex <= changePos), 1, this).cast(dfeUInt(7)); //curMultiplicities lags by 1 except on transition
+            curmp = optimization.pipeline(Utility.oneHotMux32to64(rowIndex, curMultiplicities.getElementsAsList(), mplicityRows/2, this)+(Utility.repeatPipeline(notIsInit, 2, this) & (rowIndex <= changePos)).cast(dfeUInt(7))); //curMultiplicities lags by 1 except on transition
             //curmp can never have just wrapped to 0 or inpmp+1 which is why adding is okay
             DFEVar curmp1 = optimization.pipeline(curmp);
             curmp = curmp1 === ((inpmp+1)<<1) ? constant.zero(dfeUInt(7)) : ((curmp === inpmp) ? curmp+1 : curmp1);
@@ -258,7 +260,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             //DFEVar parity = Utility.repeatPipeline((initParities >> loopCount).get(0), 4, this);
             DFEVar nextRowChangeIsNeg = curmp <= inpmp;
             //n=i+1, n=n-1, k=k<n ? n-1-k : k-n, k<n ? bc*k/(n-k+1) : bc*(n-k)/(k+1) -> k<n ? (n-1-k)/(n-1-(n-1-k)+1) : (n-1-(k-n))/(k-n+1)
-            DFEVar num = Utility.repeatPipeline((nextRowChangeIsNeg ? inpmp - curmp : (inpmp<<1) - curmp + 1).cast(dfeUInt(6)), 3, this);
+            DFEVar num = Utility.repeatPipeline((nextRowChangeIsNeg ? inpmp - curmp : (inpmp<<1) - curmp + 1).cast(dfeUInt(6)), 8, this);
             DFEVar denom = Utility.repeatPipeline((nextRowChangeIsNeg ? curmp + 1 : curmp-inpmp).cast(dfeUInt(6)), 4, this)-1;
             DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(38+4+1), 40+1);
             DFEVector<DFEVar> magicDivisionMpliers = divisionMplierType.newInstance(this);
@@ -274,11 +276,11 @@ public class InitializeColSumDFEKernel extends Kernel {
                 shiftIndices.add(constant.var(dfeUInt(4), shiftToIndex.get(shiftConsts[i]))); //0-5 and 42-47 is 12 shifts, 4 bits to select
             }           
             DFEVar cur_multiplicity = dfeUInt(38).newInstance(this);
-            DFEVar lastMultiplicity = isInit ? Utility.repeatPipeline(initBinCoeff, dual ? 1 : 0, this) : stream.offset(cur_multiplicity, -loopLength);
+            DFEVar lastMultiplicity = isInits[2] ? Utility.repeatPipeline(initBinCoeff, 29 + (dual ? 1 : 0), this) : stream.offset(cur_multiplicity, -loopLength);
             //DFEVar mplied = Utility.mulExact(Utility.mulExact(lastMultiplicity, num, 38+4, 38+4, this), Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 32, this), 38+4+38+4, 38+4+38+4, this); //6 bits * 38 bits is 4 latency (only 42 bits possible in the intermediate computation however for up to 40x40), 42 bits * 42 bits is 7 latency, shift right by 6 bits is 4 latency
-            DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 32, this), 38+4+1+6, 38+4+1+6, this), 38+38+4+1+6, 38+38+4+1+6, this); //38 bits * 48 bits is 8 latency 
+            DFEVar mplied = Utility.mulKaratsubaRectangularExact(Utility.repeatPipeline(lastMultiplicity, 2, this), Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 32, this), 38+4+1+6, 38+4+1+6, this), 38+38+4+1+6, 38+38+4+1+6, this); //38 bits * 48 bits is 8 latency 
             DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(38), shiftToIndex.size());
-            DFEVar shiftIndex = Utility.mux32to64(denom, shiftIndices, 32, this);
+            DFEVar shiftIndex = Utility.repeatPipeline(Utility.mux32to64(denom, shiftIndices, 32, this), 9, this);
             DFEVector<DFEVar> magicDivisionShifts = divisionShiftType.newInstance(this);
             for (Character shift : shiftToIndex.keySet()) {
                 magicDivisionShifts[shiftToIndex.get(shift)] <== (mplied >> shift).cast(dfeUInt(38));
@@ -307,7 +309,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             //rowToAdd = useRow.reinterpret(cplxRowType).cast(colSumType) + useRow.reinterpret(cplxRowType).cast(colSumType); //* constant.var(dataTypeFixCommonAdd, 2.0);
         } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
         rowToAdd = isInits[1] ? Utility.repeatPipeline(oneRow, 3 + (useFloat ? 3 : 0), this).cast(oneRowFixType).reinterpret(colSumType) : rowToAdd;
-        rowToAdd = Utility.repeatPipeline(rowToAdd+(kernNum == 0 ? 1 : 0), 12, this);
+        rowToAdd = Utility.repeatPipeline(rowToAdd, 12+(kernNum == 0 ? 1 : 0), this);
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
             DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
