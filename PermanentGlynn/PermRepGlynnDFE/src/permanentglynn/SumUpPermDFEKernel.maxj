@@ -18,7 +18,9 @@ public class SumUpPermDFEKernel extends Kernel {
     public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, boolean useFloat) {
         super(parameters);
 
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+        //import math; [max(sum((2*(k+1)-n)**n * math.comb(n-1, k) for k in range(1, n, 2)), sum((2*(k+1)-n)**n * math.comb(n-1, k) for k in range(0, n, 2)))/n**n for n in range(41)]
+        //largest partial sum for a 40x40 normalized matrix of all ones is 27 so 6 integer bits needed worst case
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -122, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
@@ -89,7 +91,8 @@ public class SumUpPermDFEKernel extends Kernel {
         } else {
             DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1);
             sum <== cursum + colProdVals[0];
-            io.output("res", sum, cplxFix128Type, lastTick);
+            DFEComplexType returnCplxFix128Type = new DFEComplexType(dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT));
+            io.output("res", sum.cast(returnCplxFix128Type), returnCplxFix128Type, lastTick);
         }
     }
 
