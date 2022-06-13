@@ -847,10 +847,11 @@ public class Utility {
         int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
         int bigMant = Math.max(n1mant, n2mant);
         DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
-        DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)),
-               n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
+        DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).cat(base.constant.zero(KernelBase.dfeBool())).reinterpret(KernelBase.dfeFixOffset(n1mant+1, -n1mant, SignMode.UNSIGNED)),
+               n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).cat(base.constant.zero(KernelBase.dfeBool())).reinterpret(KernelBase.dfeFixOffset(n2mant+1, -n2mant, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
         DFEVar isZero1 = n1e === 0, isZero2 = n2e === 0;
+        DFEVar notIsZero = base.control.mux(isZero1.cat(isZero2), base.constant.var(KernelBase.dfeBool(), 1), base.constant.var(KernelBase.dfeBool(), 1), base.constant.var(KernelBase.dfeBool(), 1), base.constant.zero(KernelBase.dfeBool()));
         DFEVar shift2 = n1e >= n2e ? n1e - n2e : 0,
                shift1 = n1e >= n2e ? 0 : n2e - n1e;
         DFEVar resExp = n1e >= n2e ? n1e : n2e;
@@ -858,12 +859,19 @@ public class Utility {
                n2mshifted = (shift2 >= 64 | isZero2) ? base.constant.zero(n2m.getType()) : (n2m >> shift2.slice(0, MathUtils.bitsToAddress(n2mant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(n2mant))));
         DFEVar signParity = n1sign ^ n2sign, unevenSign = n1mshifted >= n2mshifted;
         DFEVar sum = addExact(n1mshifted, n2mshifted, false, base), sub1 = addExact(n1mshifted, n2mshifted, true, base), sub2 = addExact(n2mshifted, n1mshifted, true, base);
-        sum = signParity ? sum : (unevenSign ? sub1 : sub2).reinterpret(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
+        if (isSub) sum = signParity ? sum : (unevenSign ? sub1 : sub2).reinterpret(KernelBase.dfeFixOffset(bigMant+1+1, -bigMant, SignMode.UNSIGNED));
+        else sum = signParity ? (unevenSign ? sub1 : sub2).reinterpret(KernelBase.dfeFixOffset(bigMant+1+1, -bigMant, SignMode.UNSIGNED)) : sum;
         DFEVar oneHotShift = Bitops.leading1Detect(sum);
         DFEVar expAdjust = Bitops.onehotDecode(Bitops.bitreverse(oneHotShift));
-        DFEVar sumshifted = (sum << expAdjust).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
-        DFEVar result = (signParity ? n1sign : unevenSign ^ n1sign).cat(resExp + expAdjust).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        base.debug.simPrintf(result !== n1 + n2, "%f %f %f %f %f %f %d %d %d %d\n", n1, n2, n1 + n2, result, n1m, n2m, shift1, shift2, resExp, expAdjust);
+        DFEVar sumshifted = (sum << expAdjust).reinterpret(KernelBase.dfeFixOffset(bigMant+1+1, -bigMant-1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar sign;
+        if (isSub) sign = signParity ? n1sign.reinterpret(KernelBase.dfeBool()) : unevenSign ^ ~n2sign;
+        else sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());
+        DFEVar result = sign.cat(resExp+notIsZero.cast(resExp.getType()) - expAdjust.cast(resExp.getType())).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        if (isSub) 
+            base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %f %f %d %d %d %d\n", n1, n2, n1 - n2, result, (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1m, n2m, shift1, shift2, resExp, expAdjust);
+        else
+            base.debug.simPrintf(result !== n1 + n2, "add %f %f %f %f %X %X %f %f %d %d %d %d\n", n1, n2, n1 + n2, result, (n1 + n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1m, n2m, shift1, shift2, resExp, expAdjust);
         return result;
         //return n1 + n2;
     }
@@ -909,7 +917,7 @@ public class Utility {
         if (useFloat) {
             //since addition is more expensive for floating point, the 4M+2A formula is optimal!
             //return n1 * n2;
-            return DFEComplexType.newInstance(owner, doFloatMult(a, c, owner) - doFloatMult(b, d, owner), doFloatAdd(doFloatMult(c, b, owner), doFloatMult(d, a, owner), false, owner));
+            return DFEComplexType.newInstance(owner, doFloatAdd(doFloatMult(a, c, owner), doFloatMult(b, d, owner), true, owner), doFloatAdd(doFloatMult(c, b, owner), doFloatMult(d, a, owner), false, owner));
             /*if (useUngar) {
                 DFEVar ac = a * c;
                 DFEVar bd = b * d;
