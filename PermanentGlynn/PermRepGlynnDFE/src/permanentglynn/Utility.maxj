@@ -33,7 +33,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
@@ -842,26 +842,30 @@ public class Utility {
     }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
-        /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
+        DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
         int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
+        int bigMant = Math.max(n1mant, n2mant);
         DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
         DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)),
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
+        DFEVar isZero1 = n1e === 0, isZero2 = n2e === 0;
         DFEVar shift2 = n1e >= n2e ? n1e - n2e : 0,
                shift1 = n1e >= n2e ? 0 : n2e - n1e;
         DFEVar resExp = n1e >= n2e ? n1e : n2e;
-        DFEVar n1mshifted = n1m >> shift1, n2mshifted = n2m >> shift2;
-        DFEVar signParity = n1sign ^ n2sign;
-        DFEVar sum = n1mshifted + (signParity ? n2mshifted : -n2mshifted);
-        DFEVar oneHotShift = Bitops.leading1detect(sum);
-        DFEVar expAdjust = Bitops.oneHotDecode(oneHotShift);
-        DFEVar sumshifted = ;
-        DFEVar result = signParity.cat(resExp + expAdjust).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        DFEVar n1mshifted = (shift1 >= 64 | isZero1) ? base.constant.zero(n1m.getType()) : (n1m >> shift1.slice(0, MathUtils.bitsToAddress(n1mant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(n1mant)))),
+               n2mshifted = (shift2 >= 64 | isZero2) ? base.constant.zero(n2m.getType()) : (n2m >> shift2.slice(0, MathUtils.bitsToAddress(n2mant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(n2mant))));
+        DFEVar signParity = n1sign ^ n2sign, unevenSign = n1mshifted >= n2mshifted;
+        DFEVar sum = addExact(n1mshifted, n2mshifted, false, base), sub1 = addExact(n1mshifted, n2mshifted, true, base), sub2 = addExact(n2mshifted, n1mshifted, true, base);
+        sum = signParity ? sum : (unevenSign ? sub1 : sub2).reinterpret(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar oneHotShift = Bitops.leading1Detect(sum);
+        DFEVar expAdjust = Bitops.onehotDecode(Bitops.bitreverse(oneHotShift));
+        DFEVar sumshifted = (sum << expAdjust).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar result = (signParity ? n1sign : unevenSign ^ n1sign).cat(resExp + expAdjust).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        base.debug.simPrintf(result !== n1 + n2, "%f %f %f %f %f %f %d %d %d %d\n", n1, n2, n1 + n2, result, n1m, n2m, shift1, shift2, resExp, expAdjust);
         return result;
-        */
-        return n1 + n2;
+        //return n1 + n2;
     }
     public static DFEVar doFloatMult(DFEVar n1, DFEVar n2, KernelBase<?> base) //default long double multiplication latency is 22, we achieve 7 and less DSPs
     {
@@ -885,7 +889,7 @@ public class Utility {
         mult = base.control.oneHotMux(selMult, base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.reinterpret(KernelBase.dfeFixOffset(n1mant + n2mant, -(n1mant + n2mant) + 1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))); //1 rounding delay on cast, 1 delay on multiplexer
         DFEVar newExp = addExact(expUpdate, incExp, false, base).cast(KernelBase.dfeUInt(Math.max(n1exp, n2exp)));
         DFEVar result = repeatPipeline(sign, totalDelay, base).cat(newExp).cat(mult).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        //debug.simPrintf(result !== n1 * n2, "%f %f %f %f %f %f %f\n", n1, n2, n1 * n2, result, n1m, n2m, mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, base));
+        //base.debug.simPrintf(result !== n1 * n2, "%f %f %f %f %f %f %f\n", n1, n2, n1 * n2, result, n1m, n2m, mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, base));
         return result; //return n1 * n2;
     }
     public static DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, boolean useUngar, boolean useFloat, KernelBase <?> owner) {
@@ -901,11 +905,11 @@ public class Utility {
         DFEVar b = n1.getImaginary();
         DFEVar d = n2.getImaginary();
         //DFEVar cab = mulFrac(c, a + b);
-        //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab+mulFrac(a, d-c));
+        //return DFEComplexType.newInstance(owner, cab-mulFrac(b, c+d), cab + mulFrac(a, d-c), false);
         if (useFloat) {
             //since addition is more expensive for floating point, the 4M+2A formula is optimal!
             //return n1 * n2;
-            return DFEComplexType.newInstance(owner, doFloatMult(a, c, owner) - doFloatMult(b, d, owner), doFloatMult(c, b, owner) + doFloatMult(d, a, owner));
+            return DFEComplexType.newInstance(owner, doFloatMult(a, c, owner) - doFloatMult(b, d, owner), doFloatAdd(doFloatMult(c, b, owner), doFloatMult(d, a, owner), false, owner));
             /*if (useUngar) {
                 DFEVar ac = a * c;
                 DFEVar bd = b * d;
@@ -1216,7 +1220,7 @@ public class Utility {
     
 
 
-    public static DFEVar[] parallelFanout(DFEVar var, int count, int limit, KernelBase<?> base)
+    public static DFEVar[] parallelFanout(DFEVar var, int count, int limit, KernelBase<?> base) //limit==32 is compiler default maximum fanout
     {
         if (count <= limit) return new DFEVar[] { var };
         DFEVar[] fanout = new DFEVar[(count+limit-1)/limit];
@@ -1239,10 +1243,10 @@ public class Utility {
         }
         return stagger;
     }
-    public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
+     public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
     {
         DFEVar v = var.reinterpret(KernelBase.dfeUInt(var.getType().getTotalBits()));
-        int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();
+        int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();        
         DFEVar out = null;
         for (int i = 0; i < 2; i++) {
             DFEVar chunk = repeatPipeline(v.slice(i*limit*sz, i == 0 ? limit*sz : var.getType().getTotalBits() - i*limit*sz), count, base);
@@ -1251,27 +1255,48 @@ public class Utility {
         }
         return out.reinterpret(var.getType());
     }
-    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //do not yet need to generalize for >64 or triple stage even at >1024... 
+    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==4 bits, 16-bit multiplexers are efficient per Xilinx docs 
     {
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
-        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel), base.optimization.pipeline(sel) };
-        return repeatPipeline(sel.get(bitsToAddress-1), 2, base) ?
-            base.control.mux(sels[1].slice(0, MathUtils.bitsToAddress(values.size()-split)), values.subList(split, values.size())) :
-            base.control.mux(sels[0].slice(0, MathUtils.bitsToAddress(split)), values.subList(0, split));
+        for (int bits = 0; bits < bitsToAddress; bits += split) {
+            if (bits + split >= bitsToAddress) return base.control.mux(base.optimization.pipeline(sel), values); 
+            DFEVar[] sels = parallelFanout(sel.slice(bits, split), values.size(), 32, base);
+            List<T> nextValues = new ArrayList<>();
+            for (int i = 0; i < values.size(); i += (1 << split))
+                nextValues.add(base.control.mux(sels[i / 32], values.subList(i, i+Math.min(1 << split, values.size() - i))));
+            values = nextValues;
+            sel = base.optimization.pipeline(sel.slice(bits + split, bitsToAddress - bits - split));
+        }
+        return null;
     }
-    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //do not yet need to generalize for >64 or triple stage even at >1024...
+    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
     {
-        DFEVar upper = sel.slice(split, values.size()-split);
-        DFEVar isUpper = upper !== 0;
-        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel.slice(0, split)), base.optimization.pipeline(upper) };
-        return isUpper ?
-            base.control.oneHotMux(sels[1], values.subList(split, values.size())) :
-            base.control.oneHotMux(sels[0], values.subList(0, split));
+        while (true) {
+            if (split >= values.size()) return base.control.oneHotMux(sel, values);
+            List<T> nextValues = new ArrayList<>();
+            DFEVar nextSel = null;
+            for (int i = 0; i < values.size(); i += split) {
+                DFEVar s = sel.slice(i, Math.min(split, values.size() - i));
+                if (nextSel == null) nextSel = s !== 0;
+                else nextSel = (s !== 0).cat(nextSel);
+                nextValues.add(base.control.oneHotMux(base.optimization.pipeline(s), values.subList(i, i+Math.min(split, values.size() - i))));
+            }
+            values = nextValues;
+            sel = nextSel;
+        }
     }
     public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
-    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base)
+    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
     {
-        DFEVar upper = sel.slice(split, values.size()-split);
+        int innerSize = values[0].getSize();
+        M returnVal = values[0].getType().newInstance(base);
+        for (int i = 0; i < innerSize; i++) {
+            final int j = i;
+            List<P> curVals = values.stream().map(x -> x[j]).collect(Collectors.toList());
+            returnVal[i] <== oneHotMux32to64(base.optimization.pipeline(sel), curVals, split, base);
+        }
+        return returnVal;
+        /*DFEVar upper = sel.slice(split, values.size()-split);
         DFEVar isUpper = upper !== 0;
         DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel.slice(0, split)), base.optimization.pipeline(upper) };
         int innerSize = values[0].getSize();
@@ -1283,14 +1308,14 @@ public class Utility {
                 base.control.oneHotMux(base.optimization.pipeline(sels[1]), curVals.subList(split, curVals.size())) :
                 base.control.oneHotMux(base.optimization.pipeline(sels[0]), curVals.subList(0, split));
         }
-        return returnVal;
+        return returnVal;*/
     }
-    public static DFEVector<DFEVar> oneHotEncode(DFEVar shift, int bits, int limit, KernelBase<?> base)
+    public static DFEVector<DFEVar> oneHotEncode(DFEVar shift, int bits, int limit, KernelBase<?> base) //limit==32, at 1024 we would need 2 stage pipeline tree...
     {
-        DFEVar[] shifts = parallelFanout(shift, bits, 32, base); 
+        DFEVar[] shifts = parallelFanout(shift, bits, limit, base); 
         DFEVector<DFEVar> res = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bits).newInstance(base);
         for (int i = 0; i < bits; i++) {
-            res[i] <== shifts[i < limit ? 0 : 1] === i;
+            res[i] <== shifts[i / limit] === i;
         }
         return res;
     }
