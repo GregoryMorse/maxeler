@@ -16,6 +16,10 @@ CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE = NULL;
 INITPERMGLYNNREPDFE initializeRep_DFE = NULL;
 FREEPERMGLYNNREPDFE releiveRep_DFE = NULL;
 
+typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
+extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE;
+size_t dfe_loop_length = 0;
+
 #define ROWCOL(m, r, c) ToComplex32(m[ r*m.stride + c])
 
 namespace pic {
@@ -61,9 +65,6 @@ matrix transpose_reorder_rows_cols(matrix& matrix_mtx, std::vector<uint8_t> & ro
     }
     return matrix_rows;
 }
-
-typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
-extern "C" CALCPERMGLYNNDFE calcPermanentGlynnDFE;
 
 void
 GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& input_state,
@@ -328,6 +329,7 @@ void counter_to_gcode(std::vector<uint64_t>& gcode, const std::vector<uint64_t>&
     for (size_t j = inp.size()-1; j != ~0ULL; j--) {
         gcode[j] = counterChain[j] + (parity ? inp[j] : 0);
         parity = gcode[j] & 1;
+        //parity ^= (parity ? inp[j] - 1 - counterChain[j] : counterChain[j]) & 1; //ultimately mathematically equivalent...  
     }
 }
 uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mplicity, std::vector<uint8_t>& initDirections, int& initParities, uint8_t loopLength)
@@ -441,7 +443,6 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
   }*/
 }
 
-int loopLength = 20;
 bool colMux = false;
 
 /**
@@ -474,7 +475,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     uint8_t onerows, mulsum; uint64_t changecount;
     PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();
     int initParities;
-    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, loopLength); 
+    matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, dfe_loop_length); 
     
     matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
     if (!useFloat) {
@@ -532,14 +533,14 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
     const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
-    int adjLoopLength = changecount+1 < (unsigned)loopLength && rowchange_indices[rows - 1] == 1 ? changecount+1 : loopLength;
+    int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
     for (size_t i = 0; i < actualinits; i++) {
-      mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
+      mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*dfe_loop_length+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
       size_t basecol = max_fpga_cols * i;
       size_t lastcol = cols<=basecol ? 0 : std::min(max_fpga_cols, cols-basecol);
       for (size_t idx=0; idx < rows; idx++) {
         size_t offset = idx * matrix_mtx.stride;
-        size_t offset_small = idx*loopLength*mtxfix[i].stride;
+        size_t offset_small = idx*dfe_loop_length*mtxfix[i].stride;
         for (size_t jdx = 0; jdx < lastcol; jdx++) {
           mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real()) : llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].real() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
           mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag()) : llrintl((long double)matrix_mtx[offset+(colMux ? basecol+jdx : colIndices[basecol+jdx])].imag() * fixpow / renormalize_data[colMux ? basecol+jdx : colIndices[basecol+jdx]]);
@@ -547,14 +548,14 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         }
         memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols+1-lastcol));
         mtxfix[i][offset_small+max_fpga_cols].real |= rowchange_indices[idx]; //maximum of 40*6=240 bits
-        memset(&mtxfix[i][offset_small+mtxfix[i].stride], 0, ((idx == rows-1 ? adjLoopLength : loopLength)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
+        memset(&mtxfix[i][offset_small+mtxfix[i].stride], 0, ((idx == rows-1 ? adjLoopLength : dfe_loop_length)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
       }
       for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
       for (size_t idx = 0; idx < initDirections.size(); idx++) {
-          mtxfix[i][(onerows*loopLength+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
+          mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
       } 
       for (size_t idx = 0; idx < mplicity.size(); idx++) {
-          mtxfix[i][((rows-1)*loopLength+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
+          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
       }
     }
 
@@ -564,7 +565,6 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = mtxfix[i].get_data();
     
     if (colMux) for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
-
     calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, cols, colIndices.data(),
       rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, 1, &perm);
 
@@ -603,7 +603,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         uint8_t onerows, mulsum; uint64_t changecount;
         PicState_int64 adj_input_state = output_states[outp].copy();
         int initParities;
-        matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, false, loopLength); 
+        matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, false, dfe_loop_length); 
         
         matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
         if (!useFloat) {
@@ -653,14 +653,14 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         matrix_base<ComplexFix16> mtxfix[colMux ? numinits : actualinits];
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
-        int adjLoopLength = changecount+1 < (unsigned)loopLength && rowchange_indices[rows - 1] == 1 ? changecount+1 : loopLength;
+        int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
         for (size_t i = 0; i < actualinits; i++) {
-          mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*loopLength+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
+          mtxfix[i] = matrix_base<ComplexFix16>((rows-1)*dfe_loop_length+adjLoopLength, max_fpga_cols+1); //one extra for row multiplicities, initial directions and Gray codes, binomial coefficients
           size_t basecol = max_fpga_cols * i;
           size_t lastcol = matrix_mtx.cols<=basecol ? 0 : std::min(max_fpga_cols, matrix_mtx.cols-basecol);
           for (size_t idx=0; idx < rows; idx++) {
             size_t offset = idx * matrix_mtx.stride;
-            size_t offset_small = idx*loopLength*mtxfix[i].stride;
+            size_t offset_small = idx*dfe_loop_length*mtxfix[i].stride;
             for (size_t jdx = 0; jdx < lastcol; jdx++) {
               mtxfix[i][offset_small+jdx].real = useFloat ? doubleToLLRaw(matrix_mtx[offset+basecol+jdx].real()) : llrintl((long double)matrix_mtx[offset+basecol+jdx].real() * fixpow / renormalize_data[basecol+jdx]);
               mtxfix[i][offset_small+jdx].imag = useFloat ? doubleToLLRaw(matrix_mtx[offset+basecol+jdx].imag()) : llrintl((long double)matrix_mtx[offset+basecol+jdx].imag() * fixpow / renormalize_data[basecol+jdx]);
@@ -668,14 +668,14 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
             }
             memset(&mtxfix[i][offset_small+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols+1-lastcol));
             mtxfix[i][offset_small+max_fpga_cols].real |= rowchange_indices[idx]; //maximum of 40*6=240 bits
-            memset(&mtxfix[i][offset_small+mtxfix[i].stride], 0, ((idx == rows-1 ? adjLoopLength : loopLength)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
+            memset(&mtxfix[i][offset_small+mtxfix[i].stride], 0, ((idx == rows-1 ? adjLoopLength : dfe_loop_length)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
           }
           for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
           for (size_t idx = 0; idx < initDirections.size(); idx++) {
-              mtxfix[i][(onerows*loopLength+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
+              mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
           } 
           for (size_t idx = 0; idx < mplicity.size(); idx++) {
-              mtxfix[i][((rows-1)*loopLength+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
+              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
           }  
         }        
         
@@ -691,13 +691,13 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         //rowchange_indices.resize(rows * input_states[outp].size());
         //mplicity.resize(adjLoopLength * input_states[outp].size());
         //int numInitDir = initDirections.size();
-        //initDirections.resize(loopLength * (rows - onerows) * input_states[outp].size());
-        size_t mtxsize = ((rows-1)*loopLength+adjLoopLength) * (max_fpga_cols + 1);
+        //initDirections.resize(dfe_loop_length * (rows - onerows) * input_states[outp].size());
+        size_t mtxsize = ((rows-1)*dfe_loop_length+adjLoopLength) * (max_fpga_cols + 1);
         matrix_base<ComplexFix16> mtxmuxed[numinits] = {};
         if (!colMux) {
             actualinits = (photons + max_fpga_cols-1) / max_fpga_cols;
             for (size_t i = 0; i < actualinits; i++) {
-                mtxmuxed[i] = matrix_base<ComplexFix16>(((rows-1)*loopLength+adjLoopLength) * input_states[outp].size(), max_fpga_cols + 1);
+                mtxmuxed[i] = matrix_base<ComplexFix16>(((rows-1)*dfe_loop_length+adjLoopLength) * input_states[outp].size(), max_fpga_cols + 1);
             }
         }
         for (size_t i = 0; i < input_states[outp].size(); i++) { //could improve by copying 1, then 2, then 4, then 8, etc...copy doubling strategy
@@ -713,14 +713,14 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                     size_t basecol = max_fpga_cols * j;
                     size_t lastcol = photons<=basecol ? 0 : std::min(max_fpga_cols, photons-basecol);
                     for (size_t idx=0; idx < rows; idx++) {
-                        size_t offset = i * mtxsize + idx * loopLength * mtxmuxed[j].stride;
+                        size_t offset = i * mtxsize + idx * dfe_loop_length * mtxmuxed[j].stride;
                         for (size_t jdx = 0; jdx < lastcol; jdx++) {
                             size_t idxmtxfix = colIndices[photons*i+basecol+jdx] / max_fpga_cols;
-                            mtxmuxed[j][offset+jdx] = mtxfix[idxmtxfix][idx*loopLength*mtxfix[idxmtxfix].stride+colIndices[photons*i+basecol+jdx] % max_fpga_cols];
+                            mtxmuxed[j][offset+jdx] = mtxfix[idxmtxfix][idx*dfe_loop_length*mtxfix[idxmtxfix].stride+colIndices[photons*i+basecol+jdx] % max_fpga_cols];
                         }
                         memset(&mtxmuxed[j][offset+lastcol], 0, sizeof(ComplexFix16)*(max_fpga_cols+1-lastcol));
-                        mtxmuxed[j][offset+max_fpga_cols].real = mtxfix[0][idx*loopLength*mtxfix[0].stride+max_fpga_cols].real; //maximum of 40*6=240 bits
-                        memcpy(&mtxmuxed[j][offset+mtxmuxed[j].stride], &mtxfix[0][(idx*loopLength+1)*mtxfix[0].stride], ((idx == rows-1 ? adjLoopLength : loopLength)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
+                        mtxmuxed[j][offset+max_fpga_cols].real = mtxfix[0][idx*dfe_loop_length*mtxfix[0].stride+max_fpga_cols].real; //maximum of 40*6=240 bits
+                        memcpy(&mtxmuxed[j][offset+mtxmuxed[j].stride], &mtxfix[0][(idx*dfe_loop_length+1)*mtxfix[0].stride], ((idx == rows-1 ? adjLoopLength : dfe_loop_length)-1)*sizeof(ComplexFix16)*(max_fpga_cols+1));
                     }
                     for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxmuxed[j][i*mtxsize+jdx].real = useFloat ? fOne : fixpow;
                 }
@@ -785,7 +785,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
             uint8_t onerows, mulsum; uint64_t changecount;
             PicState_int64 adj_input_state = output_states[inp][outp].copy();
             int initParities;
-            matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, loopLength);
+            matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, dfe_loop_length);
     
             // calulate the maximal sum of the columns to normalize the matrix
             matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
