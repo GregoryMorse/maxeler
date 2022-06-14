@@ -38,7 +38,7 @@ FREEPERMGLYNNDFE releive_DFE = NULL;
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
   const uint8_t*, const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, const int, const uint64_t, pic::Complex16*);
-typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*);
+typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
 extern "C" CALCPERMGLYNNREPDFE calcPermanentGlynnRepDFE;
@@ -48,7 +48,7 @@ extern "C" FREEPERMGLYNNREPDFE releiveRep_DFE;
 size_t dfe_mtx_size = 0;
 size_t dfe_basekernpow2 = 0;
 //size_t dfe_num_inits = 0;
-//size_t dfe_loop_length = 0;
+extern "C" size_t dfe_loop_length;
 
 void* handle = NULL;
 int isLastDual = 0;
@@ -79,7 +79,7 @@ int init_dfe_lib(int choice, int dual) {
     const std::lock_guard<std::recursive_mutex> lock(libmutex);
     int useGroup = 0;
     if ((choice == DFE_MAIN || choice == DFE_FLOAT) && initialize_DFE && dual == isLastDual && isLastFloat == (choice == DFE_FLOAT)) return initialize_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
-    if ((choice == DFE_REP || choice == DFE_REP_FLOAT) && initializeRep_DFE && dual == isLastDual && isLastFloat == (choice == DFE_REP_FLOAT)) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
+    if ((choice == DFE_REP || choice == DFE_REP_FLOAT) && initializeRep_DFE && dual == isLastDual && isLastFloat == (choice == DFE_REP_FLOAT)) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2, &dfe_loop_length);
     isLastDual = dual;
     isLastFloat = choice == DFE_FLOAT || choice == DFE_REP_FLOAT; 
     unload_dfe_lib();
@@ -119,12 +119,12 @@ int init_dfe_lib(int choice, int dual) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFE");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFE");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFE");
-          if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
+          if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2, &dfe_loop_length);
       } else if (choice == DFE_REP_FLOAT) {
           calcPermanentGlynnRepDFE = (CALCPERMGLYNNREPDFE)dlsym(handle, "calcPermanentGlynnRepDFEF");
           initializeRep_DFE = (INITPERMGLYNNREPDFE)dlsym(handle, "initializeRep_DFEF");
           releiveRep_DFE = (FREEPERMGLYNNREPDFE)dlsym(handle, "releiveRep_DFEF");
-          if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
+          if (initializeRep_DFE) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2, &dfe_loop_length);
       }
     }
     return 0;
