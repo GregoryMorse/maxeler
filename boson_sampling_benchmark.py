@@ -92,16 +92,17 @@ def get_bincoeff_magic():
     largestbincoeff = mathcomb(40, 20)*21
     assert largestbincoeff.bit_length() == 42 #38+4 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
     magicmulshift = [magicgu(largestbincoeff, d) for d in range(1, 41+1)]
+    print([x[0].bit_length() for x in magicmulshift])
     for _ in range(100000):
         assert all(random.randint(0, largestbincoeff // (d+1)) * x[0] >> x[1] for d, x in enumerate(magicmulshift))
     return magicmulshift
-#[(1, 0), (1, 1), (183251937963, 39), (1, 2), (54975581389, 38), (183251937963, 40), (157073089683, 40), (1, 3), (61083979321, 39), (54975581389, 39), (199911205051, 41), (183251937963, 41), (169155635043, 41), (157073089683, 41), (146601550371, 41), (1, 4), (129354309151, 41), (61083979321, 40), (57869033041, 40), (54975581389, 40), (52357696561, 40), (199911205051, 42), (191219413527, 42), (183251937963, 42), (175921860445, 42), (169155635043, 42), (162890611523, 42), (157073089683, 42), (75828388123, 41), (146601550371, 42), (141872468101, 42), (1, 5), (133274136701, 42), (129354309151, 42), (62829235873, 41), (61083979321, 41), (59433060961, 41), (57869033041, 41), (56385211681, 41), (54975581389, 41), (214538854201, 43)]
+#[(1, 0), (1, 1), (2932031007403, 43), (1, 2), (879609302221, 42), (2932031007403, 44), (2513169434917, 44), (1, 3), (1954687338269, 44), (879609302221, 43), (799644820201, 43), (2932031007403, 45), (338311270085, 42), (2513169434917, 45), (4691249611845, 46), (1, 4), (1034834473201, 44), (1954687338269, 45), (1851809057307, 45), (879609302221, 44), (3350892579889, 46), (799644820201, 44), (3059510616421, 46), (2932031007403, 46), (2814749767107, 46), (338311270085, 43), (1303124892179, 45), (2513169434917, 46), (151656776245, 42), (4691249611845, 47), (4539918979205, 47), (1, 5), (1066193093601, 45), (1034834473201, 45), (4021071095867, 47), (1954687338269, 46), (475464487687, 44), (1851809057307, 46), (3608653547573, 47), (879609302221, 45), (858155416801, 45)] #15, 30 and 31 are 43 bits!!!
 #print(get_bincoeff_magic())
 #bcm = get_bincoeff_magic()
 #print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
 #test_complex_sampling(print_histogram())
 
-DEPTH = 60
+DEPTH = 40 if hasSim else 60
 saveFolder = "resultsbs"
 
 
@@ -355,10 +356,17 @@ def boson_sampling_Clifford_BBFGLongDouble(Arep, input_state, shots):
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
 dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_DFE,)#, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
-largePermFuncs = (permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp, permanent_ChinHuh_calculator) + dfePermFuncs #permanent_Glynn_Inf
+largePermFuncs = (permanent_Glynn_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble) + dfePermFuncs #permanent_Glynn_Cpp, permanent_ChinHuh_calculator
+inaccuratePermFuncs = (permanent_Glynn_Inf, permanent_BBFG_Double)
 testSamplingFuncs = ()
 dfeSamplingFuncs = (boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE, boson_sampling_Clifford_GlynnRepSingleDFE, boson_sampling_Clifford_GlynnRepDualDFE) if hasSim else (boson_sampling_Clifford_GlynnRepSingleDFE,) #(boson_sampling_Clifford_GlynnRepMultiSingleDFE, boson_sampling_Clifford_GlynnRepMultiDualDFE))
 samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinHuh, boson_sampling_Clifford_GlynnRepDouble, boson_sampling_Clifford_BBFGDouble, boson_sampling_Clifford_BBFGLongDouble) + dfeSamplingFuncs
+
+
+paperNames = {permanent_Glynn_Inf: "MPFR Inf", permanent_BBFG_Double: "BBFG Double", permanent_BBFG_LongDouble: "BBFG Long Double",
+              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "Dual DFE"}
+
+
 def load_test_data():
   nmax = 60
   randfuncs = (unitary_group.rvs, )#generate_random_unitary):
@@ -440,14 +448,19 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
       for dim in xaxis:
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim: #or func in dfeFuncs:
-          mplier = 1#5 if photons < 8 else 1
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+          mplier = 5 if photons < 8 and func != permanent_Glynn_Cpp_Inf else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
           def save_result():
               #v[0] = func(A[dim][0], [A[dim][1][photons]], [[A[dim][2][photons] for _ in range(3)]])
               if shots is None:
-                  if batchsize == 1: v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+                  if batchsize == 1:
+                      v[0] = func(A[dim][0], A[dim][1][photons], A[dim][2][photons])
+                      #if dim == 1:
+                      #    for phot in range(1,photons):
+                      #        print(np.repeat(np.repeat(A[dim][0], [2], axis=1), [2], axis=0), [phot, photons - phot], [phot, photons - phot])
+                      #        print(phot, func(np.repeat(np.repeat(A[dim][0], [2], axis=1), [2], axis=0), np.array([phot, photons - phot], dtype=np.int64), np.array([phot, photons - phot], dtype=np.int64)))
                   else: v[0] = func(A[dim][0], [[A[dim][1][photons] for _ in range(dim)]], [A[dim][2][photons]]) #batchsize=dim
               else: v[0] = func(A[dim][0], A[dim][1][photons], shots)
           r = timeit.timeit(save_result, number=mplier) / mplier #v[0] = func(A[dim])
@@ -491,7 +504,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
             for i in range(dim): writer.writerow([i, *A[dim][2][i]])
     for p in dfeFuncs:
         for x in largeFuncs:
-            if not x in dfeFuncs:
+            if not x in dfeFuncs and not x in inaccuratePermFuncs:
                 print("Speed-up", p.__name__, "vs.", x.__name__, results[key][x.__name__][nmax] / results[key][p.__name__][nmax],
                     "Cross-over threshold", max((i for i in range(nmax+1) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1)
     with open(os.path.join(saveFolder, "represultdata" + suffix + ".csv"), "w") as f:
@@ -507,21 +520,39 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
           if len(failures) != 0: print("ACCURACY FAILURES: ", failures); #assert False, failures
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
-    verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
-    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time (log10 s)")
+    from matplotlib.lines import Line2D
+    plt.rcParams['text.usetex'] = True
+    verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4', '8', 'P', 'h']
         lines = []        
         for i, val in enumerate(vals):
-          lines.append(ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' '))
-        ax1.set_xlabel("Size (n=|A|)")  
+          lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
+        ax1.set_xlabel("Size ($n$)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
         ax1.legend()
+        ax1.legend(loc="upper left")
+        if (vals, fname, ylbl) == timeinfo:
+            yoffs = 0.05
+            for p in dfePermFuncs:   
+                ax1.axvline(x=max(max((i for i in range(nmax+1) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1 for x in largeFuncs if not x in dfePermFuncs and not x in inaccuratePermFuncs), color='gray', linestyle='-')
+                for x in largeFuncs:
+                    if not x in dfePermFuncs and not x in inaccuratePermFuncs:
+                        #print()
+                        ax1.annotate("Speed-up: " + str(round(results[key][x.__name__][nmax] / results[key][p.__name__][nmax], 2)) + "x", xy=(nmax, results[key][p.__name__][nmax]), xytext=(0.75, yoffs), textcoords='axes fraction')
+                        ax1.add_artist(Line2D([0.72*ax1.get_xlim()[1]], [10**(math.log10(ax1.get_ylim()[0])+yoffs*(math.log10(ax1.get_ylim()[1])-math.log10(yoffs*ax1.get_ylim()[0])))], marker=markers[idxdict[p]], markerfacecolor=ax1.get_legend().legendHandles[idxdict[p]].get_color(), markeredgecolor=ax1.get_legend().legendHandles[idxdict[p]].get_color()))
+                        ax1.add_artist(Line2D([0.96*ax1.get_xlim()[1]], [10**(math.log10(ax1.get_ylim()[0])+yoffs*(math.log10(ax1.get_ylim()[1])-math.log10(yoffs*ax1.get_ylim()[0])))], marker=markers[idxdict[x]], markerfacecolor=ax1.get_legend().legendHandles[idxdict[x]].get_color(), markeredgecolor=ax1.get_legend().legendHandles[idxdict[x]].get_color()))
+                        yoffs += 0.1
+                        #offsetbox = TextArea("Speed-up: " + str(round(results[key][x.__name__][nmax] / results[key][p.__name__][nmax], 2)) + "x"); yoffs += 0.1
+                        #ab = AnnotationBbox(offsetbox, xy=(nmax, results[key][p.__name__][nmax]), xybox=(0.7, yoffs), xycoords='axes fraction', arrowprops=dict(arrowstyle="->"))
+                        #ax1.add_artist(ab)                        
+        else: ax1.axhline(y=1e-8, color='gray', linestyle='-'); ax1.axhline(y=1e-10, color='gray', linestyle='-')        
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax1.set_title(("Repeated Permanent of Square Matrix A" if shots is None else "Boson Sampling of Interferometer Matrix A") + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))))
+        ax1.set_title(("Repeated Permanent of $n\\times n$ Matrix" if shots is None else "Boson Sampling of Interferometer Matrix") + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))) + ("" if batchsize==1 else (" Batch=$n$")))
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
@@ -533,13 +564,13 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
 #other_stability(40, 30)
 #stability(40, 30)
 def paper_tests():
-    for i in (10, 20, 30):
+    for i in (10, 20, 30, 40,):
         verify_timing(DEPTH, i, None, batchsize=1)
         verify_timing(DEPTH, i, None, batchsize=DEPTH)
 if not hasSim: paper_tests()
-for i in range(24 if hasSim else 0, 40+1):
-    verify_timing(2, i, None, batchsize=1)
-    #verify_timing(DEPTH, i, None, batchsize=3)
+for i in range(10 if hasSim else 0, 40+1):
+    verify_timing(DEPTH, i, None, batchsize=1)
+    verify_timing(DEPTH, i, None, batchsize=3)
     #verify_timing(DEPTH, i, shots=10)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
