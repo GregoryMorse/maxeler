@@ -519,17 +519,20 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
           failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
           if len(failures) != 0: print("ACCURACY FAILURES: ", failures); #assert False, failures
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
+    import math
     from matplotlib.lines import Line2D
     plt.rcParams['text.usetex'] = True
+    from matplotlib.ticker import MaxNLocator
     verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4', '8', 'P', 'h']
-        lines = []        
+        lines = []
+        idxdict = {}        
         for i, val in enumerate(vals):
+          idxdict[val[0]] = i
           lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size ($n$)")  
         ax1.set_yscale('log', base=10)
