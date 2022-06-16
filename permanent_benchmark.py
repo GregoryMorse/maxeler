@@ -9,6 +9,7 @@ else:
     def perm_complex(A, quad): return perm(A, "ryser")
     def perm_BBFG_complex(A): return perm(A, "bbfg")
 from piquassoboost.sampling.Boson_Sampling_Utilities import GlynnPermanent, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF, GlynnPermanentDoubleCPU, BBFGPermanentDouble, BBFGPermanentLongDouble
+from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedSingleDFEFPermanentCalculator, GlynnRepeatedDualDFEFPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator, BBFGRepeatedPermanentCalculatorDouble, BBFGRepeatedPermanentCalculatorLongDouble, GlynnRepeatedInfPermanentCalculator
 import piquasso as pq
 import random
 from scipy.stats import unitary_group
@@ -165,7 +166,7 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
   return decPairToCplxFloat(decPairScalarDiv(tot, (1 << (n-1)))) #tot
 
 
-calculators = [None, None, None, None, None, None, None, None, None]
+calculators = [None, None, None, None, None, None, None, None, None, None]
 def batch_adapter(Arep, f):
     if isinstance(Arep, list): return [f(A) for A in Arep]
     else: return f(Arep)
@@ -174,6 +175,10 @@ def batch_adapter(Arep, f):
 def permanent_walrus_quad_Ryser(Arep):
     def f(Arep):
         return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=True) #2*permanent_Glynn_Cpp
+    return batch_adapter(Arep, f)
+def permanent_walrus_double_Ryser(Arep):
+    def f(Arep):
+        return 1+0j if len(Arep) == 0 else perm_complex(Arep, quad=False) #2*permanent_Glynn_Cpp
     return batch_adapter(Arep, f)
 def permanent_walrus_quad_BBFG(Arep):
     def f(Arep):
@@ -187,10 +192,6 @@ def permanent_Glynn_Cpp_Inf(Arep):
     if calculators[1] is None: calculators[1] = GlynnPermanentInf(Arep)
     else: calculators[1].matrix = Arep
     return calculators[1].calculate()
-def permanent_Glynn_SIM(Arep): return permanent_Glynn_DFE(Arep)
-def permanent_Glynn_SIMDual(Arep): return permanent_Glynn_DFEDual(Arep)
-def permanent_Glynn_SIMF(Arep): return permanent_Glynn_DFEF(Arep)
-def permanent_Glynn_SIMFDual(Arep): return permanent_Glynn_DFEFDual(Arep)
 def permanent_Glynn_DFE(Arep):
     if calculators[2] is None: calculators[2] = GlynnPermanentSingleDFE(Arep)
     else: calculators[2].matrix = Arep
@@ -219,11 +220,22 @@ def permanent_BBFG_LongDouble(Arep):
     if calculators[8] is None: calculators[8] = BBFGPermanentLongDouble(Arep)
     else: calculators[8].matrix = Arep
     return calculators[8].calculate()
+def permanent_DFE_Repeated(Arep):
+    if len(Arep) == 0: return []
+    state = np.array([1]*len(Arep), dtype=np.int64)
+    if calculators[9] is None: calculators[9] = GlynnRepeatedSingleDFEPermanentCalculator(Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state)
+    else: calculators[9].matrix, calculators[9].input_state, calculators[9].output_state = Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state
+    return calculators[9].calculate()[0] if isinstance(Arep, list) else calculators[9].calculate()
 
-dfePermFuncs = ((permanent_Glynn_SIMF, permanent_Glynn_SIMFDual, permanent_Glynn_SIM, permanent_Glynn_SIMDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual))
-largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double, permanent_walrus_quad_Ryser) + dfePermFuncs
-testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact, permanent_walrus_quad_BBFG)
+dfePermFuncs = ((permanent_Glynn_DFEF, permanent_Glynn_DFEFDual) if hasSim else ()) + (permanent_Glynn_DFE, permanent_Glynn_DFEDual)
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_walrus_double_Ryser, permanent_walrus_quad_Ryser) + dfePermFuncs #permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double
+inaccuratePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_walrus_double_Ryser)
+testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact)
 permFuncs = testPermFuncs + largePermFuncs
+
+paperNames = {permanent_Glynn_Cpp_Inf: "MPFR Inf", permanent_BBFG_Double: "BBFG Double", permanent_BBFG_LongDouble: "BBFG Long Double",
+              permanent_walrus_double_Ryser: "thewalrus double Ryser", permanent_walrus_quad_Ryser: "thewalrus quad Ryser",
+              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "Dual DFE", permanent_DFE_Repeated: "DFE repeated"}
 
 def load_test_data():
   nmax = 40
@@ -271,7 +283,7 @@ def verify_timing(nmax, batchsize=1):
         #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
         #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
         if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim: # or func in dfePermFuncs:
-          mplier = 5 if dim < 24 else 1
+          mplier = 5 if dim < 24 and func != permanent_Glynn_Cpp_Inf else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
           #def save_result():
@@ -316,9 +328,9 @@ def verify_timing(nmax, batchsize=1):
               writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
     for p in dfePermFuncs:
         for x in largeFuncs:
-            if not x in dfePermFuncs:
+            if not x in dfePermFuncs and not x in inaccuratePermFuncs:
                 print("Speed-up", p.__name__, "vs.", x.__name__, results[key][x.__name__][nmax] / results[key][p.__name__][nmax],
-                    "Cross-over threshold", max((i for i in range(nmax) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1)
+                    "Cross-over threshold", max((i for i in range(nmax+1) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1)
     with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
@@ -328,25 +340,45 @@ def verify_timing(nmax, batchsize=1):
     for i in xaxis:
       #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
       failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
-      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); assert False, failures
+      if len(failures) != 0: print("ACCURACY FAILURES: ", failures); #assert False, failures
 
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+    import math
+    plt.rcParams['text.usetex'] = True
     from matplotlib.ticker import MaxNLocator
-    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "glynnpermacc", "Accuracy relative to " + largeFuncs[0].__name__ + " (log10)")
-    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "glynnpermtime" + suffix, "Time (log10 s)")
+    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "glynnpermacc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "glynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
-        markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4']
+        markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4', '8', 'P', 'h']
         lines = []
+        idxdict = {}
         for i, val in enumerate(vals):
-          lines.append(ax1.plot(xaxis, val[1], label=val[0].__name__, marker=markers[i], linestyle=' '))
-        ax1.set_xlabel("Size (n=|A|)")  
+          idxdict[val[0]] = i
+          lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
+        ax1.set_xlabel("Size ($n$)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
-        ax1.legend()
+        ax1.legend(loc="upper left")
+        if (vals, fname, ylbl) == timeinfo:
+            yoffs = 0.05
+            for p in dfePermFuncs:   
+                ax1.axvline(x=max(max((i for i in range(nmax+1) if results[key][x.__name__][i] < results[key][p.__name__][i]), default=-1)+1 for x in largeFuncs if not x in dfePermFuncs and not x in inaccuratePermFuncs), color='gray', linestyle='-')
+                for x in largeFuncs:
+                    if not x in dfePermFuncs and not x in inaccuratePermFuncs:
+                        #print()
+                        ax1.annotate("Speed-up: " + str(round(results[key][x.__name__][nmax] / results[key][p.__name__][nmax], 2)) + "x", xy=(nmax, results[key][p.__name__][nmax]), xytext=(0.75, yoffs), textcoords='axes fraction')
+                        ax1.add_artist(Line2D([0.72*ax1.get_xlim()[1]], [10**(math.log10(ax1.get_ylim()[0])+yoffs*(math.log10(ax1.get_ylim()[1])-math.log10(yoffs*ax1.get_ylim()[0])))], marker=markers[idxdict[p]], markerfacecolor=ax1.get_legend().legendHandles[idxdict[p]].get_color(), markeredgecolor=ax1.get_legend().legendHandles[idxdict[p]].get_color()))
+                        ax1.add_artist(Line2D([0.96*ax1.get_xlim()[1]], [10**(math.log10(ax1.get_ylim()[0])+yoffs*(math.log10(ax1.get_ylim()[1])-math.log10(yoffs*ax1.get_ylim()[0])))], marker=markers[idxdict[x]], markerfacecolor=ax1.get_legend().legendHandles[idxdict[x]].get_color(), markeredgecolor=ax1.get_legend().legendHandles[idxdict[x]].get_color()))
+                        yoffs += 0.1
+                        #offsetbox = TextArea("Speed-up: " + str(round(results[key][x.__name__][nmax] / results[key][p.__name__][nmax], 2)) + "x"); yoffs += 0.1
+                        #ab = AnnotationBbox(offsetbox, xy=(nmax, results[key][p.__name__][nmax]), xybox=(0.7, yoffs), xycoords='axes fraction', arrowprops=dict(arrowstyle="->"))
+                        #ax1.add_artist(ab)                        
+        else: ax1.axhline(y=1e-8, color='gray', linestyle='-'); ax1.axhline(y=1e-10, color='gray', linestyle='-')
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax1.set_title("Permanent Computation of Square Matrix A" + ("" if batchsize==1 else (" Batch=" + str(batchsize))))
+        ax1.set_title("Permanent of $n\\times n$ Matrix" + ("" if batchsize==1 else (" Batch=$n$"))) #str(batchsize)
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
@@ -375,5 +407,6 @@ def paper_tests():
     verify_timing(DEPTH, 1)
     verify_timing(30, 30)
 if not hasSim: paper_tests()
+else: verify_timing(DEPTH, 1)
 #for batch_size in ((2,) if hasSim else (2, 3, 4, 5, 10, 20, 25, 50, 100)):
 #    verify_timing(DEPTH if hasSim else 22, batch_size)
