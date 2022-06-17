@@ -840,6 +840,38 @@ public class Utility {
         base.optimization.popFixOpMode(MathOps.MUL);
         return result;
     }
+    public static DFEVar doShift(DFEVar value, DFEVar shift, int maxShift, int limit, boolean isLeft, boolean isOneHot, KernelBase<?> base) //limit==32, at 1024 we would need 2 stage pipeline tree...
+    {
+        int bits = value.getType().getTotalBits();
+        if (!isOneHot)
+            shift = oneHotEncode(shift, bits, limit, base).reinterpret(KernelBase.dfeUInt(bits)); 
+        //DFEVar[] shifts = parallelFanout(shift, bits, limit, base);
+        /*DFEVector<DFEVar> res = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bits).newInstance(base);
+        for (int j = 0; j < maxShift; j++) {
+            List<DFEVar> vars = new ArrayList<DFEVar>();
+            for (int i = 0; i < bits; i++) {
+                if (isLeft) {
+                    if (j < i) vars.add(base.constant.zero(KernelBase.dfeBool()));
+                    else vars.add(value.get(j-i));
+                } else {
+                    if (j+i >= bits) vars.add(base.constant.zero(KernelBase.dfeBool()));
+                    else vars.add(value.get(j+i));
+                }
+            }
+            res[j] <== base.control.oneHotMux(shift, vars);
+        }        
+        return res;*/
+        List<DFEVar> vars = new ArrayList<DFEVar>();
+        for (int i = 0; i < maxShift; i++) {
+            if (isLeft) {
+                vars.add(value.reinterpret(KernelBase.dfeFixOffset(bits, i, SignMode.UNSIGNED)).cast(KernelBase.dfeUInt(bits)));
+            } else {
+                vars.add(value.slice(i, bits - i).reinterpret(KernelBase.dfeUInt(bits - i)).cast(KernelBase.dfeUInt(bits)));
+            }
+        }
+        vars.add(base.constant.zero(KernelBase.dfeUInt(bits)));
+        return base.control.oneHotMux(shift, vars);
+    }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
         DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
@@ -856,6 +888,7 @@ public class Utility {
         DFEVar shift2 = n1e >= n2e ? n1e - n2e : 0,
                shift1 = n1e >= n2e ? 0 : n2e - n1e;
         DFEVar resExp = n1e >= n2e ? n1e : n2e;
+        //doShift(n1m, shift1, bitMant * 2, 32, false, base), doShift(n2m, shift2, bitMant * 2, 32, false, base);
         DFEVar n1mshifted = (shift1 > bigMant | isZero1) ? base.constant.zero(n1m.getType()) : (n1m >> shift1.slice(0, MathUtils.bitsToAddress(bigMant*2)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant*2)))),
                n2mshifted = (shift2 > bigMant | isZero2) ? base.constant.zero(n2m.getType()) : (n2m >> shift2.slice(0, MathUtils.bitsToAddress(bigMant*2)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant*2))));
         DFEVar sticky1 = n1mshifted.slice(0, bigMant-1-1) !== 0, sticky2 = n2mshifted.slice(0, bigMant-1-1) !== 0; //for addition need bigMant-1 bits, but subtraction needs bitMant bits plus a guard bit, plus a round bit, and finally sticky bit
@@ -863,14 +896,15 @@ public class Utility {
         n2mshifted = n2mshifted.slice(bigMant-1-1, bigMant+1+1).cat(sticky2).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED));
         DFEVar signParity = n1sign ^ n2sign, unevenSign = n1mshifted >= n2mshifted;
         DFEVar sum = addExact(n1mshifted, n2mshifted, false, base),
-               sub1 = addExact(n1mshifted, n2mshifted, true, base),
-               sub2 = addExact(n2mshifted, n1mshifted, true, base);
-        sum = signParity ? (unevenSign ? sub1 : sub2).reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)) : sum;
-        DFEVar oneHotShift = Bitops.leading1Detect(sum);
+               sub1 = addExact(n1mshifted, n2mshifted, true, base).reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)),
+               sub2 = addExact(n2mshifted, n1mshifted, true, base).reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED));
+        sum = base.control.oneHotMux((signParity & ~unevenSign).cat(signParity & unevenSign).cat(~signParity), sum, sub1, sub2);
+        DFEVar oneHotShift = (sum === 0).cat(Bitops.leading1Detect(sum.slice(0, bigMant+1).reinterpret(KernelBase.dfeUInt(bigMant+1)))); //sum === 0
+        DFEVar sumshifted = doShift(sum, oneHotShift, bigMant+1, 32, true, true, base); //0 to bigMant inclusive shift amounts, since addition adds 1, while subtraction can make the bigMant bit the highest bit set, otherwise it must be zero
         DFEVar expAdjust = Bitops.onehotDecode(Bitops.bitreverse(oneHotShift));
-        DFEVar sumshifted = (sum << expAdjust).reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)); //need to handle rounding overflow by pipeline
-        DFEVar sign;
-        sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());
+        //DFEVar sumshifted = (sum << expAdjust);
+        sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)); //need to handle rounding overflow by pipeline
+        DFEVar sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());
         DFEVar result = sign.cat(resExp+notIsZero.cast(resExp.getType()) - expAdjust.cast(resExp.getType())).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
         /*if (isSub) 
             base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d %d\n", n1, n2, n1 - n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift1, shift2, resExp, expAdjust, sticky1, sticky2);
