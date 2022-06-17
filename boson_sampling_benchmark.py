@@ -480,7 +480,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
           with open(os.path.join(saveFolder, resdata), "wb") as f:
             pickle.dump(results, f)
         if dim >= 24: print(photons, dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim], A[dim][1][photons], A[dim][2][photons] if shots is None else None)
-    if shots is None:
+    if shots is None and batchsize == 1:
       with open(os.path.join(saveFolder, "repverifydata" + verifysuffix + ".csv"), "w") as f:
           import csv
           writer = csv.writer(f, delimiter='\t')
@@ -525,7 +525,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
     from matplotlib.ticker import MaxNLocator
     verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
-    for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None else (timeinfo,)):
+    for vals, fname, ylbl in ((verinfo, timeinfo) if shots is None and batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
         markers = ['o', '*', 'x', '+', 's', 'p', '1', '2', '3', '4', '8', 'P', 'h']
