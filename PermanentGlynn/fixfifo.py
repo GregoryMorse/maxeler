@@ -113,7 +113,7 @@ def nuutila_reach_scc(succ, subg=None):
 project = "PermanentGlynnDFE"
 builds = ["PermanentGlynn_singleSIM-", "PermanentGlynn_dualSIM-", "PermanentGlynn_singleSIMF-", "PermanentGlynn_dualSIMF-"]
 #project = "PermRepGlynnDFE"
-#builds = ["PermRepGlynn_singleSIM-", "PermRepGlynn_singleSIMF-", "PermRepGlynn_dualSIM-", "PermRepGlynn_dualSIMF-"]
+#builds = ["PermRepGlynn_singleSIM-", "PermRepGlynn_dualSIM-"] #["PermRepGlynn_singleSIM-", "PermRepGlynn_singleSIMF-", "PermRepGlynn_dualSIM-", "PermRepGlynn_dualSIMF-"]
 filepats = ["SumUpPermDFEKernel", "PermanentGlynnDFEKernel_0", "InitializeColSumDFEKernel_1", "InitializeColSumDFEKernel_0"]
 pxgpath = os.path.join(project, "builds", "simulation", "*.pxg")
 import glob
@@ -165,7 +165,8 @@ for pxgfile in pxgfiles:
             inp = edge.attrib["dst_node_input"]
             if dest.attrib["type"] == "NodeFIFO":
                 print("Destination FIFO", "ID:", dest.attrib["id"]) 
-            else: print(",".join(get_stacktrace(dest)), "Destination:", dest.attrib["type"], "Input:", inp)            
+            else: print(",".join(get_stacktrace(dest)), "Destination:", dest.attrib["type"], "Input:", inp)
+    continue            
     #for x in g:
     #    fanout = [y for y in g[x] if nodedict[str(y)].attrib["type"] == "NodeRegister"]
     #    if len(fanout) >= 2:
