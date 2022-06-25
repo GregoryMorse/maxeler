@@ -1014,7 +1014,26 @@ public class Utility {
         default: return null;
         }
     }
-    
+
+    public static class GrayCounter {
+        public DFEVar changeValue;
+        public DFEVar bitDiffMask;
+        //public DFEVar changePosition;
+
+        GrayCounter(DFEVar inCounter, KernelBase<?> owner) {
+            //grayCount = dfeUInt(64).newInstance(owner);
+            //changeValue = dfeBool().newInstance(owner);
+            //changePosition = dfeUInt(MathUtils.ceilLog2(64)).newInstance(owner);
+
+            DFEVar grayCount = inCounter ^ (inCounter >> 1);
+            DFEVar newGrayCount = owner.optimization.pipeline(grayCount);
+            bitDiffMask = grayCount ^ owner.stream.offset(newGrayCount, -1);
+            //bitDiffMask = Bitops.trailing1Detect(inCounter);
+
+            changeValue = grayCount > owner.stream.offset(newGrayCount, -1); //(grayCount & bitDiffMask) !== 0;
+            //changePosition = Bitops.onehotDecode(bitDiffMask);
+        }
+    }    
 
     static int id = 0;    
     public static DFEVar[] makeCounterWithInitValue(int bit_width, DFEVar max, DFEVar enable, long inc, DFEVar initValue, DFEVar nextInitValue, DFEVar userReset, boolean needWrap, int loopLength, KernelLib owner)
@@ -1367,6 +1386,25 @@ public class Utility {
         }
         return res;
     }
+    DFEVar shiftLeft(DFEVar value, DFEVar shift, int bits, int limit, KernelBase<?> base)
+    {
+        DFEVector<DFEVar> oneHot = oneHotEncode(shift, bits, limit, base);
+        DFEVar[] valuesFanned = parallelFanout(value, bits, 32, base);
+        List<DFEVar> values = new ArrayList<DFEVar>();
+        for (int i = 0; i < bits; i++) {
+            values.add((valuesFanned[i < limit ? 0 : 1] << i).cast(KernelBase.dfeUInt(bits)));
+        } 
+        return oneHotMux32to64(oneHot.reinterpret(KernelBase.dfeUInt(bits)), values, limit, base);
+    }
+    DFEVar shiftLeft(long value, DFEVar shift, int bits, int limit, KernelBase<?> base)
+    {
+        DFEVector<DFEVar> oneHot = oneHotEncode(shift, bits, limit, base);
+        List<DFEVar> values = new ArrayList<DFEVar>();
+        for (int i = 0; i < bits; i++) {
+            values.add(base.constant.var(KernelBase.dfeUInt(bits), value << i));
+        }
+        return oneHotMux32to64(oneHot.reinterpret(KernelBase.dfeUInt(bits)), values, limit, base);
+    }    
     public static void printKernelOptimizationDefaults(KernelBase<?> owner)
     {
         System.out.println("Graph Pipelining: " + owner.optimization.peekGraphPipelining(PipelinedOps.ALL)); //default 0.0
