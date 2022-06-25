@@ -1320,14 +1320,14 @@ public class Utility {
     public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
     {
         while (true) {
-            if (split >= values.size()) return base.control.oneHotMux(sel, values);
+            if (split >= values.size()) return base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(sel), values));
             List<T> nextValues = new ArrayList<>();
             DFEVar nextSel = null;
             for (int i = 0; i < values.size(); i += split) {
                 DFEVar s = sel.slice(i, Math.min(split, values.size() - i));
                 if (nextSel == null) nextSel = s !== 0;
                 else nextSel = (s !== 0).cat(nextSel);
-                nextValues.add(base.control.oneHotMux(base.optimization.pipeline(s), values.subList(i, i+Math.min(split, values.size() - i))));
+                nextValues.add(base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(s), values.subList(i, i+Math.min(split, values.size() - i)))));
             }
             values = nextValues;
             sel = nextSel;
