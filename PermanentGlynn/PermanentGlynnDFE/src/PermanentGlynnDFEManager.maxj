@@ -17,55 +17,17 @@ import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
-    default DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX) //-1 for PCIE
-    {
-        /*for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
-            selectSLR(i);
-            Fanout fo = fanout(name + "Fanout" + suffix + i);
-            unselectSLR();
-            DFELink inp = fo.getInput();
-            inp.setAdditionalRegisters(regPerX);
-            inp <== input;
-            input = fo.addOutput(name + "Chain" + suffix + i);
-            input.setAdditionalRegisters(regPerX);
-            if (slrEnd >= slrStart) i++; else i--;
-        }*/
-        input.setAdditionalRegisters(regPerX * ((slrEnd >= slrStart) ? slrEnd - slrStart : slrStart - slrEnd));
-        return input;
-    }
+
 
     //40x40 is a large enough limit in all cases
-    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat) {
+    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq) {
         OptimizationOptions opt = getCurrentKernelConfig().optimization;
         //minimumStreamFifoDepth = 64
         //defaultStreamFifoDepth = 512
         //defaultAdditionalRegisters = 0
         //allowNonMultipleTransitions = false
         //streamClockFrq = 100
-        //Stream FIFOs are placed on input placement regions
-        /*
-        System.out.println("CEPipelining: " + opt.getCEPipelining()); //2
-        System.out.println("CEReplicationNumPartitions: " + opt.getCEReplicationNumPartitions()); //0
-        System.out.println("ClockPhaseBalanceThreshold: " + opt.getClockPhaseBalanceThreshold()); //0.1
-        System.out.println("ClockPhaseRetries: " + opt.getClockPhaseRetries()); //50
-        System.out.println("ConditionalArithmeticEnabled: " + opt.getConditionalArithmeticEnabled()); //true
-        System.out.println("ConstantMultiplicationWithShiftAddThreshold: " + opt.getConstantMultiplicationWithShiftAddThreshold()); //3
-        System.out.println("DeleteRedundantNodes: " + opt.getDeleteRedundantNodes()); //true
-        System.out.println("DSPMulAddChainBehavior: " + opt.getDSPMulAddChainBehavior()); //OPTIMISE
-        System.out.println("FIFOCoalescingEnabled: " + opt.getFIFOCoalescingEnabled()); //true
-        System.out.println("FIFOImplementationBRAMThreshold: " + opt.getFIFOImplementationBRAMThreshold()); //2080
-        System.out.println("Inlining: " + opt.getInlining()); //false
-        System.out.println("MinimumStaticFIFOSplitDepth: " + opt.getMinimumStaticFIFOSplitDepth()); //1
-        System.out.println("NumberOfPacketsInFlight: " + opt.getNumberOfPacketsInFlight()); //1
-        System.out.println("OptimizationTechnique: " + opt.getOptimizationTechnique()); //DEFAULT
-        System.out.println("OptimizePowerTwoFloatMultEnabled: " + opt.getOptimizePowerTwoFloatMultEnabled()); //true
-        System.out.println("PreserveNodeRegisters: " + opt.getPreserveNodeRegisters()); //true
-        System.out.println("ROMImplementationBRAMThreshold: " + opt.getROMImplementationBRAMThreshold()); //2080
-        System.out.println("TriAddsEnabled: " + opt.getTriAddsEnabled()); //true
-        System.out.println("UseAsapScheduler: " + opt.getUseAsapScheduler()); //false
-        System.out.println("UseGlobalClockBuffer: " + opt.getUseGlobalClockBuffer()); //false
-        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false
-        */
+        //Stream FIFOs must be placed on output regions
         getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
         opt.setCEPipelining(3);
         opt.setInlining(true);
@@ -78,32 +40,32 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int dim = isSim ? 40 : 40; //must be multiple of kernel count
         int rows = dim;
         int cols = rows;
-        int regPerX = 3;
+        int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
         KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
         int initKerns = 4;
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
-            selectSLR(i % 4);
+            Utility.selectSLR(i % 4, parent);
             initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat));
-            unselectSLR();
+            Utility.unselectSLR(parent);
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             mtx.setAdditionalRegisters(regPerX);
-            mtx = slrCrossingChain("InputMtx", Integer.toString(i), mtx, -1, i % 4, regPerX);
+            mtx = Utility.slrCrossingChain("InputMtx", Integer.toString(i), mtx, -1, i % 4, regPerX, parent);
             DFELink mtxInput = initColSumKernels[i].getInput("mappedInputMtx_Rows");
             mtxInput.setAdditionalRegisters(regPerX);
             mtxInput <== mtx;
         }
         for (int i = 0; i < numkernels; i++) {
-            selectSLR(i % 4);
+            Utility.selectSLR(i % 4, parent);
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat));
-            unselectSLR();
+            Utility.unselectSLR(parent);
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
                 curOutput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
-                curOutput = slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX);
+                curOutput = Utility.slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX, parent);
                 DFELink curInput = colSumKernels[i].getInput("colSums" + j);
                 curInput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curInput <== curOutput;
@@ -113,12 +75,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         for (int i = 0; i < numkernels; i++) {
             colProds[i] = colSumKernels[i].getOutput("colProd");
             colProds[i].setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
-            colProds[i] = slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX);
+            colProds[i] = Utility.slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX, parent);
         }
         int singlekerns = numkernels * numarrays / 2;
-        selectSLR(0);
+        Utility.selectSLR(0, parent);
         KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, dim - basekernpow2, useFloat));
-        unselectSLR();
+        Utility.unselectSLR(parent);
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
             DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
             colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
@@ -130,9 +92,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         cpuOutput.setAdditionalRegisters(regPerX);
         cpuOutput <== toCPU;
         if (dual && isSim) {
-            selectSLR(0);
+            Utility.selectSLR(0, parent);
             KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, dim - basekernpow2, useFloat));
-            unselectSLR();
+            Utility.unselectSLR(parent);
             for (int i = singlekerns; i < numkernels; i++) {
                 DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
                 colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
@@ -148,10 +110,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         addMaxFileConstant("BASEKERNPOW2", basekernpow2);
 
     }
-
-    void selectSLR(int slr_index);
-    void unselectSLR();
-
 
     static EngineInterface interfaceDefault(boolean dual, boolean isSim) {
         int numarrays = dual && !isSim ? 2 : 1;
