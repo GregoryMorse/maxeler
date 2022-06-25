@@ -1015,7 +1015,7 @@ public class Utility {
         }
     }
 
-    public class GrayCounter {
+    public static class GrayCounter {
         public DFEVar changeValue;
         public DFEVar bitDiffMask;
         //public DFEVar changePosition;
