@@ -61,6 +61,22 @@ def dijkstra(G, s):
             if v in M:
                 K[v] = K[u] + c[(u,v)]; p[v] = u; M.remove(v); P.add(v)
     return K, p
+def topo_kahn(g, randomize=False):
+  if randomize: import random
+  topo, S, k = [], [], 0
+  inc = {u: 0 for u in g}
+  for u in g:
+    for v in g[u]: inc[v] += 1
+  for u in g:
+    if inc[u] == 0: S.append(u)
+  while len(S) != 0:
+    u = S.pop(0 if not randomize else random.randint(0, len(S)-1)); k += 1
+    topo.append(u)
+    for v in g[u]:
+      inc[v] -= 1
+      if inc[v] == 0: S.append(v)
+  if k < len(g): raise ValueError
+  return topo
 def nuutila_reach_scc(succ, subg=None):
   index, s, sc, sccs, reach = 0, [], [], {}, {}
   indexes, lowlink, croot, stackheight = {}, {}, {}, {}
@@ -126,6 +142,24 @@ def get_stacktrace(node):
         if not m is None and m.group(2) in pxgfile:
             s.append(m.group(1) + ":" + m.group(3))
     return s
+def typeToBits(typeStr):
+    m = re.match(r"dfeBits\((.*)\)", typeStr)
+    if not m is None: return int(m.group(1))
+    m = re.match(r"dfeOffsetFix\((.*), .*, .*\)", typeStr)
+    if not m is None: return int(m.group(1))
+    m = re.match(r"dfeFloat\((.*), (.*)\)", typeStr)
+    if not m is None: return int(m.group(1)) + int(m.group(2))
+    assert False
+def longest_path(g, w, s, topo=None, shortest=False):
+    if topo is None: topo = topo_kahn(g)
+    dist, p = {s: 0}, {s: None}
+    for u in topo:
+        if not u in dist: continue
+        for v in g[u]:
+            if not v in dist or (dist[v] > dist[u] + w[(u, v)] if shortest else dist[v] < dist[u] + w[(u, v)]):
+                dist[v] = dist[u] + w[(u, v)]
+                p[v] = u
+    return dist, p
 for pxgfile in pxgfiles:
     if not "-final-simulation" in pxgfile: continue
     if not any(build in pxgfile for build in builds) or not any(filepat in pxgfile for filepat in filepats): continue 
@@ -166,22 +200,25 @@ for pxgfile in pxgfiles:
             if dest.attrib["type"] == "NodeFIFO":
                 print("Destination FIFO", "ID:", dest.attrib["id"]) 
             else: print(",".join(get_stacktrace(dest)), "Destination:", dest.attrib["type"], "Input:", inp)
-    continue            
+    #continue            
     #for x in g:
     #    fanout = [y for y in g[x] if nodedict[str(y)].attrib["type"] == "NodeRegister"]
     #    if len(fanout) >= 2:
     #        print("Pipeline fanout detected:", len(fanout), ",".join(get_stacktrace(nodedict[str(x)])), "[" + "--".join([",".join(get_stacktrace(nodedict[str(z)])) for z in fanout]) + "]")
     scc, reach = nuutila_reach_scc(g)
-    revscc, sources, sinks, gnew, gpred, c = {}, set(scc), set(scc), {}, {}, {}
+    revscc, sources, sinks, gnew, gpred, c, w = {}, set(scc), set(scc), {}, {}, {}, {}
     for x in scc:
         for y in scc[x]: revscc[y] = x
     for x in scc: #build DAG from SCC information, identify graph sources
         gnew[x] = {revscc[z] for y in scc[x] for z in g[y] if revscc[z] != x}
         sources -= gnew[x]
+    pipelineregs = set()
     for x in scc: #constructor predecessors
         if len(gnew[x]) != 0: sinks.remove(x)
+        if nodedict[str(x)].attrib["type"] == "NodeRegister": pipelineregs.add(x)
         for y in gnew[x]:
-            c[(x ,y)] = 1 if nodedict[str(x)].attrib["type"] == "NodeRegister" else 0
+            c[(x, y)] = 1 if x in pipelineregs else 0
+            w[(x, y)] = typeToBits(nodedict[str(x)].find("Output").attrib["type"]) if x in pipelineregs else 0
             if not y in gpred: gpred[y] = set()
             gpred[y].add(x)
     #unnecessary pipelining detection - collapse to SCCs as in loops does not occur anyway
@@ -189,8 +226,43 @@ for pxgfile in pxgfiles:
     #determine shortest path when only counting latency of registers
     #if shortest path is not 0, then there are registers down all pathways - must determine an optimal set corresponding to a graph slice to show for removal - with maximum bitsize...
     for s in sources:
-        K, p = dijkstra((gnew, c), s)        
-        #print(nodedict[str(s)].attrib["type"], get_stacktrace(nodedict[str(s)]), [(get_stacktrace(nodedict[str(d)]), K[d]) for d in sinks if d in K])
+        topo = topo_kahn(gnew)
+        K, p = longest_path(gnew, c, s, topo, True) #dijkstra((gnew, c), s)
+        #streams are NodeInput whose _force_disabled signal are attached to NodeInputMappedReg -> NodeNot -> NodeInput or NodeInputMappedReg -> NodeNot -> NodeAnd -> NodeInput if user enable signal present 
+        if nodedict[str(s)].attrib["type"] == "NodeInputMappedReg" and len(g[s])==1 and len(g[next(iter(g[s]))])==1 and (nodedict[str(next(iter(g[next(iter(g[s]))])))].attrib["type"] == "NodeInput" or len(g[next(iter(g[next(iter(g[s]))]))])==1 and nodedict[str(next(iter(g[next(iter(g[next(iter(g[s]))]))])))].attrib["type"] == "NodeInput") and any(K[d] != 0 for d in sinks if d in K):
+            print(nodedict[str(s)].attrib["type"], get_stacktrace(nodedict[str(s)]), [(get_stacktrace(nodedict[str(d)]), K[d]) for d in sinks if d in K])                        
+            #first we must determine which registers are necessary and do not effect the shortest path
+            for x in pipelineregs:
+                for y in gnew[x]: c[(x, y)] = 0
+                Ktest, _ = longest_path(gnew, c, s, topo, True)
+                for y in gnew[x]: c[(x, y)] = 1
+                if all(K[d] == Ktest[d] for d in sinks if d in K): #if register does not effect the shortest path, remove its weight to not be considered
+                    for y in gnew[x]: w[(x, y)] = 0
+            #we use the algorithm for longest path in a DAG - topological sort, and traverse in that order finding longest path, then we remove longest paths and repeat until not reachable and list all the extra pipelining that can be removed
+            for d in sinks:
+                if not d in K: continue
+                allregs = []
+                giter = {x: gnew[x] for x in gnew}
+                while True:
+                    _, p = longest_path(giter, w, s)
+                    regs, path = [], [d]
+                    while path[-1] != s and path[-1] in p:
+                        path.append(p[path[-1]])
+                    if path[-1] != s: break
+                    for i in range(0, len(path)-1):
+                        if w[(path[i+1], path[i])] != 0: regs.append((path[i+1], w[(path[i+1], path[i])]))
+                    regs = list(sorted(regs, key=lambda x: x[1], reverse=True))[:K[d]]
+                    if len(regs) == 0: break
+                    allregs.append(regs)
+                    for x in regs: giter[x[0]] = []
+                    #print(d, path, regs)
+                regdict = {}
+                for i, x in enumerate(allregs):
+                    for y in x:
+                        tup = (tuple(get_stacktrace(nodedict[str(y[0])])), nodedict[str(y[0])].find("Output").attrib["type"])
+                        if not tup in regdict: regdict[tup] = [0] * len(allregs)
+                        regdict[tup][i] += 1
+                print("Largest extra pipelining sets", regdict)
     for x in scc: #merge any paths with NodeRegister or not NodeRegister on both sides node1->node2->node3 transforms to node1->node3 
         if x in gpred and len(gpred[x]) == 1 and len(gnew[x]) == 1:
             y = next(iter(gpred[x]))
