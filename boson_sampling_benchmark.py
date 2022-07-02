@@ -355,7 +355,7 @@ def boson_sampling_Clifford_BBFGLongDouble(Arep, input_state, shots):
   return samplers[8].get_classical_simulation_results(input_state, shots)
   
 testPermFuncs = (permanent_repeated, permanent_square_repeated)
-dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_DFE,)#, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
+dfePermFuncs = (permanent_Glynn_DFEF, permanent_Glynn_DFEFDual, permanent_Glynn_DFE, permanent_Glynn_DFEDual, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual) if hasSim else (permanent_Glynn_DFE, permanent_Glynn_DFEDual)#, permanent_Glynn_MultiDFE, permanent_Glynn_MultiDFEDual)
 largePermFuncs = (permanent_Glynn_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble) + dfePermFuncs #permanent_Glynn_Cpp, permanent_ChinHuh_calculator
 inaccuratePermFuncs = (permanent_Glynn_Inf, permanent_BBFG_Double)
 testSamplingFuncs = ()
@@ -364,7 +364,9 @@ samplingFuncs = (boson_sampling_Clifford_GlynnRep, boson_sampling_Clifford_ChinH
 
 
 paperNames = {permanent_Glynn_Inf: "MPFR Inf", permanent_BBFG_Double: "BBFG Double", permanent_BBFG_LongDouble: "BBFG Long Double",
-              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "Dual DFE"}
+              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "DFE Dual", permanent_Glynn_DFEF: "DFE Float", permanent_Glynn_DFEFDual: "Dual DFE Float",
+              permanent_Glynn_MultiDFE: "Multi DFE", permanent_Glynn_MultiDFEDual: "Multi DFE Dual"
+              }
 
 
 def load_test_data():
@@ -449,7 +451,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
         if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
           print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
         if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
-          mplier = 5 if photons < 8 and func != permanent_Glynn_Cpp_Inf else 1
+          mplier = 5 if photons < 8 and func != permanent_Glynn_Inf else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
           def save_result():
