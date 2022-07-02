@@ -280,9 +280,9 @@ def verify_timing(nmax, batchsize=1):
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
-        #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
-        #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim: # or func in dfePermFuncs:
+        if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
+          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:
           mplier = 5 if dim < 24 and func != permanent_Glynn_Cpp_Inf else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
