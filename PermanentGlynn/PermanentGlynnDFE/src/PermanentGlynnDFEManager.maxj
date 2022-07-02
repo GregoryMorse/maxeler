@@ -50,7 +50,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             Utility.unselectSLR(parent);
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             mtx.setAdditionalRegisters(regPerX);
-            mtx = Utility.slrCrossingChain("InputMtx", Integer.toString(i), mtx, -1, i % 4, regPerX, parent);
+            mtx = Utility.slrCrossingChain("InputMtx", Integer.toString(i), mtx, -1, i % 4, regPerX, null);
             DFELink mtxInput = initColSumKernels[i].getInput("mappedInputMtx_Rows");
             mtxInput.setAdditionalRegisters(regPerX);
             mtxInput <== mtx;
@@ -65,7 +65,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                     curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2));
                 else curOutput = initColSumKernels[j].getOutput("colSums" + i);
                 curOutput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
-                curOutput = Utility.slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX, parent);
+                curOutput = Utility.slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX, null);
                 DFELink curInput = colSumKernels[i].getInput("colSums" + j);
                 curInput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curInput <== curOutput;
@@ -75,7 +75,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         for (int i = 0; i < numkernels; i++) {
             colProds[i] = colSumKernels[i].getOutput("colProd");
             colProds[i].setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
-            colProds[i] = Utility.slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX, parent);
+            colProds[i] = Utility.slrCrossingChain("colProd", Integer.toString(i), colProds[i], i % 4, 0, regPerX, null);
         }
         int singlekerns = numkernels * numarrays / 2;
         Utility.selectSLR(0, parent);
