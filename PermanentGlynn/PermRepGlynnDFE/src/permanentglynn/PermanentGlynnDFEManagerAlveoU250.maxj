@@ -65,7 +65,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
         ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
         
-
+        boolean isProbe = false;
         ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
              //for congestion strategies, explore same placement as high, aggressive physical strategy
             ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
@@ -85,6 +85,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             //ImplementationStrategy.POWER_DEFAULT_OPTS, ImplementationStrategy.POWER_EXPLORE_AREA, //default placement strategy
         };
         
+        ImplementationStrategy[] postOptStrategies = new ImplementationStrategy[] {
+            ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT,
+            ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,
+            ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
+            ImplementationStrategy.MAXELER3, ImplementationStrategy.MAXELER4
+        };
+                
         //PERFORMANCE_REFINE_PLACEMENT -> PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT
         //PERFORMANCE_EXPLORE -> PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT
         //FLOW_RUN_PHYS_OPT -> FLOW_RUN_POST_ROUTE_PHYS_OPT
@@ -92,7 +99,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //PERFORMANCE_RETIMING -> MAXELER2
         //CONGESTION_SSI_SPREAD_LOGIC_HIGH -> MAXELER4
         //Ranking best to worst: 
-        conf.setImplementationStrategies(probeStrategies);
+        conf.setImplementationStrategies(isProbe ? probeStrategies : postOptStrategies);
         conf.setParallelism(5);
 
         manager.setDefaultStreamClockFrequency(params.getFrequency());
