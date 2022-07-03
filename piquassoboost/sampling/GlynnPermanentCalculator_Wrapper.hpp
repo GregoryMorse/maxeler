@@ -6,6 +6,7 @@
 #include <numpy/arrayobject.h>
 #include "structmember.h"
 #include "GlynnPermanentCalculator.h"
+#include "GlynnPermanentCalculatorSimple.h"
 #include "BBFGPermanentCalculator.h"
 
 #ifdef __DFE__
@@ -24,7 +25,8 @@
 #define GlynnDoubleCPU 6
 #define BBFGPermanentCalculatorDouble 7
 #define BBFGPermanentCalculatorLongDouble 8
-
+#define GlynnSimpleDouble 10
+#define GlynnSimpleLongDouble 11
 
 
 /**
@@ -44,6 +46,10 @@ typedef struct GlynnPermanentCalculator_wrapper {
         pic::GlynnPermanentCalculatorDouble *cpu_double;
         /// BBFG permanent calculator
         pic::BBFGPermanentCalculator *BBFGcalculator;    
+        /// double precision Glynn calculator
+        pic::GlynnPermanentCalculatorSimpleDouble *cpu_simple_double;
+        /// double precision Glynn calculator
+        pic::GlynnPermanentCalculatorSimpleLongDouble *cpu_simple_long_double;
     };
 } GlynnPermanentCalculator_wrapper;
 
@@ -125,7 +131,9 @@ GlynnPermanentCalculator_wrapper_dealloc(GlynnPermanentCalculator_wrapper *self)
     ) {
         release_GlynnPermanentCalculatorDouble( self->cpu_double );
     }
-
+    else if ( self->lib == GlynnSimpleDouble && self->cpu_simple_double != NULL ) delete self->cpu_simple_double;
+    else if ( self->lib == GlynnSimpleLongDouble && self->cpu_simple_long_double != NULL ) delete self->cpu_simple_long_double;
+    
     // release numpy arrays
     Py_DECREF(self->matrix);
    
@@ -197,6 +205,10 @@ GlynnPermanentCalculator_wrapper_init(GlynnPermanentCalculator_wrapper *self, Py
         self->BBFGcalculator = new pic::BBFGPermanentCalculator(); 
     else if (self->lib == BBFGPermanentCalculatorLongDouble)
         self->BBFGcalculator = new pic::BBFGPermanentCalculator();
+    else if (self->lib == GlynnSimpleDouble)
+        self->cpu_simple_double = new pic::GlynnPermanentCalculatorSimpleDouble();
+    else if (self->lib == GlynnSimpleLongDouble)
+        self->cpu_simple_long_double = new pic::GlynnPermanentCalculatorSimpleLongDouble();
     else
         PyErr_SetString(PyExc_Exception, "Wrong value set for lib.");
 
@@ -246,6 +258,24 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
                 else if (self->lib == GlynnDoubleCPU) ret[i] = self->cpu_double->calculate(matrices[i]);
                 else if (self->lib == BBFGPermanentCalculatorDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], false, false);
                 else if (self->lib == BBFGPermanentCalculatorLongDouble) ret[i] = self->BBFGcalculator->calculate(matrices[i], true, false);
+                else if (self->lib == GlynnSimpleDouble) {
+                    try {
+                        ret[i] = self->cpu_simple_double->calculate(matrices[i]);
+                    }
+                    catch (std::string err) {
+                        PyErr_SetString(PyExc_Exception, err.c_str());
+                        return NULL;
+                    }
+                }
+                else if (self->lib == GlynnSimpleLongDouble) {
+                    try {
+                        ret[i] = self->cpu_simple_long_double->calculate(matrices[i]);
+                    }
+                    catch (std::string err) {
+                        PyErr_SetString(PyExc_Exception, err.c_str());
+                        return NULL;
+                    }
+                }                
             }
         }    
         
@@ -276,7 +306,24 @@ GlynnPermanentCalculator_Wrapper_calculate(GlynnPermanentCalculator_wrapper *sel
         else if (self->lib == GlynnDoubleCPU) ret = self->cpu_double->calculate(matrix_mtx);
         else if (self->lib == BBFGPermanentCalculatorDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, false, false);
         else if (self->lib == BBFGPermanentCalculatorLongDouble) ret = self->BBFGcalculator->calculate(matrix_mtx, true, false);
-    
+        else if (self->lib == GlynnSimpleDouble) {
+            try {
+                ret = self->cpu_simple_double->calculate(matrix_mtx);
+            }
+            catch (std::string err) {
+                PyErr_SetString(PyExc_Exception, err.c_str());
+                return NULL;
+            }
+        }
+        else if (self->lib == GlynnSimpleLongDouble) {
+            try {
+                ret = self->cpu_simple_long_double->calculate(matrix_mtx);
+            }
+            catch (std::string err) {
+                PyErr_SetString(PyExc_Exception, err.c_str());
+                return NULL;
+            }
+        }    
         return Py_BuildValue("D", &ret);
     }
 }
