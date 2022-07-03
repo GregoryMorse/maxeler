@@ -8,7 +8,7 @@ else:
     from thewalrus import perm
     def perm_complex(A, quad): return perm(A, "ryser")
     def perm_BBFG_complex(A): return perm(A, "bbfg")
-from piquassoboost.sampling.Boson_Sampling_Utilities import GlynnPermanent, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF, GlynnPermanentDoubleCPU, BBFGPermanentDouble, BBFGPermanentLongDouble
+from piquassoboost.sampling.Boson_Sampling_Utilities import GlynnPermanent, GlynnPermanentInf, GlynnPermanentSingleDFE, GlynnPermanentDualDFE, GlynnPermanentSingleDFEF, GlynnPermanentDualDFEF, GlynnPermanentDoubleCPU, BBFGPermanentDouble, BBFGPermanentLongDouble, GlynnPermanentSimpleDouble, GlynnPermanentSimpleLongDouble
 from piquassoboost.sampling.Boson_Sampling_Utilities import ChinHuhPermanentCalculator, GlynnRepeatedPermanentCalculator, GlynnRepeatedSingleDFEPermanentCalculator, GlynnRepeatedDualDFEPermanentCalculator, GlynnRepeatedSingleDFEFPermanentCalculator, GlynnRepeatedDualDFEFPermanentCalculator, GlynnRepeatedMultiSingleDFEPermanentCalculator, GlynnRepeatedMultiDualDFEPermanentCalculator, BBFGRepeatedPermanentCalculatorDouble, BBFGRepeatedPermanentCalculatorLongDouble, GlynnRepeatedInfPermanentCalculator
 import piquasso as pq
 import random
@@ -166,7 +166,7 @@ def permanent_glynn_gray_exact(mat): #optimal row-major order
   return decPairToCplxFloat(decPairScalarDiv(tot, (1 << (n-1)))) #tot
 
 
-calculators = [None, None, None, None, None, None, None, None, None, None]
+calculators = [None, None, None, None, None, None, None, None, None, None, None, None]
 def batch_adapter(Arep, f):
     if isinstance(Arep, list): return [f(A) for A in Arep]
     else: return f(Arep)
@@ -220,22 +220,32 @@ def permanent_BBFG_LongDouble(Arep):
     if calculators[8] is None: calculators[8] = BBFGPermanentLongDouble(Arep)
     else: calculators[8].matrix = Arep
     return calculators[8].calculate()
+def permanent_Simple_Double(Arep):
+    if calculators[9] is None: calculators[9] = BBFGPermanentDouble(Arep)
+    else: calculators[9].matrix = Arep
+    return calculators[9].calculate()
+def permanent_Simple_LongDouble(Arep):
+    if calculators[10] is None: calculators[10] = BBFGPermanentLongDouble(Arep)
+    else: calculators[10].matrix = Arep
+    return calculators[10].calculate()
 def permanent_DFE_Repeated(Arep):
     if len(Arep) == 0: return []
     state = np.array([1]*len(Arep), dtype=np.int64)
-    if calculators[9] is None: calculators[9] = GlynnRepeatedSingleDFEPermanentCalculator(Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state)
-    else: calculators[9].matrix, calculators[9].input_state, calculators[9].output_state = Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state
-    return calculators[9].calculate()[0] if isinstance(Arep, list) else calculators[9].calculate()
+    if calculators[11] is None: calculators[11] = GlynnRepeatedSingleDFEPermanentCalculator(Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state)
+    else: calculators[11].matrix, calculators[11].input_state, calculators[11].output_state = Arep[0] if isinstance(Arep, list) else Arep, [[state for _ in Arep]] if isinstance(Arep, list) else state, [state] if isinstance(Arep, list) else state
+    return calculators[11].calculate()[0] if isinstance(Arep, list) else calculators[11].calculate()
+GlynnPermanentSimpleDouble, GlynnPermanentSimpleLongDouble
 
 dfePermFuncs = ((permanent_Glynn_DFEF, permanent_Glynn_DFEFDual) if hasSim else ()) + (permanent_Glynn_DFE, permanent_Glynn_DFEDual)
-largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_walrus_double_Ryser, permanent_walrus_quad_Ryser) + dfePermFuncs #permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double
+largePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_Simple_Double, permanent_Simple_LongDouble, permanent_BBFG_Double, permanent_BBFG_LongDouble, permanent_walrus_double_Ryser, permanent_walrus_quad_Ryser) + dfePermFuncs #permanent_Glynn_Cpp, permanent_Glynn_Cpp_Double
 inaccuratePermFuncs = (permanent_Glynn_Cpp_Inf, permanent_BBFG_Double, permanent_walrus_double_Ryser)
 testPermFuncs = (permanent_glynn, permanent_glynn_gray_fixpt, permanent_glynn_gray_exact)
 permFuncs = testPermFuncs + largePermFuncs
 
 paperNames = {permanent_Glynn_Cpp_Inf: "MPFR Inf", permanent_BBFG_Double: "BBFG Double", permanent_BBFG_LongDouble: "BBFG Long Double",
               permanent_walrus_double_Ryser: "thewalrus double Ryser", permanent_walrus_quad_Ryser: "thewalrus quad Ryser",
-              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "Dual DFE", permanent_DFE_Repeated: "DFE repeated"}
+              permanent_Glynn_DFE: "DFE", permanent_Glynn_DFEDual: "Dual DFE", permanent_DFE_Repeated: "DFE repeated",
+              permanent_Simple_Double: "Simple Double", permanent_Simple_LongDouble: "Simple Long Double"}
 
 def load_test_data():
   nmax = 40
