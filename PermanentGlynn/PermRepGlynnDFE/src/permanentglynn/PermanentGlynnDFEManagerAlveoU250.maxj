@@ -13,7 +13,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
-        declareParam("frequency", EngineParameters.DataType.INT, 240);
+        declareParam("frequency", EngineParameters.DataType.INT, 280);
     }
     public boolean dual() {
         return getParam("dual");
@@ -56,7 +56,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY may be better than Directive.DEFAULT
-        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.ALTERNATE_ROUTABILITY, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
         conf.setSynthesisStrategy(customPerfOptHigh); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
         //route options: RouteOpt.ALTERNATE_CLB_ROUTING, RouteOpt.EXPLORE, RouteOpt.createCustom(RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), RouteOpt.createCustom(RouteOpt.EXPLORE, true, false, "")
