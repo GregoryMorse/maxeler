@@ -13,7 +13,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
-        declareParam("frequency", EngineParameters.DataType.INT, 280);
+        declareParam("frequency", EngineParameters.DataType.INT, 320);
     }
     public boolean dual() {
         return getParam("dual");
