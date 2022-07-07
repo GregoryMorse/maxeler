@@ -105,7 +105,10 @@ def get_bincoeff_magic():
 DEPTH = 40 if hasSim else 60
 saveFolder = "resultsbs"
 
-
+def mplicity_cplxity():
+    maxcplxity = [[n]*((40//n)-1)+[40-n*((40//n)-1)] for n in range(2, 41)]
+    #percentage=[(np.prod(np.array([1,1,val[0]-2]+val[1:], dtype=np.int64)+1)-np.prod(np.array(val, dtype=np.int64)+1))/np.prod(np.array(val, dtype=np.int64)+1) for val in maxcplxity]
+    return [np.prod(np.array([1,1,val[0]-2]+val[1:], dtype=np.int64)+1)-np.prod(np.array(val, dtype=np.int64)+1) for val in maxcplxity]
 def dosign(parity, x): return -x if parity else x
 def plusminus(parity, base, x): return base - x if parity else base + x
 def prod(x, y): return x * y
