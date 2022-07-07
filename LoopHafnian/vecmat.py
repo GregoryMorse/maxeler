@@ -5,6 +5,7 @@
 import sys
 MANT_DIG = sys.float_info.mant_dig
 import numpy as np
+from scipy.stats import unitary_group
 import groq.api as g
 import groq.api.instruction as inst
 import groq.api.nn as nn
@@ -113,25 +114,33 @@ def karatsuba_mul16(tensor1, tensor2, dim):
         res = g.sub(res2, z0s).write(name="res")
     return res
     
-def num_to_bits(num, bitsize=64):
-    chunks = (bitsize + 7-1)//7 #ceiling divide by 7
+def num_to_bits(num, chunks):
     if len(num.shape) == 2:
         res, shp = np.repeat(num[np.newaxis,:,:], chunks, axis=0), (chunks, 1, 1)
     else: res, shp = np.repeat(num[np.newaxis,:], chunks, axis=0), (chunks, 1)
-    return (res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & ((1 << 7)-1)
+    return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
 def bits_to_num(num):
-    return np.sum(num.astype(np.int64) << np.arange(0, 7 * len(num), 7), axis=1)
+    return np.sum(num.astype(np.int64) << np.arange(0, 7 * num.shape[1], 7), axis=1)
 def normalize_doubles(num, dimension):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
     adjustmant = mantissas / (1 << (maxexp - exponents))
-    return maxexp, np.rint(np.ldexp(adjustmant, maxexp+62)).astype(np.int64) #(64, -62) bit fixed point integers
+    return maxexp, np.rint(np.ldexp(adjustmant, 62)).astype(np.int64) #(64, -62) bit fixed point integers
 def renormalize_doubles(num, exp):
     return num.astype(np.double) / (2 ** exp.astype(np.double))
 def main():
     import timeit
-    dim = 10
-    chunks = 10
+    dim = 120
+    bitsize = 64
+    chunks = (bitsize + 7-1)//7
+      
+    max_dim_bits = dim.bit_length()
+    #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
+    signedhighbit = bitsize * 2 - 1 + max_dim_bits
+    signedlowbit = signedhighbit - bitsize
+    print(signedlowbit, signedhighbit)
+
+    
     # IMP DETAILS on using nn.Matmul component:
     # - Expects both inputs as rank-2 tensor.
     # - The inner dimension on both tensors should match.
@@ -173,6 +182,7 @@ def main():
     maskqrttop.data = np.array([[(1<<7)-1]*(chunks-1)+[-1] for _ in range(dim)], dtype=np.int32)
     shiftqrt = g.constant_tensor(shape=(dim, chunks), dtype=g.int32, layout="-1, H1, S4")
     shiftqrt.data = np.array([[7]*chunks for _ in range(dim)], dtype=np.int32)
+    zeros = g.zeros(shape=(dim, 1), dtype=g.int32, layout="-1, H1, S4")
     #g.resolve_storage_requests()
     print(result_mt.shape)
     print(maskqrt.physical_shape, maskqrt.layout)
@@ -180,8 +190,6 @@ def main():
     #maskupper.data = np.array([[(1<<32)-1]*chunks for _ in range(dim)], dtype=np.uint32)
     #for i in range(1):    
     split_result = g.split_vectors(result_mt, [dim]*chunks)
-    checksplits = [x for x in split_result]
-    checksplits[0].set_program_output()
     print(len(split_result), split_result[0].shape, split_result[0].physical_shape, split_result[0].layout)
     #g.add_mem_constraints(split_result, split_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     pred = matmul
@@ -192,19 +200,32 @@ def main():
             shifts = g.right_shift(split_result[i].read(streams=g.SG4_E[0], time=0), shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_W[0]).write(name="shiftres" + str(i))
         with g.ResourceScope(name="mask" + str(i), is_buffered=True, predecessors=[shift], time=None) as mask:
             masks = g.bitwise_and(split_result[i].read(streams=g.SG4_E[0], time=0), maskqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[0]) #.write(name="maskres" + str(i))
+            #masks = g.concat_inner_splits([zeros.read(streams=g.SG4_E[2], time=3), masks]).write(name="maskres" + str(i))
             masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="maskres" + str(i)) #element shift right by 1
         with g.ResourceScope(name="add" + str(i), is_buffered=True, predecessors=[mask], time=None) as pred:
             split_result[i+1] = g.add(g.add(shifts, masks, alus=[0]), split_result[i+1].read(streams=g.SG4_E[2]), alus=[1], output_streams=g.SG4_W[1], time=3).write(name="split" + str(i))
-            
+    #truncated 7*(chunks-1) bits
     for i in range(chunks-1):
         with g.ResourceScope(name="finshift" + str(i), is_buffered=True, predecessors=[pred], time=None) as shift:
             shifts = g.right_shift(split_result[-1].read(streams=g.SG4_E[0], time=0), shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[0]) #.write(name="finshiftres" + str(i))
+            #shifts = g.concat_inner_splits(g.split_inner_splits(shifts)[1:] + [zeros.read(streams=g.SG4_E[2], time=3)]).write(name="finshiftres" + str(i))
             shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
         with g.ResourceScope(name="finmask" + str(i), is_buffered=True, predecessors=[shift], time=None) as mask:
             masks = g.bitwise_and(split_result[-1].read(streams=g.SG4_E[0], time=0), maskqrttop.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_W[0]).write(name="finmaskres" + str(i))
         with g.ResourceScope(name="finadd" + str(i), is_buffered=True, predecessors=[mask], time=None) as pred:
-            split_result[-1] = g.add(shifts, masks, alus=[0], output_streams=g.SG4_W[1], time=3).write(name="finsplit" + str(i))
-        
+            split_result[-1] = g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=3)
+            split_result[-1] = split_result[-1].write(name="finsplit" + str(i))
+    #chunks-1 correct 7-bit int8s
+    #final adjustment for between 0-7 bit addition extra bits, for 64x64 and greater this is exactly 7 bits
+    with g.ResourceScope(name="fixshift", is_buffered=True, predecessors=[pred], time=None) as shift:
+        shifts = g.right_shift(split_result[-1].read(streams=g.SG4_E[0], time=0), shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_W[0]).write(name="fixshiftres" + str(i))
+    with g.ResourceScope(name="fixmask", is_buffered=True, predecessors=[shift], time=None) as mask:
+        masks = g.bitwise_and(split_result[-1].read(streams=g.SG4_E[0], time=0), maskqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[0])
+        masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="fixmaskres" + str(i)) #element shift right by 1
+    with g.ResourceScope(name="fixadd", is_buffered=True, predecessors=[mask], time=None) as pred:
+        split_result[-1] = g.add(shifts, masks, alus=[1] ,output_streams=g.SG4_W[1], time=3)
+        split_result[-1] = split_result[-1].write(name="fixsplit")
+    #if i == chunks-1-1: split_result[-1] = split_result[-1].cast(g.int8, alus=[0])
 
     # Mark result_mt as program output.
     split_result[-1].set_program_output()    
@@ -218,22 +239,22 @@ def main():
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name="mm_fp", gen_vis_data=True, check_stream_conflicts=True
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True
     )
     g.write_visualizer_data("mm_fp")
 
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
-    originpvec = np.random.rand(dim)
-    originpmat = np.random.rand(dim, dim)
+    originpvec = np.random.rand(dim)*2-1
+    originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
+    #originpvec, originpmat = np.ones(dim, dtype=np.float64), np.ones((dim, dim), dtype=np.float64)
     #originpvec = np.random.randint(-(1<<63), (1<<63)-1, size=(dim), dtype=np.int64)
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
     exp_inpvec, normals = normalize_doubles(originpvec, 0)
-    inpvec = np.array(num_to_bits(normals, 64), dtype=np.int8)
-    #print(np.array(num_to_bits(originpmat, 64), dtype=np.int8).shape)
+    inpvec = num_to_bits(normals, chunks)
     exp_inpmat, normals = normalize_doubles(originpmat, 1)
-    inpmat = np.array(num_to_bits(normals, 64), dtype=np.int8)
+    inpmat = num_to_bits(normals, chunks)
     oracleres = [None]
     def oracle():
         oracleres[0] = np.matmul(originpvec, originpmat.transpose())
@@ -251,36 +272,11 @@ def main():
     tactual = timeit.timeit(actual, number=100)/100
     print(toracle, tactual)
     oracleres, results = oracleres[0], results[0]
-    """
-    chipres = inpmat.astype(np.int32) @ inpvec.transpose().astype(np.int32)
-    print(results[checksplits[0].name], chipres[0,:,:])
-    
-    s = sum(chipres[j,:,:].astype(np.int64) << (7*j) for j in range(chunks))
-    print(s)
-    print(sum(s[:,j] << (7*j) for j in range(chunks)))
-    print(chipres)
-    for i in range(chunks-1):
-        chipres[i+1,:,:] += (chipres[i,:,:] >> 7) + np.hstack(((chipres[i,:,:] & ((1<<7)-1))[:,1:], np.zeros((dim, 1), dtype=chipres.dtype)))
-    print(chipres)
-    """
+    print(results)
     print_utils.infoc("\nComparing results with oracle ...")
-    """
-    actual = results[result_mt.name]
-    actual = actual.transpose().reshape((chunks, chunks, dim)).astype(np.int64)
-    realactual = np.zeros((dim,), dtype=np.int64)
-    print(actual.dtype)
-    for i in range(chunks):
-        for j in range(chunks):
-            realactual += actual[i,j,:] <<(7*(i+j))
-    print(realactual, exp_inpvec + exp_inpmat + 62)
-    actual = renormalize_doubles(realactual, exp_inpvec + exp_inpmat + 62)
-    """
-    a = bits_to_num(results[split_result[-1].name])
+    actual = bits_to_num(results[split_result[-1].name])
     #the results come back truncating the lower 7*(chunks-1) bits
-    #however we must left-align the result
-    print(a)
-    #a = chipres[-1,:].astype(np.int64)
-    actual = renormalize_doubles(a, exp_inpvec + exp_inpmat + 62 - 64+7*(chunks-1))
+    actual = renormalize_doubles(actual, 62 - 64+7*(chunks-2) - exp_inpvec - exp_inpmat)
     print(oracleres.shape, oracleres.dtype, actual.shape, actual.dtype)
     max_atol = max(abs(oracleres.reshape(-1) - actual.reshape(-1)))
     print(oracleres, actual)
