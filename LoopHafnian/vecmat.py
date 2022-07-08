@@ -130,9 +130,9 @@ def renormalize_doubles(num, exp):
     return num.astype(np.double) / (2 ** exp.astype(np.double))
 def main():
     import timeit
-    dim = 120
+    dim = 10
     bitsize = 64
-    chunks = (bitsize + 7-1)//7
+    chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
     max_dim_bits = dim.bit_length()
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
@@ -149,12 +149,13 @@ def main():
     #t1 = g.input_tensor(shape=(100, 1000), dtype=g.float16, name="A")
     #t2 = g.input_tensor(shape=(400, 1000), dtype=g.float16, name="B")
     #long double has 63+1 significant bits + 1 sign bits, 65-8=57 8*7=56+1 requires int8, 8 7-bit int8 and a 1-bit int8
-    #long double has 16 exponent bits, can reduce it to 15, fits in int16 
-    #must first adjust each row vs column to fixed point to handle the additions 
+    #long double has 16 exponent bits, can reduce it to 15, fits in int16
+    #must first adjust each row vs column to fixed point to handle the additions
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     tvec = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="A", layout="H1(W), -1, S16")
     tmat = g.input_tensor(shape=(dim * chunks, dim), dtype=g.int8, name="B", layout="H1(W), -1, S1")
+    #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
 
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors {} x {}".format(tvec.shape, tmat.shape)
@@ -246,8 +247,22 @@ def main():
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
+    """
+    originpvec = np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j)
+    originpmat = unitary_group.rvs(dim)
+    realresult = np.hstack((originpvec.real, originpvec.imag)) @ np.hstack((originpmat.real, -originpmat.imag)).transpose()
+    imagresult = np.hstack((originpvec.real, originpvec.imag)) @ np.hstack((originpmat.imag, originpmat.real)).transpose()
+    singlematmult = np.hstack((originpvec.real, originpvec.imag)) @ np.vstack((np.hstack((originpmat.real, -originpmat.imag)), np.hstack((originpmat.imag, originpmat.real)))).transpose()
+    result = singlematmult[:dim] + singlematmult[dim:]*1j
+    resultalt = realresult + imagresult*1j
+    actualresult = originpvec @ originpmat.transpose()
+    print("Tolerance", max(abs(actualresult.reshape(-1) - result.reshape(-1))), max(abs(actualresult.reshape(-1) - resultalt.reshape(-1))))
+    """
     originpvec = np.random.rand(dim)*2-1
     originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
+    originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+
     #originpvec, originpmat = np.ones(dim, dtype=np.float64), np.ones((dim, dim), dtype=np.float64)
     #originpvec = np.random.randint(-(1<<63), (1<<63)-1, size=(dim), dtype=np.int64)
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
