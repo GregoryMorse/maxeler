@@ -2,6 +2,8 @@
 #export PATH=$PATH:/nix/store/myclxgzxiqrlhgw5b6h4mjmvyks2c5lz-Groq.View.server.groqview-streams/bin/
 #/nix/store/myclxgzxiqrlhgw5b6h4mjmvyks2c5lz-Groq.View.server.groqview-streams/bin/groqview-streams
 
+#/nix/store/8vd44g013blr4a4qymjwhgx7mmxgpaf2-GroqAPI.lib/
+
 import sys
 MANT_DIG = sys.float_info.mant_dig
 import numpy as np
@@ -183,16 +185,24 @@ def main():
     
     #split_result[0].split_vectors([chunks]*dim)
     #split_result = g.split_pipelines(result_mt.read(), logical_shapes=(chunks, dim))
-    maskqrt = g.constant_tensor(shape=(1, dim * chunks), dtype=g.int32, layout="-1, H1(W), S4")
-    maskqrt.data = np.array([[(1<<7)-1]*chunks*dim], dtype=np.int32)
-    maskqrte = g.constant_tensor(shape=(1, dim * chunks), dtype=g.int32, layout="-1, H1(E), S4")
-    maskqrte.data = np.array([[(1<<7)-1]*chunks*dim], dtype=np.int32)
-    maskqrttop = g.constant_tensor(shape=(1, dim * chunks), dtype=g.int32, layout="-1, H1(W), S4")
-    maskqrttop.data = np.array([[(1<<7)-1]*(chunks-1)*dim+[-1]*dim], dtype=np.int32)
-    shiftqrt = g.constant_tensor(shape=(1, dim * chunks), dtype=g.int32, layout="-1, H1(W), S4")
-    shiftqrt.data = np.array([[7]*chunks*dim], dtype=np.int32)
-    shiftqrte = g.constant_tensor(shape=(1, dim * chunks), dtype=g.int32, layout="-1, H1(E), S4")
-    shiftqrte.data = np.array([[7]*chunks*dim], dtype=np.int32)
+    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4")
+    maskqrt.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrt = g.concat_inner_splits([maskqrt] * chunks)
+    maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4")
+    maskqrte.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrte = g.concat_inner_splits([maskqrte] * chunks)
+    maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4")
+    maskqrttop.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrttopneg = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4")
+    maskqrttopneg.data = np.array([[-1]*dim], dtype=np.int32)
+    g.add_mem_constraints([maskqrttop], [maskqrttopneg], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    maskqrttop = g.concat_inner_splits([maskqrttop] * (chunks-1)+[maskqrttopneg])
+    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4")
+    shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
+    shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
+    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4")
+    shiftqrte.data = np.array([[7]*dim], dtype=np.int32)
+    shiftqrte = g.concat_inner_splits([shiftqrte] * chunks)
     zeros = g.zeros(shape=(1,dim), dtype=g.int32, layout="-1, H1(W), S4")
     #g.resolve_storage_requests()
     #print(result_mt.shape)
@@ -222,7 +232,7 @@ def main():
                 if i != chunks - 1:
                     nextmasks = g.bitwise_and(split_result[i], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="mask" + str(i))
                 else:
-                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre")
+                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", program_output=True)
                 split_result[i] = split_result[i].write(name="split" + str(i), program_output=True)
     #truncated 7*(chunks-1) bits
     for i in range(chunks-1):
@@ -232,9 +242,8 @@ def main():
             #shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
             shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[1])
             masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[1], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
-            split_result[-1] = inst.add_mod(2, g.int32, g.SG4_E[2], g.SG4_E[1], output_sg4=g.SG4_W[2], time=0)
-            print(split_result[-1])
-            #split_result[-1] = g.add(masks, shifts, alus=[2], output_streams=g.SG4_W[2], time=0)
+            #split_result[-1] = inst.add_mod(2, g.int32, g.SG4_E[2], g.SG4_E[1], output_sg4=g.SG4_W[2], time=0)
+            split_result[-1] = g.add(masks, shifts, alus=[2], output_streams=g.SG4_W[2], time=0)
             if i != chunks-1-1:
                 nextshifts = g.right_shift(split_result[-1], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shift" + str(i))
             else:
@@ -281,10 +290,10 @@ def main():
     actualresult = originpvec @ originpmat.transpose()
     print("Tolerance", max(abs(actualresult.reshape(-1) - result.reshape(-1))), max(abs(actualresult.reshape(-1) - resultalt.reshape(-1))))
     """
-    originpvec = np.random.rand(dim)*2-1
-    originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
-    #originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    #originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    #originpvec = np.random.rand(dim)*2-1
+    #originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
+    originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
