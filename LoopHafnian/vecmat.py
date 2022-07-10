@@ -176,8 +176,8 @@ def main():
     result_mt = g.split_vectors(tmat, [dim]*chunks)
     #g.add_mem_constraints(result_mt, result_mt, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     for i in range(chunks):
-        with g.ResourceScope(name="matmul", is_buffered=True, time=(mm.end_time+chunks+1)*i) as matmul: #mm.end_time==20
-            result_mt[i] = mm.build(tvec, result_mt[i]).write(name="mm"+str(i), layout="-1, H1(W), S4(8-11)") #.reshape(dim, chunks, chunks)
+        with g.ResourceScope(name="matmul", is_buffered=True, time=(mm.end_time+1)*i) as matmul: #mm.end_time==20
+            result_mt[i] = mm.build(tvec, result_mt[i]).write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
             g.add_mem_constraints(result_mt[:i], [result_mt[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             
     #with g.ResourceScope(name="tp", is_buffered=True, predecessors=[matmul], time=None) as tp:
@@ -185,18 +185,18 @@ def main():
     
     #split_result[0].split_vectors([chunks]*dim)
     #split_result = g.split_pipelines(result_mt.read(), logical_shapes=(chunks, dim))
-    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(12-15)")
+    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
     maskqrt.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
     maskqrt = g.concat_inner_splits([maskqrt] * chunks)
     maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(0-3)")
     maskqrte.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
     maskqrte = g.concat_inner_splits([maskqrte] * chunks)
-    maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(12-15)")
+    maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
     maskqrttop.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
-    maskqrttopneg = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(12-15)")
+    maskqrttopneg = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
     maskqrttopneg.data = np.array([[-1]*dim], dtype=np.int32)
     maskqrttop = g.concat_inner_splits([maskqrttop] * (chunks-1)+[maskqrttopneg])
-    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(12-15)")
+    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
     shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
     shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
     g.add_mem_constraints([maskqrt, maskqrttop, shiftqrt], [maskqrt, maskqrttop, shiftqrt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
