@@ -130,6 +130,85 @@ def normalize_doubles(num, dimension):
     return maxexp, np.rint(np.ldexp(adjustmant, 62)).astype(np.int64) #(64, -62) bit fixed point integers
 def renormalize_doubles(num, exp):
     return num.astype(np.double) / (2 ** exp.astype(np.double))
+def cond_runfunc(ft, ff, x, cond):
+    return ft(x) if cond else ff(x)
+def extract_int8(var):
+    return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var])
+
+def vecmat(tvec, tmat):
+    chunks,dim = tvec.shape
+    # Instantiate matmul component.
+    mm = nn.MatMul(time=0, buffer_output=False, planes=[0])
+    
+    # Build matmul component.
+    result_mt = g.split_vectors(tmat, [dim]*chunks)
+
+    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
+    maskqrt.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrt = g.concat_inner_splits([maskqrt] * chunks)
+    maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(0-3)")
+    maskqrte.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrte = g.concat_inner_splits([maskqrte] * chunks)
+    maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
+    maskqrttop.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
+    maskqrttopneg = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
+    maskqrttopneg.data = np.array([[-1]*dim], dtype=np.int32)
+    maskqrttop = g.concat_inner_splits([maskqrttop] * (chunks-1)+[maskqrttopneg])
+    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
+    shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
+    shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
+    g.add_mem_constraints([maskqrt, maskqrttop, shiftqrt], [maskqrt, maskqrttop, shiftqrt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(4-7)")
+    shiftqrte.data = np.array([[7]*dim], dtype=np.int32)
+    shiftqrte = g.concat_inner_splits([shiftqrte] * chunks)
+    g.add_mem_constraints([shiftqrte], [maskqrte], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    zeros = g.zeros(shape=(1,dim), dtype=g.int32, layout="-1, H1(W), S4(4-7)")
+    
+    split_result = [] #[g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)) for i in range(chunks)]
+    allshifts = [zeros]
+    for i in range(chunks):
+        with g.ResourceScope(name="matmul" + str(i), is_buffered=True, time=(mm.end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
+            result_mt[i] = mm.build(tvec, result_mt[i]) #.write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
+            split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
+            #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
+            if i == 0:
+                nextmasks = g.bitwise_and(split_result[i], maskqrt.read(streams=g.SG4_E[3]), alus=[4], output_streams=g.SG4_W[3]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
+                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
+            else:
+                masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[1])
+                shifts = g.right_shift(split_result[i-1].read(streams=g.SG4_E[2]), shiftqrt.read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_E[2])
+                split_result[i] = g.add(g.add(shifts, masks, alus=[1], output_streams=g.SG4_E[2]), split_result[i], alus=[6], output_streams=g.SG4_W[3])
+                if i != chunks - 1:
+                    nextmasks = g.bitwise_and(split_result[i], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
+                else:
+                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", layout="-1, H1(W), S4(4-7)")
+                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
+                g.add_mem_constraints(split_result[:i], [split_result[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            allshifts.append(nextshifts if i == chunks-1 else nextmasks)
+            g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            
+    with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
+        cursplit = split_result[-1].read(streams=g.SG4_E[5])
+        shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[3])
+        masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
+        split_result.append(g.add(masks, shifts, alus=[6], output_streams=g.SG4_W[2], time=0))
+        nextmasks = g.bitwise_and(split_result[-1], maskqrte.read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
+        split_result[-1] = split_result[-1].write(name="finsplit", layout="-1, H1(W), S4(0-3)", program_output=True)
+        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        allshifts.append(nextmasks)
+        g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        
+    #chunks-1 correct 7-bit int8s
+    #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
+    with g.ResourceScope(name="fixsma", is_buffered=True, predecessors=[pred], time=None) as pred:
+        cursplit = split_result[-1].read(streams=g.SG4_E[3])
+        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[0])
+        shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[1]) #.write(name="fixshift", layout="-1, H1(W), S4(0-3)", program_output=True)
+        split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)"))
+        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    split_result.append(g.concat_inner_splits(g.split_inner_splits(split_result[-1])))
+    return split_result[-1]
+    
 def main():
     import timeit
     dim = 80
@@ -163,125 +242,14 @@ def main():
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors {} x {}".format(tvec.shape, tmat.shape)
     )
-    # Instantiate matmul component.
-    #result_mt = karatsuba_mul16(t1, t2, dim)
-    mm = nn.MatMul(time=0, buffer_output=False, planes=[0])
-    
-    #tpose = nn.TransposeMatrix(time=0, buffer_output=False, is_resource_scope=False)
-    # ^^ Don't need to select any mxm plane or set the memory layouts.
-    # Only thing you need to set is the time at which matmul should be scheduled.
-    # Also you can pass buffer_output=True to avoid explicit write to memory.
 
-    # Build matmul component.
-    result_mt = g.split_vectors(tmat, [dim]*chunks)
-    #g.add_mem_constraints(result_mt, result_mt, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    """
-    for i in range(chunks):
-        with g.ResourceScope(name="matmul", is_buffered=True, time=(mm.end_time+1)*i) as matmul: #mm.end_time==20
-            result_mt[i] = mm.build(tvec, result_mt[i]).write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
-            g.add_mem_constraints(result_mt[:i], [result_mt[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    """     
-    #with g.ResourceScope(name="tp", is_buffered=True, predecessors=[matmul], time=None) as tp:
-    #    result_mt = tpose.build(result_mt)
-    
-    #split_result[0].split_vectors([chunks]*dim)
-    #split_result = g.split_pipelines(result_mt.read(), logical_shapes=(chunks, dim))
-    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
-    maskqrt.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
-    maskqrt = g.concat_inner_splits([maskqrt] * chunks)
-    maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(0-3)")
-    maskqrte.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
-    maskqrte = g.concat_inner_splits([maskqrte] * chunks)
-    maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
-    maskqrttop.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
-    maskqrttopneg = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
-    maskqrttopneg.data = np.array([[-1]*dim], dtype=np.int32)
-    maskqrttop = g.concat_inner_splits([maskqrttop] * (chunks-1)+[maskqrttopneg])
-    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
-    shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
-    shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
-    g.add_mem_constraints([maskqrt, maskqrttop, shiftqrt], [maskqrt, maskqrttop, shiftqrt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(4-7)")
-    shiftqrte.data = np.array([[7]*dim], dtype=np.int32)
-    shiftqrte = g.concat_inner_splits([shiftqrte] * chunks)
-    g.add_mem_constraints([shiftqrte], [maskqrte], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    zeros = g.zeros(shape=(1,dim), dtype=g.int32, layout="-1, H1(W), S4(4-7)")
-    #g.resolve_storage_requests()
-    #print(result_mt.shape)
-    #print(maskqrt.physical_shape, maskqrt.layout)
-    #maskupper = g.constant_tensor(shape=(dim, chunks), dtype=g.uint32)
-    #maskupper.data = np.array([[(1<<32)-1]*chunks for _ in range(dim)], dtype=np.uint32)
-    split_result = [] #[g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)) for i in range(chunks)]
-    #pred = matmul
-    #perm_rq = g.tensor.create_permutor_request(perm=[1], num_perm=1)
-    allshifts = [zeros]
-    for i in range(chunks):
-        with g.ResourceScope(name="matmul" + str(i), is_buffered=True, time=(mm.end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
-            result_mt[i] = mm.build(tvec, result_mt[i]) #.write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
-            #g.add_mem_constraints(result_mt[:i], [result_mt[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
-            #with g.ResourceScope(name="sma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred:
-            #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
-            if i == 0:
-                cursplit = split_result[i] #.read(streams=g.SG4_E[2])
-                nextmasks = g.bitwise_and(cursplit, maskqrt.read(streams=g.SG4_E[3]), alus=[4], output_streams=g.SG4_W[3]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
-                split_result[i] = cursplit.write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
-            else:
-                cursplit = split_result[i-1].read(streams=g.SG4_E[2])
-                masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[1])
-                shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_E[2])
-                #masks = g.concat_inner_splits([zeros.read(streams=g.SG4_E[4])] + g.split_inner_splits(masks)[:-1]) #.write(name="maskres" + str(i))
-                #masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="maskres" + str(i)) #element shift right by 1
-                nextsplit = split_result[i] #.read(streams=g.SG4_E[3])
-                split_result[i] = g.add(g.add(shifts, masks, alus=[1], output_streams=g.SG4_E[2]), nextsplit, alus=[6], output_streams=g.SG4_W[3])
-                if i != chunks - 1:
-                    nextmasks = g.bitwise_and(split_result[i], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
-                else:
-                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", layout="-1, H1(W), S4(4-7)")
-                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
-                g.add_mem_constraints(split_result[:i], [split_result[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            allshifts.append(nextshifts if i == chunks-1 else nextmasks)
-            g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #truncated 7*(chunks-1) bits
-    def cond_runfunc(ft, ff, x, cond):
-        return ft(x) if cond else ff(x)
-    def extract_int8(var):
-        return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var])
-    with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
-        cursplit = split_result[-1].read(streams=g.SG4_E[5])
-        #shifts = g.concat_inner_splits(g.split_inner_splits(shifts)[1:] + [zeros.read(streams=g.SG4_E[2], time=3)]).write(name="finshiftres" + str(i))
-        #shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
-        shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[3])
-        masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
-        split_result.append(g.add(masks, shifts, alus=[6], output_streams=g.SG4_W[2], time=0))
-        nextmasks = g.bitwise_and(split_result[-1], maskqrte.read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
-        split_result[-1] = split_result[-1].write(name="finsplit", layout="-1, H1(W), S4(0-3)", program_output=True)
-        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        allshifts.append(nextmasks)
-        g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #split_result.append(extract_int8(g.split_inner_splits(nextmasks) + [g.split_inner_splits(shifts)[-1]]))
-    #chunks-1 correct 7-bit int8s
-    #final adjustment for between 0-7 bit addition extra bits, for 64x64 and greater this is exactly 7 bits
-    with g.ResourceScope(name="fixsma", is_buffered=True, predecessors=[pred], time=None) as pred:
-        cursplit = split_result[-1].read(streams=g.SG4_E[3])
-        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[0])
-        shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[1]) #.write(name="fixshift", layout="-1, H1(W), S4(0-3)", program_output=True)
-        split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)"))
-        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    split_result.append(g.concat_inner_splits(g.split_inner_splits(split_result[-1])))
-    # Mark result_mt as program output.
-    #split_result[1].set_program_output()
-    #result_mt.set_program_output()
-    #result_st = tvec.matmul(tmat, planes=[0], time=20)
-    #result_mt = result_st.write(
-    #    name="mm_result", program_output=True, layout="H1(W), -1, S4"
-    #)
+    result_mt = vecmat(tvec, tmat)
 
     print_utils.infoc("\nCompiling model ...")
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=split_result[-1]
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=result_mt
     )
     json_file = g.write_visualizer_data("mm_fp")
     print("Have a GroqView:\n", "    % groqview --port 8888", json_file)
@@ -335,7 +303,7 @@ def main():
     oracleres, results = oracleres[0], results[0]
     print(results)
     print_utils.infoc("\nComparing results with oracle ...")
-    actual = bits_to_num(results[split_result[-1].name].reshape(chunks, dim).transpose())
+    actual = bits_to_num(results[result_mt.name].reshape(chunks, dim).transpose())
     #the results come back truncating the lower 7*(chunks-1) bits
     actual = renormalize_doubles(actual, 62 - 64+7*(chunks-2) - exp_inpvec - exp_inpmat)
     print(oracleres.shape, oracleres.dtype, actual.shape, actual.dtype)
