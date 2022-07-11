@@ -175,11 +175,12 @@ def main():
     # Build matmul component.
     result_mt = g.split_vectors(tmat, [dim]*chunks)
     #g.add_mem_constraints(result_mt, result_mt, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    """
     for i in range(chunks):
         with g.ResourceScope(name="matmul", is_buffered=True, time=(mm.end_time+1)*i) as matmul: #mm.end_time==20
             result_mt[i] = mm.build(tvec, result_mt[i]).write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
             g.add_mem_constraints(result_mt[:i], [result_mt[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            
+    """     
     #with g.ResourceScope(name="tp", is_buffered=True, predecessors=[matmul], time=None) as tp:
     #    result_mt = tpose.build(result_mt)
     
@@ -210,64 +211,70 @@ def main():
     #print(maskqrt.physical_shape, maskqrt.layout)
     #maskupper = g.constant_tensor(shape=(dim, chunks), dtype=g.uint32)
     #maskupper.data = np.array([[(1<<32)-1]*chunks for _ in range(dim)], dtype=np.uint32)
-    #for i in range(1):
-    split_result = [g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)) for i in range(chunks)]
-    #print(len(split_result), split_result[0].shape, split_result[-1].physical_shape, split_result[-1].layout)
-    #g.add_mem_constraints(split_result, split_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    pred = matmul
+    split_result = [] #[g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)) for i in range(chunks)]
+    #pred = matmul
     #perm_rq = g.tensor.create_permutor_request(perm=[1], num_perm=1)
     allshifts = [zeros]
     for i in range(chunks):
-        with g.ResourceScope(name="sma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred:
+        with g.ResourceScope(name="matmul" + str(i), is_buffered=True, time=(mm.end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
+            result_mt[i] = mm.build(tvec, result_mt[i]) #.write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
+            #g.add_mem_constraints(result_mt[:i], [result_mt[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
+            #with g.ResourceScope(name="sma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred:
             #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
             if i == 0:
-                cursplit = split_result[i].read(streams=g.SG4_E[2])
-                nextmasks = g.bitwise_and(cursplit, maskqrt.read(streams=g.SG4_E[4]), alus=[4], output_streams=g.SG4_W[4], time=0).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
-                split_result[i] = cursplit.write(name="split" + str(i), layout="-1, H1(W), S4(0-3)", program_output=True)
+                cursplit = split_result[i] #.read(streams=g.SG4_E[2])
+                nextmasks = g.bitwise_and(cursplit, maskqrt.read(streams=g.SG4_E[3]), alus=[4], output_streams=g.SG4_W[3]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
+                split_result[i] = cursplit.write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
             else:
                 cursplit = split_result[i-1].read(streams=g.SG4_E[2])
                 masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[1])
                 shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_E[2])
                 #masks = g.concat_inner_splits([zeros.read(streams=g.SG4_E[4])] + g.split_inner_splits(masks)[:-1]) #.write(name="maskres" + str(i))
                 #masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="maskres" + str(i)) #element shift right by 1
-                nextsplit = split_result[i].read(streams=g.SG4_E[3])
-                split_result[i] = g.add(g.add(shifts, masks, alus=[2], output_streams=g.SG4_E[2]), nextsplit, alus=[3], output_streams=g.SG4_W[3], time=0)
+                nextsplit = split_result[i] #.read(streams=g.SG4_E[3])
+                split_result[i] = g.add(g.add(shifts, masks, alus=[1], output_streams=g.SG4_E[2]), nextsplit, alus=[6], output_streams=g.SG4_W[3])
                 if i != chunks - 1:
                     nextmasks = g.bitwise_and(split_result[i], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
                 else:
-                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", layout="-1, H1(W), S4(4-7)", program_output=True)
-                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)", program_output=True)
+                    nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", layout="-1, H1(W), S4(4-7)")
+                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
                 g.add_mem_constraints(split_result[:i], [split_result[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             allshifts.append(nextshifts if i == chunks-1 else nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #truncated 7*(chunks-1) bits
+    alreadybytes = []
     for i in range(chunks-1):
         with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred:
-            cursplit = split_result[-1].read(streams=g.SG4_E[3])
+            alreadybytes.append(g.split_inner_splits(split_result[-1])[0])
+            cursplit = g.concat_inner_splits(g.split_inner_splits(split_result[-1])[1:]).read(streams=g.SG4_E[3])
             #shifts = g.concat_inner_splits(g.split_inner_splits(shifts)[1:] + [zeros.read(streams=g.SG4_E[2], time=3)]).write(name="finshiftres" + str(i))
             #shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
-            shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[1])
-            masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[1], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
-            #split_result[-1] = inst.add_mod(2, g.int32, g.SG4_E[2], g.SG4_E[1], output_sg4=g.SG4_W[2], time=0)
-            split_result.append(g.add(masks, shifts, alus=[2], output_streams=g.SG4_W[2], time=0))
+            shifts = g.concat_inner_splits(g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[1])
+            masks = g.bitwise_and(cursplit, g.concat_inner_splits(g.split_inner_splits(maskqrttop)[i+1:]).read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
+            split_result.append(g.add(masks, shifts, alus=[1], output_streams=g.SG4_W[2], time=0))
             if i != chunks-1-1:
-                nextshifts = g.right_shift(split_result[-1], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shift" + str(i), layout="-1, H1(W), S4(4-7)")
+                nextshifts = g.right_shift(split_result[-1], g.concat_inner_splits(g.split_inner_splits(shiftqrte)[:-i-1]).read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="shift" + str(i), layout="-1, H1(W), S4(4-7)")
             else:
-                nextmasks = g.bitwise_and(split_result[-1], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
-            split_result[-1] = split_result[-1].write(name="finsplit" + str(i), layout="-1, H1(W), S4(0-3)", program_output=True)#i==chunks-1-1)
+                nextmasks = g.bitwise_and(split_result[-1], g.concat_inner_splits(g.split_inner_splits(maskqrte)[:-i-1]).read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
+                #split_result[-1] = split_result[-1].cast(g.int8, alus=[0], output_streams=g.SG4_W[2])
+            split_result[-1] = split_result[-1].write(name="finsplit" + str(i), layout="-1, H1(W), S4(0-3)", program_output=i==chunks-1-1)
             g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            #if i != chunks-1-1:
             allshifts.append(nextshifts if i != chunks-1-1 else nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #chunks-1 correct 7-bit int8s
     #final adjustment for between 0-7 bit addition extra bits, for 64x64 and greater this is exactly 7 bits
     with g.ResourceScope(name="fixsma", is_buffered=True, predecessors=[pred], time=None) as pred:
         cursplit = split_result[-1].read(streams=g.SG4_E[3])
-        shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_E[1]) #.write(name="fixshiftres" + str(i), program_output=True)
+        shifts = g.right_shift(cursplit, g.split_inner_splits(shiftqrt)[0].read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_W[1]).write(name="fixshiftres", program_output=True)
         #masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="fixmaskres" + str(i)) #element shift right by 1
-        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[2])
-        split_result.append(g.add(shifts, masks, alus=[2], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)", program_output=True))
-        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #split_result[-1] = split_result[-1].cast(g.int8, alus=[3])
+        alreadybytes.append(g.split_inner_splits(nextmasks)[0]) #.read(streams=g.SG4_E[2])
+        alreadybytes.append(shifts)
+        #split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)", program_output=True)) #.cast(g.int8, alus=[2], output_streams=g.SG4_W[1])
+        #g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #alreadybytes.append(g.split_inner_splits(split_result[-1])[0])
+        split_result.append(g.concat_inner_splits(alreadybytes[1:]))
     # Mark result_mt as program output.
     #split_result[1].set_program_output()
     #result_mt.set_program_output()
@@ -280,7 +287,7 @@ def main():
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=split_result[-1]
     )
     json_file = g.write_visualizer_data("mm_fp")
     print("Have a GroqView:\n", "    % groqview --port 8888", json_file)
@@ -300,8 +307,8 @@ def main():
     actualresult = originpvec @ originpmat.transpose()
     print("Tolerance", max(abs(actualresult.reshape(-1) - result.reshape(-1))), max(abs(actualresult.reshape(-1) - resultalt.reshape(-1))))
     """
-    #originpvec = np.random.rand(dim)*2-1
-    #originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
+    originpvec = np.random.rand(dim)*2-1
+    originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
     originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
     originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
@@ -340,6 +347,7 @@ def main():
     print(oracleres.shape, oracleres.dtype, actual.shape, actual.dtype)
     max_atol = max(abs(oracleres.reshape(-1) - actual.reshape(-1)))
     print(oracleres, actual)
+    print((np.frexp(oracleres)[0]*(1<<53)).astype(np.int64), (np.frexp(actual)[0]*(1<<53)).astype(np.int64))
     if max_atol <= 0.001:
         print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
     else:
