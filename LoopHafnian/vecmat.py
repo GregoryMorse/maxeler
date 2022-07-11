@@ -201,7 +201,7 @@ def main():
     shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
     shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
     g.add_mem_constraints([maskqrt, maskqrttop, shiftqrt], [maskqrt, maskqrttop, shiftqrt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(0-3)")
+    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(4-7)")
     shiftqrte.data = np.array([[7]*dim], dtype=np.int32)
     shiftqrte = g.concat_inner_splits([shiftqrte] * chunks)
     g.add_mem_constraints([shiftqrte], [maskqrte], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -243,42 +243,32 @@ def main():
             allshifts.append(nextshifts if i == chunks-1 else nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #truncated 7*(chunks-1) bits
-    alreadybytes = []
     def cond_runfunc(ft, ff, x, cond):
         return ft(x) if cond else ff(x)
     def extract_int8(var):
         return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var])
-    for i in range(chunks-1):
-        with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, they are
-            if i == 1:
-                split_result[-1] = extract_int8(g.split_inner_splits(split_result[-1]))
-                nextshifts = extract_int8(g.split_inner_splits(nextshifts))
-            if i != 0: alreadybytes.append(g.split_inner_splits(split_result[-1])[0])
-            cursplit = g.concat_inner_splits(g.split_inner_splits(split_result[-1])[1:]).read(streams=g.SG4_E[3])
-            #shifts = g.concat_inner_splits(g.split_inner_splits(shifts)[1:] + [zeros.read(streams=g.SG4_E[2], time=3)]).write(name="finshiftres" + str(i))
-            #shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
-            shifts = g.concat_inner_splits(g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[1])
-            masks = g.bitwise_and(cursplit, cond_runfunc(extract_int8, g.concat_inner_splits, g.split_inner_splits(maskqrttop)[i+1:], i!=0).read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
-            split_result.append(g.add(masks, shifts, alus=[1], output_streams=g.SG4_W[2], time=0))
-            if i != chunks-1-1:
-                nextshifts = g.right_shift(split_result[-1], cond_runfunc(extract_int8, g.concat_inner_splits, g.split_inner_splits(shiftqrte)[:-i-1], i!=0).read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="shift" + str(i), layout="-1, H1(W), S4(4-7)")
-            else:
-                nextmasks = g.bitwise_and(split_result[-1], cond_runfunc(extract_int8, g.concat_inner_splits, g.split_inner_splits(maskqrte)[:-i-1], i!=0).read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
-                #split_result[-1] = split_result[-1].cast(g.int8, alus=[0], output_streams=g.SG4_W[2])
-            split_result[-1] = split_result[-1].write(name="finsplit" + str(i), layout="-1, H1(W), S4(0-3)", program_output=True)
-            g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            #if i != chunks-1-1:
-            allshifts.append(nextshifts if i != chunks-1-1 else nextmasks)
-            g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
+        cursplit = split_result[-1].read(streams=g.SG4_E[5])
+        #shifts = g.concat_inner_splits(g.split_inner_splits(shifts)[1:] + [zeros.read(streams=g.SG4_E[2], time=3)]).write(name="finshiftres" + str(i))
+        #shifts = g.shift(shifts, -1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="finshiftres" + str(i)) #element shift left by 1
+        shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[3])
+        masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
+        split_result.append(g.add(masks, shifts, alus=[6], output_streams=g.SG4_W[2], time=0))
+        nextmasks = g.bitwise_and(split_result[-1], maskqrte.read(streams=g.SG4_W[0]), alus=[0], output_streams=g.SG4_W[3]).write(name="fixmask", layout="-1, H1(W), S4(4-7)")
+        split_result[-1] = split_result[-1].write(name="finsplit", layout="-1, H1(W), S4(0-3)", program_output=True)
+        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        allshifts.append(nextmasks)
+        g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    #split_result.append(extract_int8(g.split_inner_splits(nextmasks) + [g.split_inner_splits(shifts)[-1]]))
     #chunks-1 correct 7-bit int8s
     #final adjustment for between 0-7 bit addition extra bits, for 64x64 and greater this is exactly 7 bits
     with g.ResourceScope(name="fixsma", is_buffered=True, predecessors=[pred], time=None) as pred:
         cursplit = split_result[-1].read(streams=g.SG4_E[3])
-        shifts = g.right_shift(cursplit, extract_int8([g.split_inner_splits(shiftqrt)[0]]).read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_W[1]).write(name="fixshiftres")
-        #masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="fixmaskres" + str(i)) #element shift right by 1
-    alreadybytes.append(g.split_inner_splits(nextmasks)[0]) #.read(streams=g.SG4_E[2])
-    alreadybytes.append(shifts)
-    split_result.append(g.concat_inner_splits(alreadybytes))
+        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros]).read(streams=g.SG4_E[0])
+        shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[1]) #.write(name="fixshift", layout="-1, H1(W), S4(0-3)", program_output=True)
+        split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)"))
+        g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    split_result.append(g.concat_inner_splits(g.split_inner_splits(split_result[-1])))
     # Mark result_mt as program output.
     #split_result[1].set_program_output()
     #result_mt.set_program_output()
