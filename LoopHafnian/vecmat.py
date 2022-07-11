@@ -238,7 +238,7 @@ def main():
                     nextmasks = g.bitwise_and(split_result[i], maskqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="mask" + str(i), layout="-1, H1(W), S4(4-7)")
                 else:
                     nextshifts = g.right_shift(split_result[i], shiftqrte.read(streams=g.SG4_W[4]), alus=[4], output_streams=g.SG4_W[4]).write(name="shiftpre", layout="-1, H1(W), S4(4-7)")
-                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)")
+                split_result[i] = split_result[i].write(name="split" + str(i), layout="-1, H1(W), S4(0-3)", program_output=True)
                 g.add_mem_constraints(split_result[:i], [split_result[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             allshifts.append(nextshifts if i == chunks-1 else nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -269,12 +269,9 @@ def main():
         cursplit = split_result[-1].read(streams=g.SG4_E[3])
         shifts = g.right_shift(cursplit, g.split_inner_splits(shiftqrt)[0].read(streams=g.SG4_E[0]), alus=[0], output_streams=g.SG4_W[1]).write(name="fixshiftres", program_output=True)
         #masks = g.shift(masks, 1, permutor_id=perm_rq, shift_src=[g.instruction.NEW_SRC], output_streams=g.SG4_W[1]).write(name="fixmaskres" + str(i)) #element shift right by 1
-        alreadybytes.append(g.split_inner_splits(nextmasks)[0]) #.read(streams=g.SG4_E[2])
-        alreadybytes.append(shifts)
-        #split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)", program_output=True)) #.cast(g.int8, alus=[2], output_streams=g.SG4_W[1])
-        #g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        #alreadybytes.append(g.split_inner_splits(split_result[-1])[0])
-        split_result.append(g.concat_inner_splits(alreadybytes[1:]))
+    alreadybytes.append(g.split_inner_splits(nextmasks)[0]) #.read(streams=g.SG4_E[2])
+    alreadybytes.append(shifts)
+    split_result.append(g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in alreadybytes[1:]]))
     # Mark result_mt as program output.
     #split_result[1].set_program_output()
     #result_mt.set_program_output()
@@ -309,8 +306,8 @@ def main():
     """
     originpvec = np.random.rand(dim)*2-1
     originpmat = np.random.rand(dim, dim)*2-1 #unitary_group.rvs(dim).real
-    originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    #originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    #originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
