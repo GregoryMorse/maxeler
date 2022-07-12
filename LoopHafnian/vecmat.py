@@ -235,14 +235,20 @@ def main():
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
-    tvec1 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW", layout=f"H1(W), -1, S1(43)")
-    tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec2 = tvec1 #tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE", layout=f"H1(E), -1, S1(43)")
-    tmat2 = tmat1 #tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE", layout=f"H1(E), -1, S16(26-27,29-42)")
+    tvec1 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW0P", layout=f"H1(W), -1, S1(43)")
+    tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW1P", layout=f"H1(W), -1, S1(43)")
+    tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tvec3 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE0P", layout=f"H1(E), -1, S1(43)")
+    tmat3 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    tvec4 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE1P", layout=f"H1(E), -1, S1(43)")
+    tmat4 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
     g.add_mem_constraints([tvec1], [tvec2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints([tmat1], [tmat2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
-    tvec, tmat = [tvec1, tvec2], [tmat1, tmat2]
+    tvec, tmat = [tvec1, tvec2, tvec3, tvec4], [tmat1, tmat2, tmat3, tmat4]
     parallel = len(tvec)
 
     print_utils.infoc(
