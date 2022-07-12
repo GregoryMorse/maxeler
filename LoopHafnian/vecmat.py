@@ -154,14 +154,14 @@ def vecmat(tvec, tmat, chunks, dim):
         zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 1)))
         g.add_mem_constraints(zeros, zeros, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     final_result = []
-    split_result = []
-    allshifts = [zeros[0], zeros[1]]
-    mxm_rqs = [g.tensor.create_mxm_request(planes=[x]) for x in range(3)]
+    #split_result = []
+    #allshifts = [zeros[0], zeros[1]]
+    mxm_rqs = [g.tensor.create_mxm_request(planes=[x]) for x in range(4)]
     for drctn, plane in ((WEST, 0), (WEST, 1)):#(EAST, 0), (EAST, 1)
         if plane == 0:
             split_result = []
             allshifts = [zeros[drctn*2], zeros[drctn*2+1]]
-        #mm = nn.MatMul(time=0, buffer_output=False, planes=[plane + (0 if drctn == WEST else 2)])
+        #mm = nn.MatMul(time=0, buffer_output=False, planes=mxm_rqs[drctn*2+plane].planes)
         result_mt = g.split_vectors(tmat[drctn*2+plane], [dim]*chunks)
         SG4_FROM = g.SG4_E if drctn == WEST else g.SG4_W
         SG4_TO = g.SG4_W if drctn == WEST else g.SG4_E
@@ -171,11 +171,11 @@ def vecmat(tvec, tmat, chunks, dim):
         second_alu = [1] if drctn == WEST else [2]
         dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
         for i in range(chunks):
-            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=plane*14+(20+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
-                #result_mt[i] = mm.build(tvec[drctn], result_mt[i])
-                iw = g.install_weights(result_mt[i], planes=mxm_rqs[drctn*2+plane],time=0)
+            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=plane*14+(20+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
+                #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
+                iw = g.install_weights(result_mt[i], planes=mxm_rqs[drctn*2+plane], time=0)
                 #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
-                result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rqs[drctn*2+plane], time=0)
+                result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rqs[drctn*2+plane], time=chunks)
                 split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
                 #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
                 if i == 0:
@@ -243,10 +243,10 @@ def main():
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
-    tvec1 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW0P", layout=f"H1(W), -1, S1(43)")
-    tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW1P", layout=f"H1(W), -1, S1(43)")
-    tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tvec1 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW0P", layout=f"H1(W), -1, S1(43), B1(0)")
+    tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW1P", layout=f"H1(W), -1, S1(43), B1(1)")
+    tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(1)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     #tvec3 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE0P", layout=f"H1(E), -1, S1(43)")
     #tmat3 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
     #tvec4 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE1P", layout=f"H1(E), -1, S1(43)")
@@ -291,8 +291,8 @@ def main():
     """
     originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
     originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
-    originpvec[1] = originpvec[0] #np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    originpmat[1] = originpmat[0] #np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
@@ -321,12 +321,13 @@ def main():
             inputs[tmat[i].name] = inpmat.reshape((chunks*dim, dim))
             exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
         res = runner(**inputs)
+        print(res)
         results[0] = []
         for i in range(parallel):
             result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim).transpose())
             #the results come back truncating the lower 7*(chunks-1) bits
             results[0].append(renormalize_doubles(result, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i]))
-    tactual = timeit.timeit(actual, number=100)/100
+    tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
