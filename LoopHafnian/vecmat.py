@@ -133,10 +133,10 @@ def renormalize_doubles(num, exp):
 def cond_runfunc(ft, ff, x, cond):
     return ft(x) if cond else ff(x)
 def extract_int8(var):
-    return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var]) #, name="extract"
+    return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var])
 WEST, EAST = 0, 1
-def get_slice4(drctn, start, end):
-    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S4(" + str(start) + "-" + str(end) + ")"
+def get_slice4(drctn, start, end, bank=0):
+    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S4(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
 def vecmat(tvec, tmat, chunks, dim):
     # Instantiate matmul component.   
     # Build matmul component.
@@ -150,50 +150,57 @@ def vecmat(tvec, tmat, chunks, dim):
         shiftqrt.append(g.concat_inner_splits(
             [g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11))] * chunks))
         g.add_mem_constraints([maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], [maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7)))
+        zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 0)))
+        zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 1)))
+        g.add_mem_constraints(zeros, zeros, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     final_result = []
-    
-    for drctn, plane in ((WEST, 0),):# (WEST, 1)): (EAST, 0), (EAST, 1)
-        split_result = []
-        allshifts = [zeros[drctn]]
-        mm = nn.MatMul(time=0, buffer_output=False, planes=[plane + (0 if drctn == WEST else 2)])
-        result_mt = g.split_vectors(tmat[drctn], [dim]*chunks)
+    split_result = []
+    allshifts = [zeros[0], zeros[1]]
+    for drctn, plane in ((WEST, 0), (WEST, 1)):#(EAST, 0), (EAST, 1)
+        if plane == 0:
+            split_result = []
+            allshifts = [zeros[drctn*2], zeros[drctn*2+1]]
+        mxm_rq = g.tensor.create_mxm_request(planes=[drctn*2+plane])
+        #mm = nn.MatMul(time=0, buffer_output=False, planes=[plane + (0 if drctn == WEST else 2)])
+        result_mt = g.split_vectors(tmat[drctn*2+plane], [dim]*chunks)
         SG4_FROM = g.SG4_E if drctn == WEST else g.SG4_W
         SG4_TO = g.SG4_W if drctn == WEST else g.SG4_E
         rev_last_alu = [4] if drctn == WEST else [7] 
         rev_alu = [6] if drctn == WEST else [5]
         first_alu = [0] if drctn == WEST else [3]
         second_alu = [1] if drctn == WEST else [2]
-        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-        
-        for i in range(chunks):    
-            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=(mm.end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
-                result_mt[i] = mm.build(tvec[drctn], result_mt[i])
+        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"        
+        for i in range(chunks):
+            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=plane*15+(20+9+1)*i+(1 if i>0 else 0)) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
+                #result_mt[i] = mm.build(tvec[drctn], result_mt[i])
+                iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0)
+                #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
+                result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rq, time=0)
                 split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
                 #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
                 if i == 0:
-                    nextmasks = g.bitwise_and(split_result[i], maskqrt[drctn].read(streams=SG4_FROM[3]), alus=rev_last_alu, output_streams=SG4_TO[3]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7))
-                    split_result[i] = split_result[i].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3))
+                    nextmasks = g.bitwise_and(split_result[-1], maskqrt[drctn].read(streams=SG4_FROM[3]), alus=rev_last_alu, output_streams=SG4_TO[3]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7, plane))
+                    split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3, (plane+i)%2))
                 else:
-                    masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn]]).read(streams=SG4_FROM[1])
+                    masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn*2+plane]]).read(streams=SG4_FROM[1])
                     shifts = g.right_shift(split_result[i-1].read(streams=SG4_FROM[2]), shiftqrt[drctn].read(streams=SG4_FROM[0]), alus=first_alu, output_streams=SG4_FROM[2])
-                    split_result[i] = g.add(g.add(shifts, masks, alus=second_alu, output_streams=SG4_FROM[2]), split_result[i], alus=rev_alu, output_streams=SG4_TO[3])
+                    split_result[-1] = g.add(g.add(shifts, masks, alus=second_alu, output_streams=SG4_FROM[2]), split_result[-1], alus=rev_alu, output_streams=SG4_TO[3])
                     if i != chunks - 1:
-                        nextmasks = g.bitwise_and(split_result[i], maskqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7))
+                        nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7, plane))
                     else:
-                        nextshifts = g.right_shift(split_result[i], shiftqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7))
-                    split_result[i] = split_result[i].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3))
-                    g.add_mem_constraints(split_result[:i], [split_result[i]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+                        nextshifts = g.right_shift(split_result[-1], shiftqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
+                    split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3, (plane+i)%2))
+                    g.add_mem_constraints(split_result[:i], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 allshifts.append(nextshifts if i == chunks-1 else nextmasks)
                 g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
 
         with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
             cursplit = split_result[-1].read(streams=SG4_FROM[5])
-            shifts = g.concat_inner_splits([zeros[drctn]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3])
+            shifts = g.concat_inner_splits([zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3])
             masks = g.bitwise_and(cursplit, maskqrttop[drctn].read(streams=SG4_FROM[2]), alus=rev_last_alu, output_streams=SG4_FROM[2])
             split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=SG4_TO[2], time=0))
-            nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=first_alu, output_streams=SG4_TO[3]).write(name="fixmask" + dirstr, layout=get_slice4(drctn, 4, 7))
-            split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, layout=get_slice4(drctn, 0, 3))
+            nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=first_alu, output_streams=SG4_TO[3]).write(name="fixmask" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
+            split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, layout=get_slice4(drctn, 0, 3, (plane+i)%2))
             g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             allshifts.append(nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -202,12 +209,13 @@ def vecmat(tvec, tmat, chunks, dim):
         #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
         with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, predecessors=[pred], time=None) as pred:
             cursplit = split_result[-1].read(streams=SG4_FROM[3])
-            masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn]]).read(streams=SG4_FROM[0])
+            masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn*2+plane]]).read(streams=SG4_FROM[0])
             shifts = g.right_shift(cursplit, shiftqrt[drctn].read(streams=SG4_FROM[1]), alus=first_alu, output_streams=SG4_FROM[1])
-            split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1], time=0).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3)))
+            split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1], time=0).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, (plane+i)%2)))
             g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         final_result.append(extract_int8(g.split_inner_splits(split_result[-1])))
-    return [final_result[0]]
+        final_result[-1].name = "extract" + dirstr
+    return final_result
     
 def main():
     import timeit
@@ -239,16 +247,17 @@ def main():
     tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW1P", layout=f"H1(W), -1, S1(43)")
     tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec3 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE0P", layout=f"H1(E), -1, S1(43)")
-    tmat3 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
-    tvec4 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE1P", layout=f"H1(E), -1, S1(43)")
-    tmat4 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    #tvec3 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE0P", layout=f"H1(E), -1, S1(43)")
+    #tmat3 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    #tvec4 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE1P", layout=f"H1(E), -1, S1(43)")
+    #tmat4 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
     g.add_mem_constraints([tvec1], [tvec2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints([tmat1], [tmat2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    #g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    #g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
-    tvec, tmat = [tvec1, tvec2, tvec3, tvec4], [tmat1, tmat2, tmat3, tmat4]
+    #tvec, tmat = [tvec1, tvec2, tvec3, tvec4], [tmat1, tmat2, tmat3, tmat4]
+    tvec, tmat = [tvec1, tvec2], [tmat1, tmat2]
     parallel = len(tvec)
 
     print_utils.infoc(
@@ -260,11 +269,11 @@ def main():
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=result_mt
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=result_mt, #tree_conflicts=True, inspect_raw=True
     )
     json_file = g.write_visualizer_data("mm_fp")
     print("Have a GroqView:\n", "    % groqview --port 8888", json_file)
-    g.check_stream_conflicts(json_file)    
+    g.check_stream_conflicts(json_file)
 
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
@@ -282,8 +291,8 @@ def main():
     """
     originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
     originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
-    #originpvec = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    #originpmat = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
@@ -294,7 +303,6 @@ def main():
     def oracle():
         oracleres[0] = [np.matmul(originpvec[i].astype(np.longdouble), originpmat[i].transpose().astype(np.longdouble)).astype(np.float64) for i in range(parallel)]
     toracle = timeit.timeit(oracle, number=100)/100
-
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex})
     # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
@@ -314,23 +322,24 @@ def main():
             exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
         res = runner(**inputs)
         results[0] = []
-        for i in range(1):
-            res = bits_to_num(res[result_mt[i].name].reshape(chunks, dim).transpose())
+        for i in range(parallel):
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim).transpose())
             #the results come back truncating the lower 7*(chunks-1) bits
-            results[0].append(renormalize_doubles(res, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i]))
+            results[0].append(renormalize_doubles(result, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i]))
     tactual = timeit.timeit(actual, number=100)/100
     print("CPU Time", toracle, "Groq Time", tactual)
-    oracleres, results = oracleres[0][0], results[0][0]
-    print_utils.infoc("\nComparing results with oracle ...")
-    max_atol = max(abs(oracleres.reshape(-1) - results.reshape(-1)))
-    print(oracleres, results) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
-    print((np.frexp(oracleres)[0]*(1<<53)).astype(np.int64), (np.frexp(results)[0]*(1<<53)).astype(np.int64))
-    if max_atol <= 0.001:
-        print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
-    else:
-        print_utils.err(
-            f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
-        )
+    oracleres, results = oracleres[0], results[0]
+    for i in range(parallel):
+        print_utils.infoc("\nComparing results with oracle ...")
+        max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
+        print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print((np.frexp(oracleres[i])[0]*(1<<53)).astype(np.int64), (np.frexp(results[i])[0]*(1<<53)).astype(np.int64))
+        if max_atol <= 0.001:
+            print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
+        else:
+            print_utils.err(
+                f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
+            )
 
 
 if __name__ == "__main__":
