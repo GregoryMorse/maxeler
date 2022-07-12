@@ -122,23 +122,24 @@ def num_to_bits(num, chunks):
     else: res, shp = np.repeat(num[np.newaxis,:], chunks, axis=0), (chunks, 1)
     return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
 def bits_to_num(num):
-    return np.sum(num.astype(np.int64) << np.arange(0, 7 * num.shape[1], 7), axis=1)
+    return np.sum(num.astype(np.int64) << np.arange(0, 7 * num.shape[1], 7), axis=1) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
     adjustmant = mantissas / (1 << (maxexp - exponents))
     return maxexp, np.rint(np.ldexp(adjustmant, 62)).astype(np.int64) #(64, -62) bit fixed point integers
 def renormalize_doubles(num, exp):
-    return num.astype(np.double) / (2 ** exp.astype(np.double))
+    return num.astype(np.float64) / (2 ** exp.astype(np.float64))
 def cond_runfunc(ft, ff, x, cond):
     return ft(x) if cond else ff(x)
 def extract_int8(var):
     return g.concat_inner_splits([x.reinterpret(g.int8).split_vectors([1]*4)[0] for x in var])
 
 def vecmat(tvec, tmat):
-    chunks,dim = tvec.shape
+    chunks, dim = tvec.shape
     # Instantiate matmul component.
-    mm = nn.MatMul(time=0, buffer_output=False, planes=[0])
+    mm = [nn.MatMul(time=0, buffer_output=False, planes=[0]),
+          nn.MatMul(time=0, buffer_output=False, planes=[2])]
     
     # Build matmul component.
     result_mt = g.split_vectors(tmat, [dim]*chunks)
@@ -146,7 +147,7 @@ def vecmat(tvec, tmat):
     maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
     maskqrt.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
     maskqrt = g.concat_inner_splits([maskqrt] * chunks)
-    maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(0-3)")
+    maskqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(8-11)")
     maskqrte.data = np.array([[(1<<7)-1]*dim], dtype=np.int32)
     maskqrte = g.concat_inner_splits([maskqrte] * chunks)
     maskqrttop = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(W), S4(8-11)")
@@ -158,17 +159,17 @@ def vecmat(tvec, tmat):
     shiftqrt.data = np.array([[7]*dim], dtype=np.int32)
     shiftqrt = g.concat_inner_splits([shiftqrt] * chunks)
     g.add_mem_constraints([maskqrt, maskqrttop, shiftqrt], [maskqrt, maskqrttop, shiftqrt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(4-7)")
+    shiftqrte = g.constant_tensor(shape=(1, dim), dtype=g.int32, layout="-1, H1(E), S4(8-11)")
     shiftqrte.data = np.array([[7]*dim], dtype=np.int32)
     shiftqrte = g.concat_inner_splits([shiftqrte] * chunks)
     g.add_mem_constraints([shiftqrte], [maskqrte], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     zeros = g.zeros(shape=(1,dim), dtype=g.int32, layout="-1, H1(W), S4(4-7)")
     
-    split_result = [] #[g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)) for i in range(chunks)]
+    split_result = []
     allshifts = [zeros]
     for i in range(chunks):
-        with g.ResourceScope(name="matmul" + str(i), is_buffered=True, time=(mm.end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
-            result_mt[i] = mm.build(tvec, result_mt[i]) #.write(name="mm"+str(i), layout="-1, H1(W), S4(12-15)") #.reshape(dim, chunks, chunks)
+        with g.ResourceScope(name="matmul" + str(i), is_buffered=True, time=(mm[0].end_time+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
+            result_mt[i] = mm[0].build(tvec, result_mt[i])
             split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
             #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
             if i == 0:
@@ -187,7 +188,7 @@ def vecmat(tvec, tmat):
             allshifts.append(nextshifts if i == chunks-1 else nextmasks)
             g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             
-    with g.ResourceScope(name="finsma" + str(i), is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
+    with g.ResourceScope(name="finsma", is_buffered=True, predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
         cursplit = split_result[-1].read(streams=g.SG4_E[5])
         shifts = g.concat_inner_splits([zeros] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4_E[3])
         masks = g.bitwise_and(cursplit, maskqrttop.read(streams=g.SG4_E[2]), alus=[4], output_streams=g.SG4_E[2]) #.write(name="finmaskres" + str(i))
@@ -206,8 +207,7 @@ def vecmat(tvec, tmat):
         shifts = g.right_shift(cursplit, shiftqrt.read(streams=g.SG4_E[1]), alus=[0], output_streams=g.SG4_E[1]) #.write(name="fixshift", layout="-1, H1(W), S4(0-3)", program_output=True)
         split_result.append(g.add(shifts, masks, alus=[1], output_streams=g.SG4_W[1], time=0).write(name="fixsplit", layout="-1, H1(W), S4(0-3)"))
         g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    split_result.append(g.concat_inner_splits(g.split_inner_splits(split_result[-1])))
-    return split_result[-1]
+    return extract_int8(g.split_inner_splits(split_result[-1]))
     
 def main():
     import timeit
@@ -279,14 +279,9 @@ def main():
     #originpvec, originpmat = np.ones(dim, dtype=np.float64), np.ones((dim, dim), dtype=np.float64)
     #originpvec = np.random.randint(-(1<<63), (1<<63)-1, size=(dim), dtype=np.int64)
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
-    exp_inpvec, normals = normalize_doubles(originpvec, 0)
-    inpvec = num_to_bits(normals, chunks)
-    exp_inpmat, normals = normalize_doubles(originpmat, 1)
-    inpmat = num_to_bits(normals, chunks)
-    print(inpmat.shape)
     oracleres = [None]
     def oracle():
-        oracleres[0] = np.matmul(originpvec, originpmat.transpose())
+        oracleres[0] = np.matmul(originpvec.astype(np.longdouble), originpmat.transpose().astype(np.longdouble)).astype(np.float64)
     toracle = timeit.timeit(oracle, number=100)/100
 
     print_utils.infoc("\nRunning on HW ...")
@@ -294,22 +289,24 @@ def main():
     # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
     runner = g.create_tsp_runner(iop_file)
     #inputs = {t1.name: inp1, t2.name: inp2}
-    inputs = {tvec.name: inpvec, tmat.name: inpmat.reshape(tmat.shape)}
     results = [None]
     def actual():
-        results[0] = runner(**inputs)
+        exp_inpvec, normals = normalize_doubles(originpvec, 0)
+        inpvec = num_to_bits(normals, chunks)
+        exp_inpmat, normals = normalize_doubles(originpmat, 1)
+        inpmat = num_to_bits(normals, chunks)
+        inputs = {tvec.name: inpvec, tmat.name: inpmat.reshape(tmat.shape)}
+        res = runner(**inputs)
+        res = bits_to_num(res[result_mt.name].reshape(chunks, dim).transpose())
+        #the results come back truncating the lower 7*(chunks-1) bits
+        results[0] = renormalize_doubles(res, 62 - 64+7*(chunks-2) - exp_inpvec - exp_inpmat)
     tactual = timeit.timeit(actual, number=100)/100
-    print(toracle, tactual)
+    print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
-    print(results)
     print_utils.infoc("\nComparing results with oracle ...")
-    actual = bits_to_num(results[result_mt.name].reshape(chunks, dim).transpose())
-    #the results come back truncating the lower 7*(chunks-1) bits
-    actual = renormalize_doubles(actual, 62 - 64+7*(chunks-2) - exp_inpvec - exp_inpmat)
-    print(oracleres.shape, oracleres.dtype, actual.shape, actual.dtype)
-    max_atol = max(abs(oracleres.reshape(-1) - actual.reshape(-1)))
-    print(oracleres, actual)
-    print((np.frexp(oracleres)[0]*(1<<53)).astype(np.int64), (np.frexp(actual)[0]*(1<<53)).astype(np.int64))
+    max_atol = max(abs(oracleres.reshape(-1) - results.reshape(-1)))
+    print(oracleres, results) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+    print((np.frexp(oracleres)[0]*(1<<53)).astype(np.int64), (np.frexp(results)[0]*(1<<53)).astype(np.int64))
     if max_atol <= 0.001:
         print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
     else:
