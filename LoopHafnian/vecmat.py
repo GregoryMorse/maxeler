@@ -156,26 +156,26 @@ def vecmat(tvec, tmat, chunks, dim):
     final_result = []
     split_result = []
     allshifts = [zeros[0], zeros[1]]
+    mxm_rqs = [g.tensor.create_mxm_request(planes=[x]) for x in range(3)]
     for drctn, plane in ((WEST, 0), (WEST, 1)):#(EAST, 0), (EAST, 1)
         if plane == 0:
             split_result = []
             allshifts = [zeros[drctn*2], zeros[drctn*2+1]]
-        mxm_rq = g.tensor.create_mxm_request(planes=[drctn*2+plane])
         #mm = nn.MatMul(time=0, buffer_output=False, planes=[plane + (0 if drctn == WEST else 2)])
         result_mt = g.split_vectors(tmat[drctn*2+plane], [dim]*chunks)
         SG4_FROM = g.SG4_E if drctn == WEST else g.SG4_W
         SG4_TO = g.SG4_W if drctn == WEST else g.SG4_E
-        rev_last_alu = [4] if drctn == WEST else [7] 
+        rev_last_alu = [4] if drctn == WEST else [7]
         rev_alu = [6] if drctn == WEST else [5]
         first_alu = [0] if drctn == WEST else [3]
         second_alu = [1] if drctn == WEST else [2]
-        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"        
+        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
         for i in range(chunks):
-            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=plane*15+(20+9+1)*i+(1 if i>0 else 0)) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
+            with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=plane*14+(20+9+1)*i) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4]
                 #result_mt[i] = mm.build(tvec[drctn], result_mt[i])
-                iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0)
+                iw = g.install_weights(result_mt[i], planes=mxm_rqs[drctn*2+plane],time=0)
                 #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
-                result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rq, time=0)
+                result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rqs[drctn*2+plane], time=0)
                 split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*chunks)))
                 #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
                 if i == 0:
@@ -291,8 +291,8 @@ def main():
     """
     originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
     originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
-    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    originpvec[1] = originpvec[0] #np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat[1] = originpmat[0] #np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
