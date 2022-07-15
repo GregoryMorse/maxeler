@@ -12,6 +12,8 @@ import maxpower.utils.CollectionUtils;
 
 import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.platform.max5.manager.BuildConfig;
+import com.maxeler.platform.max5.manager.ImplementationStrategy;
+import com.maxeler.platform.max5.manager.SynthesisStrategy;
 
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
@@ -1457,6 +1459,154 @@ public class Utility {
             }             
         }
         return fanouts;
+    }
+    public static HashMap<String, ImplementationStrategy> getImplementationStrategies()
+    { 
+        //route options: RouteOpt.ALTERNATE_CLB_ROUTING, RouteOpt.EXPLORE, RouteOpt.createCustom(RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), RouteOpt.createCustom(RouteOpt.EXPLORE, true, false, "")
+        
+        //You can also run phys_opt_design with the -sll_reg_hold_fix option after route_design to attempt fixing hold violations on these direct Laguna TX to RX paths with potentially long runtime.
+        //PhysOpt.EXPLORE_WITH_HOLD_FIX but hold_fix and sll_reg_hold_fix are different options
+
+        //vivado -mode tcl
+        //phys_opt_design [-fanout_opt] [-placement_opt] [-routing_opt] [-slr_crossing_opt] [-rewire] [-insert_negative_edge_ffs] [-critical_cell_opt] [-dsp_register_opt] [-bram_register_opt] [-uram_register_opt] [-bram_enable_opt] [-shift_register_opt] [-hold_fix] [-aggressive_hold_fix] [-retime] [-force_replication_on_nets <args>] [-directive <arg>] [-critical_pin_opt] [-clock_opt] [-path_groups <args>] [-tns_cleanup] [-sll_reg_hold_fix] [-quiet] [-verbose]
+        //boolean fanoutOpt, boolean placementOpt, boolean routingOpt, boolean slrCrossingOpt, boolean rewire, boolean criticalCellOpt, boolean dspRegisterOpt, boolean bramRegisterOpt, boolean uramRegisterOpt, boolean bramEnableOpt, boolean shiftRegisterOpt, boolean holdFix, boolean retime, java.lang.String forceReplicationOnNets, boolean criticalPinOpt, boolean clockOpt, java.lang.String pathGroups, java.lang.String additionalOptions
+        //https://docs.xilinx.com/r/en-US/ug904-vivado-implementation/Available-Physical-Optimizations
+        ImplementationStrategy.PhysOpt postPlaceOpt = ImplementationStrategy.PhysOpt.createCustom(true, true, false, true, true, true, true, true, true, true, true, true, true, "", true, false, "", "-insert_negative_edge_ffs -aggressive_hold_fix -sll_reg_hold_fix");
+        ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -tns_cleanup -sll_reg_hold_fix");
+        //"-directive ExploreWithAggressiveHoldFix"
+        ImplementationStrategy.PhysOpt PhysOptDISABLED = ImplementationStrategy.PhysOpt.DISABLED;
+        ImplementationStrategy.PhysOpt PhysOptDEFAULT = postPlaceOpt; //default with retiming
+        ImplementationStrategy.PhysOpt PhysOptPostDEFAULT = postRouteOpt;
+        ImplementationStrategy.PhysOpt PhysOptEXPLORE = postPlaceOpt; //Run different algorithms in multiple passes of optimization, including replication for very high fanout nets, SLR crossing optimization, and a final phase called Critical Path Optimization where a subset of physical optimizations are run on the top critical paths of all endpoint clocks, regardless of slack.
+        ImplementationStrategy.PhysOpt PhysOptPostEXPLORE = postRouteOpt;
+        ImplementationStrategy.PhysOpt PhysOptAGGRESSIVE_EXPLORE = postPlaceOpt; //Similar to Explore but with different optimization algorithms and more aggressive goals. Includes a SLR crossing optimization phase that is allowed to degrade WNS which should be regained in subsequent optimization algorithms. Also includes a hold violation fixing optimization.
+        ImplementationStrategy.PhysOpt PhysOptPostAGGRESSIVE_EXPLORE = postRouteOpt;
+        ImplementationStrategy.PhysOpt PhysOptAGGRESSIVE_FANOUT_OPT = postPlaceOpt; //Uses different algorithms for fanout-related optimizations with more aggressive goals.
+        ImplementationStrategy.PhysOpt PhysOptALTERNATE_REPLICATION = postPlaceOpt; //Use different algorithms for performing critical cell replication.
+        ImplementationStrategy.PhysOpt PhysOptALTERNATE_FLOW_WITH_RETIMING = postPlaceOpt; //Perform more aggressive replication and DSP and block RAM optimization, and enable register retiming.
+        HashMap<String, ImplementationStrategy> strategies = new HashMap<>();
+        strategies.put("VIVADO_DEFAULT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), PhysOptPostEXPLORE));
+        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_REPLICATION, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_FANOUT_OPT, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EARLY_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EARLY_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostDEFAULT));
+        strategies.put("PERFORMANCE_NET_DELAY_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_NET_DELAY_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_RETIMING", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_FLOW_WITH_RETIMING, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXTRA_TIMING_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_TIMING_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_REFINE_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostEXPLORE));
+        strategies.put("PERFORMANCE_SPREAD_SLLS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_BALANCE_SLLS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_MEDIUM", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE_SEQUENTIAL", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE_WITH_REMAP", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_WITH_REMAP, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("POWER_DEFAULT_OPTS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("POWER_EXPLORE_AREA", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("FLOW_RUN_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("FLOW_RUN_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.DEFAULT, true, false, ""), PhysOptPostEXPLORE));
+        strategies.put("FLOW_RUNTIME_OPTIMIZED", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.RUNTIME_OPTIMIZED, PhysOptDISABLED));
+        strategies.put("FLOW_QUICK", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.QUICK, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.QUICK, PhysOptDISABLED));
+        strategies.put("MAXELER1", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.NO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER2", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.NO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER3", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER4", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("PERFORMANCE_BALANCE_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_HIGH_UTIL_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        
+        return strategies;
+    }
+    public static ImplementationStrategy[] chooseImplementationStrategies(boolean customPhysOpt, boolean isProbe)
+    {
+        
+        if (!customPhysOpt) {
+            //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
+            ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+            ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+        
+            ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
+                 //for congestion strategies, explore same placement as high, aggressive physical strategy
+                ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
+                ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
+                PERFORMANCE_BALANCE_SLRS, PERFORMANCE_HIGH_UTIL_SLRS,
+                ImplementationStrategy.PERFORMANCE_SPREAD_SLLS, ImplementationStrategy.PERFORMANCE_BALANCE_SLLS,
+                ImplementationStrategy.PERFORMANCE_EXPLORE,
+                ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT, //same placement strategy, different physical strategy
+                ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
+                ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
+                ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
+                ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
+                ImplementationStrategy.VIVADO_DEFAULT,
+                //ImplementationStrategy.FLOW_RUN_PHYS_OPT //default placement strategy
+                ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED, ImplementationStrategy.FLOW_QUICK,
+                //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP, //default placement strategy
+                //ImplementationStrategy.POWER_DEFAULT_OPTS, ImplementationStrategy.POWER_EXPLORE_AREA, //default placement strategy
+            };
+            
+            ImplementationStrategy[] postOptStrategies = new ImplementationStrategy[] {
+                ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT,
+                ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,
+                ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
+                ImplementationStrategy.MAXELER3, ImplementationStrategy.MAXELER4
+            };
+            return isProbe ? probeStrategies : postOptStrategies;
+        } else {
+        
+            HashMap<String, ImplementationStrategy> strategies = getImplementationStrategies();
+            
+            ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
+                 //for congestion strategies, explore same placement as high, aggressive physical strategy
+                strategies.get("CONGESTION_SPREAD_LOGIC_HIGH"), strategies.get("CONGESTION_SPREAD_LOGIC_MEDIUM"), strategies.get("CONGESTION_SPREAD_LOGIC_LOW"), strategies.get("CONGESTION_SPREAD_LOGIC_EXPLORE"),
+                strategies.get("CONGESTION_SSI_SPREAD_LOGIC_HIGH"), strategies.get("CONGESTION_SSI_SPREAD_LOGIC_LOW"), strategies.get("CONGESTION_SSI_SPREAD_LOGIC_EXPLORE"),
+                strategies.get("PERFORMANCE_BALANCE_SLRS"), strategies.get("PERFORMANCE_HIGH_UTIL_SLRS"),
+                strategies.get("PERFORMANCE_SPREAD_SLLS"), strategies.get("PERFORMANCE_BALANCE_SLLS"),
+                strategies.get("PERFORMANCE_EXPLORE"),
+                strategies.get("PERFORMANCE_WL_BLOCK_PLACEMENT"), strategies.get("PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT"), //same placement strategy, different physical strategy
+                strategies.get("PERFORMANCE_EARLY_BLOCK_PLACEMENT"),
+                strategies.get("PERFORMANCE_NET_DELAY_HIGH"), strategies.get("PERFORMANCE_NET_DELAY_LOW"),
+                strategies.get("PERFORMANCE_RETIMING"), strategies.get("PERFORMANCE_EXTRA_TIMING_OPT"),
+                strategies.get("PERFORMANCE_REFINE_PLACEMENT"),
+                strategies.get("VIVADO_DEFAULT"),
+                //strategies.get("FLOW_RUN_PHYS_OPT") //default placement strategy
+                strategies.get("FLOW_RUNTIME_OPTIMIZED"), strategies.get("FLOW_QUICK"),
+                //strategies.get("AREA_EXPLORE"), strategies.get("AREA_EXPLORE_SEQUENTIAL"), strategies.get("AREA_EXPLORE_WITH_REMAP"), //default placement strategy
+                //strategies.get("POWER_DEFAULT_OPTS"), strategies.get("POWER_EXPLORE_AREA"), //default placement strategy
+            };
+            
+            ImplementationStrategy[] postOptStrategies = new ImplementationStrategy[] {
+                strategies.get("PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT"),
+                strategies.get("PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT"),
+                strategies.get("MAXELER1"), strategies.get("MAXELER2"),
+                strategies.get("MAXELER3"), strategies.get("MAXELER4")
+            };
+            return isProbe ? probeStrategies : postOptStrategies; 
+        }                
+        //PERFORMANCE_REFINE_PLACEMENT -> PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT
+        //PERFORMANCE_EXPLORE -> PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT
+        //FLOW_RUN_PHYS_OPT -> FLOW_RUN_POST_ROUTE_PHYS_OPT
+        //PERFORMANCE_NET_DELAY_HIGH -> MAXELER1, MAXELER3
+        //PERFORMANCE_RETIMING -> MAXELER2
+        //CONGESTION_SSI_SPREAD_LOGIC_HIGH -> MAXELER4
+    } 
+    public static SynthesisStrategy getHighPerfSynthStrategy()
+    {
+        //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
+        //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
+        //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
+        int bufg = 4+16+4+1; //base on number of streams, rather than default of 12
+        int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
+        //rather than FsmExtraction.ONE_HOT, AUTO may be better
+        //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        return customPerfOptHigh;
     }
     public static void printKernelConfigurationOptimizationDefaults(ManagerKernelBase owner)
     {
