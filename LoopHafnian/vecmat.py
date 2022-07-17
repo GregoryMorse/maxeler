@@ -498,13 +498,17 @@ def vecmat(tvec, tmat, chunks, dim):
     maskqrt, maskqrttop, shiftqrt, zeros = [], [], [], []
     for drctn in (WEST, EAST):
         maskqrt.append(g.concat_inner_splits(
-            [g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11))] * chunks))
+            [g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn))] * chunks))
         maskqrttop.append(g.concat_inner_splits(
-            [g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11))] * (chunks-1)+
-            [g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11))]))
+            [g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 32, 35, drctn))] * (chunks-1)+
+            [g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 32, 35, drctn))]))
         shiftqrt.append(g.concat_inner_splits(
-            [g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11))] * chunks))
-        g.add_mem_constraints([maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], [maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            [g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 12, 15, drctn))] * chunks))
+        shiftqrt.append(g.concat_inner_splits(
+            [g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn))] * chunks))
+        g.add_mem_constraints([shiftqrt[-1]], [maskqrt[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(maskqrttop, tmat + maskqrttop, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #g.add_mem_constraints([maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], [maskqrt[-1], maskqrttop[-1], shiftqrt[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 0)))
         zeros.append(g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 1)))
         g.add_mem_constraints(zeros, zeros, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -517,7 +521,8 @@ def vecmat(tvec, tmat, chunks, dim):
     #13 for MXM basic multiplication, 34 for SXM accumulation, 19 to stream across (6 leaving SXM, 10 stream crossings, 3 entering ALU)
     #4+9+3+13+34+19 - 6 = 76 #-6 because the S4(8-11)
     #mxm_rqs = [g.tensor.create_mxm_request(planes=[x], num_planes=1) for x in range(4)]
-    for drctn, plane in ((WEST, 0), (WEST, 1)):#(EAST, 0), (EAST, 1)
+    #g.latch(maskqrt[1-drctn].read(streams=SG4_TO[3]), alu=3)
+    for drctn, plane in ((WEST, 0), (WEST, 1)): # (EAST, 0), (EAST, 1)):
         if plane == 0:
             split_result = []
             allshifts = [zeros[drctn*2], zeros[drctn*2+1]]
@@ -526,7 +531,7 @@ def vecmat(tvec, tmat, chunks, dim):
         SG4_FROM = g.SG4_E if drctn == WEST else g.SG4_W
         SG4_TO = g.SG4_W if drctn == WEST else g.SG4_E
         rev_last_alu = [4] if drctn == WEST else [7]
-        rev_alu = [6] if drctn == WEST else [5]
+        rev_alu = [6] if drctn == WEST else [9]
         first_alu = [0] if drctn == WEST else [3]
         second_alu = [1] if drctn == WEST else [2]
         dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
@@ -535,7 +540,7 @@ def vecmat(tvec, tmat, chunks, dim):
             with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
                 #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
                 #g.clear_mxm(planes=[plane], time=0)
-                mxm_rq = g.tensor.create_mxm_request(planes=[plane], num_planes=1)
+                mxm_rq = g.tensor.create_mxm_request(planes=[drctn*2+plane], num_planes=1)
                 iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0) #.read(streams=g.SG16_W[plane] if drctn == WEST else g.SG16_E[plane]), time=0 if plane==0 else -18)
                 #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
                 result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)
@@ -547,12 +552,12 @@ def vecmat(tvec, tmat, chunks, dim):
                     split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3, plane))
                 else:
                     masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn*2+plane]]).read(streams=SG4_FROM[1])
-                    shifts = g.right_shift(split_result[-2].read(streams=SG4_FROM[2]), shiftqrt[drctn].read(streams=SG4_FROM[0]), alus=first_alu, output_streams=SG4_FROM[2])
-                    split_result[-1] = g.add(g.add(shifts, masks, alus=second_alu, output_streams=SG4_FROM[2]), split_result[-1], alus=rev_alu, output_streams=SG4_TO[3])
+                    shifts = g.right_shift(split_result[-2].read(streams=SG4_FROM[2 if drctn == WEST else 6]), shiftqrt[2*drctn].read(streams=SG4_FROM[0]), alus=[0] if drctn == WEST else [15], output_streams=SG4_FROM[2 if drctn == WEST else 6])
+                    split_result[-1] = g.add(g.add(shifts, masks, alus=[1] if drctn == WEST else [14], output_streams=SG4_FROM[2 if drctn == WEST else 6]), split_result[-1], alus=rev_alu, output_streams=SG4_TO[2 if drctn == WEST else 6])
                     if i != chunks - 1:
-                        nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7, plane))
+                        nextmasks = g.bitwise_and(maskqrt[1-drctn].read(streams=SG4_TO[3 if drctn==WEST else 7]), split_result[-1], alus=[4] if drctn==WEST else [11], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7, plane))
                     else:
-                        nextshifts = g.right_shift(split_result[-1], shiftqrt[1-drctn].read(streams=SG4_TO[4]), alus=rev_last_alu, output_streams=SG4_TO[4]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
+                        nextshifts = g.right_shift(shiftqrt[2*(1-drctn)+1].read(streams=SG4_TO[3 if drctn==WEST else 7]), split_result[-1], alus=[4] if drctn==WEST else [11], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
                     split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3, plane))
                     g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 allshifts.append(nextshifts if i == chunks-1 else nextmasks)
@@ -561,10 +566,10 @@ def vecmat(tvec, tmat, chunks, dim):
         #with complex multiplication at dimension 80 and 64-bit, we surely need 2 of these rounds to converge
         with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-18): #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
             cursplit = split_result[-1].read(streams=SG4_FROM[5])
-            shifts = g.concat_inner_splits([zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3])
-            masks = g.bitwise_and(cursplit, maskqrttop[drctn].read(streams=SG4_FROM[2], time=0), alus=rev_last_alu, output_streams=SG4_FROM[2])
-            split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=SG4_TO[2]))
-            nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=first_alu, output_streams=SG4_TO[3]).write(name="fixmask" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
+            shifts = g.concat_inner_splits([zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3 if drctn==WEST else 7])
+            masks = g.bitwise_and(cursplit, maskqrttop[drctn].read(streams=SG4_FROM[4], time=0), alus=rev_last_alu, output_streams=SG4_FROM[4])
+            split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=SG4_TO[2 if drctn == WEST else 6]))
+            nextmasks = g.bitwise_and(split_result[-1], maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=[0] if drctn == WEST else [15], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="fixmask" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
             split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane))
             g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             allshifts.append(nextmasks)
@@ -572,10 +577,10 @@ def vecmat(tvec, tmat, chunks, dim):
             
         #chunks-1 correct 7-bit int8s
         #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
-        with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY+9): #predecessors=[pred], time=None) as pred:
+        with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY+9+10): #predecessors=[pred], time=None) as pred:
             cursplit = split_result[-1].read(streams=SG4_FROM[3])
             masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [zeros[drctn*2+plane]]).read(streams=SG4_FROM[0])
-            shifts = g.right_shift(cursplit, shiftqrt[drctn].read(streams=SG4_FROM[1], time=0), alus=first_alu, output_streams=SG4_FROM[1])
+            shifts = g.right_shift(cursplit, shiftqrt[2*drctn].read(streams=SG4_FROM[1], time=0), alus=first_alu, output_streams=SG4_FROM[1])
             #split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1]).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane)))
             final_result.append(extract_int8(g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1]))).write(name="extract" + dirstr, layout=get_slice1(drctn, 43, plane)))
     g.add_mem_constraints(tvec + final_result, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -701,7 +706,7 @@ def main():
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-        #print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
         #print((np.frexp(oracleres[i])[0]*(1<<53)).astype(np.int64), (np.frexp(results[i])[0]*(1<<53)).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
