@@ -465,19 +465,24 @@ def karatsuba_mul16(tensor1, tensor2, dim):
     return res
     
 def num_to_bits(num, chunks):
-    if len(num.shape) == 2:
-        res, shp = np.repeat(num[np.newaxis,:,:], chunks, axis=0), (chunks, 1, 1)
-    else: res, shp = np.repeat(num[np.newaxis,:], chunks, axis=0), (chunks, 1)
+    res, shp = np.repeat(num[np.newaxis,...], chunks, axis=0), [chunks] + [1] * len(num.shape)
     return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
 def bits_to_num(num):
     return np.sum(num.astype(np.int64) << np.arange(0, 7 * num.shape[1], 7), axis=1) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
-    adjustmant = mantissas / (1 << (maxexp - exponents))
+    adjustmant = mantissas / (1 << ((maxexp[:,np.newaxis] if dimension==1 else maxexp) - exponents))
     return maxexp, np.rint(np.ldexp(adjustmant, 62)).astype(np.int64) #(64, -62) bit fixed point integers
 def renormalize_doubles(num, exp):
     return num.astype(np.float64) / (2 ** exp.astype(np.float64))
+def vector_complex_to_real(cplx):
+    dim = len(cplx)//2
+    return cplx[:dim] + cplx[dim:]*1j
+def vector_real_to_complex(vec):
+    return np.hstack((vec.real, vec.imag))
+def matrix_real_to_complex(mtx):
+    return np.vstack((np.hstack((mtx.real, -mtx.imag)), np.hstack((mtx.imag, mtx.real))))
 def cond_runfunc(ft, ff, x, cond):
     return ft(x) if cond else ff(x)
 def extract_int8(var):
@@ -553,6 +558,7 @@ def vecmat(tvec, tmat, chunks, dim):
                 allshifts.append(nextshifts if i == chunks-1 else nextmasks)
                 g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 t += (27 if i==0 else 30)
+        #with complex multiplication at dimension 80 and 64-bit, we surely need 2 of these rounds to converge
         with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-18): #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
             cursplit = split_result[-1].read(streams=SG4_FROM[5])
             shifts = g.concat_inner_splits([zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3])
@@ -581,7 +587,7 @@ def main():
     bitsize = 64 #for fixed point representation
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
-    max_dim_bits = dim.bit_length()
+    max_dim_bits = (dim*2).bit_length()
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
     signedhighbit = bitsize * 2 - 1 + max_dim_bits
     signedlowbit = signedhighbit - bitsize
@@ -601,14 +607,14 @@ def main():
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
-    tvec1 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW0P", layout=get_slice1(WEST, 43, 0))
-    tmat1 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec2 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AW1P", layout=get_slice1(WEST, 43, 1))
-    tmat2 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(1)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    #tvec3 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE0P", layout=get_slice1(EAST, 43, 0))
-    #tmat3 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
-    #tvec4 = g.input_tensor(shape=(chunks, dim), dtype=g.int8, name="AE1P", layout=get_slice1(EAST, 43, 1))
-    #tmat4 = g.input_tensor(shape=(chunks*dim, dim), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    tvec1 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW0P", layout=get_slice1(WEST, 43, 0))
+    tmat1 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tvec2 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW1P", layout=get_slice1(WEST, 43, 1))
+    tmat2 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(1)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    #tvec3 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE0P", layout=get_slice1(EAST, 43, 0))
+    #tmat3 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    #tvec4 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE1P", layout=get_slice1(EAST, 43, 1))
+    #tmat4 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
     g.add_mem_constraints([tvec1], [tvec2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints([tmat1], [tmat2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -621,7 +627,7 @@ def main():
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
-    result_mt = vecmat(tvec, tmat, chunks, dim)
+    result_mt = vecmat(tvec, tmat, chunks, dim*2)
     g.resolve_storage_requests()
 
     print_utils.infoc("\nCompiling model ...")
@@ -637,19 +643,20 @@ def main():
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
+    originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
+    originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
     """
-    originpvec = np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j)
-    originpmat = unitary_group.rvs(dim)
-    realresult = np.hstack((originpvec.real, originpvec.imag)) @ np.hstack((originpmat.real, -originpmat.imag)).transpose()
-    imagresult = np.hstack((originpvec.real, originpvec.imag)) @ np.hstack((originpmat.imag, originpmat.real)).transpose()
-    singlematmult = np.hstack((originpvec.real, originpvec.imag)) @ np.vstack((np.hstack((originpmat.real, -originpmat.imag)), np.hstack((originpmat.imag, originpmat.real)))).transpose()
-    result = singlematmult[:dim] + singlematmult[dim:]*1j
-    resultalt = realresult + imagresult*1j
-    actualresult = originpvec @ originpmat.transpose()
-    print("Tolerance", max(abs(actualresult.reshape(-1) - result.reshape(-1))), max(abs(actualresult.reshape(-1) - resultalt.reshape(-1))))
+    for i in range(parallel):
+        realresult = np.hstack((originpvec[i].real, originpvec[i].imag)) @ np.hstack((originpmat[i].real, -originpmat[i].imag)).transpose()
+        imagresult = np.hstack((originpvec[i].real, originpvec[i].imag)) @ np.hstack((originpmat[i].imag, originpmat[i].real)).transpose()
+        singlematmult = np.hstack((originpvec[i].real, originpvec[i].imag)) @ np.vstack((np.hstack((originpmat[i].real, -originpmat[i].imag)), np.hstack((originpmat[i].imag, originpmat[i].real)))).transpose()
+        result = singlematmult[:dim] + singlematmult[dim:]*1j
+        resultalt = realresult + imagresult*1j
+        actualresult = originpvec[i] @ originpmat[i].transpose()
+        #print("Tolerance", max(abs(actualresult.reshape(-1) - result.reshape(-1))), max(abs(actualresult.reshape(-1) - resultalt.reshape(-1))))
     """
-    originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
-    originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
+    #originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
+    #originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
     #originpvec[0] = np.full((dim,), 9.5)
     #originpmat[0] = np.full((dim, dim), 9.5)
     #originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
@@ -663,10 +670,10 @@ def main():
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
     oracleres = [None]
     def oracle():
-        oracleres[0] = [np.matmul(originpvec[i].astype(np.longdouble), originpmat[i].transpose().astype(np.longdouble)).astype(np.float64) for i in range(parallel)]
-    toracle = timeit.timeit(oracle, number=100)/100
+        oracleres[0] = [(originpvec[i].astype(np.clongdouble) @ originpmat[i].transpose().astype(np.clongdouble)).astype(np.cdouble) for i in range(parallel)]
+    toracle = timeit.timeit(oracle, number=10)/10
     print_utils.infoc("\nRunning on HW ...")
-    np.set_printoptions(formatter={'int':hex})
+    np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
     # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
     runner = g.create_tsp_runner(iop_file)
     #inputs = {t1.name: inp1, t2.name: inp2}
@@ -675,28 +682,27 @@ def main():
         inputs = {}
         exp_inpvecs, exp_inpmats = [], []
         for i in range(parallel):
-            exp_inpvec, normals = normalize_doubles(originpvec[i], 0)
+            exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0)
             inpvec = num_to_bits(normals, chunks)
-            exp_inpmat, normals = normalize_doubles(originpmat[i], 1)
+            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), 1)
             inpmat = num_to_bits(normals, chunks)
             inputs[tvec[i].name] = inpvec
-            inputs[tmat[i].name] = inpmat.reshape((chunks*dim, dim))
+            inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
             exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
         res = runner(**inputs)
-        print(inputs, res)
         results[0] = []
         for i in range(parallel):
-            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim).transpose())
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose())
             #the results come back truncating the lower 7*(chunks-1) bits
-            results[0].append(renormalize_doubles(result, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i]))
-    tactual = timeit.timeit(actual, number=10)/10
+            results[0].append(vector_complex_to_real(renormalize_doubles(result, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i])))
+    tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-        print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
-        print((np.frexp(oracleres[i])[0]*(1<<53)).astype(np.int64), (np.frexp(results[i])[0]*(1<<53)).astype(np.int64))
+        #print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        #print((np.frexp(oracleres[i])[0]*(1<<53)).astype(np.int64), (np.frexp(results[i])[0]*(1<<53)).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
         else:
