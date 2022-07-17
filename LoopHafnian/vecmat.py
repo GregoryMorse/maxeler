@@ -522,7 +522,7 @@ def vecmat(tvec, tmat, chunks, dim):
     #4+9+3+13+34+19 - 6 = 76 #-6 because the S4(8-11)
     #mxm_rqs = [g.tensor.create_mxm_request(planes=[x], num_planes=1) for x in range(4)]
     #g.latch(maskqrt[1-drctn].read(streams=SG4_TO[3]), alu=3)
-    for drctn, plane in ((WEST, 0), (WEST, 1)): # (EAST, 0), (EAST, 1)):
+    for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
         if plane == 0:
             split_result = []
             allshifts = [zeros[drctn*2], zeros[drctn*2+1]]
@@ -557,7 +557,7 @@ def vecmat(tvec, tmat, chunks, dim):
                     if i != chunks - 1:
                         nextmasks = g.bitwise_and(maskqrt[1-drctn].read(streams=SG4_TO[3 if drctn==WEST else 7]), split_result[-1], alus=[4] if drctn==WEST else [11], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="mask" + dirstr + str(i), layout=get_slice4(drctn, 4, 7, plane))
                     else:
-                        nextshifts = g.right_shift(shiftqrt[2*(1-drctn)+1].read(streams=SG4_TO[3 if drctn==WEST else 7]), split_result[-1], alus=[4] if drctn==WEST else [11], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
+                        nextshifts = g.right_shift(split_result[-1], shiftqrt[2*(1-drctn)+1].read(streams=SG4_TO[3 if drctn==WEST else 7]), alus=[4] if drctn==WEST else [11], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="shiftpre" + dirstr, layout=get_slice4(drctn, 4, 7, plane))
                     split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), layout=get_slice4(drctn, 0, 3, plane))
                     g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 allshifts.append(nextshifts if i == chunks-1 else nextmasks)
@@ -616,17 +616,17 @@ def main():
     tmat1 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     tvec2 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW1P", layout=get_slice1(WEST, 43, 1))
     tmat2 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(1)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    #tvec3 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE0P", layout=get_slice1(EAST, 43, 0))
-    #tmat3 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
-    #tvec4 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE1P", layout=get_slice1(EAST, 43, 1))
-    #tmat4 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    tvec3 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE0P", layout=get_slice1(EAST, 43, 0))
+    tmat3 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
+    tvec4 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE1P", layout=get_slice1(EAST, 43, 1))
+    tmat4 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
     g.add_mem_constraints([tvec1], [tvec2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints([tmat1], [tmat2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
-    #tvec, tmat = [tvec1, tvec2, tvec3, tvec4], [tmat1, tmat2, tmat3, tmat4]
-    tvec, tmat = [tvec1, tvec2], [tmat1, tmat2]
+    tvec, tmat = [tvec1, tvec2, tvec3, tvec4], [tmat1, tmat2, tmat3, tmat4]
+    #tvec, tmat = [tvec1, tvec2], [tmat1, tmat2]
     parallel = len(tvec)
 
     print_utils.infoc(
