@@ -574,7 +574,8 @@ class LoopCorrection(g.Component):
                 split_result = []
                 allshifts = [self.zeros[drctn*2], self.zeros[drctn*2+1]]
             #mm = nn.MatMul(time=0, buffer_output=False, planes=mxm_rqs[drctn*2+plane].planes)
-            result_mt = g.split_vectors(tmat[drctn*2+plane], [self.dim]*self.chunks)
+            result_mt = [g.concat_inner_splits(x) for x in zip(*(g.split_vectors(x, [self.dim]*self.chunks) for x in g.split_inner_splits(tmat[drctn*2+plane])))]
+            #result_mt = g.split_vectors(tmat[drctn*2+plane], [self.dim]*self.chunks)
             SG4_FROM = g.SG4_E if drctn == WEST else g.SG4_W
             SG4_TO = g.SG4_W if drctn == WEST else g.SG4_E
             rev_last_alu = [4] if drctn == WEST else [7]
@@ -590,6 +591,7 @@ class LoopCorrection(g.Component):
                     mxm_rq = g.tensor.create_mxm_request(planes=[drctn*2+plane], num_planes=1)
                     iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0) #.read(streams=g.SG16_W[plane] if drctn == WEST else g.SG16_E[plane]), time=0 if plane==0 else -18)
                     #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
+                    print(tvec[drctn*2+plane].shape, tvec[drctn*2+plane].physical_shape, result_mt[i].shape, result_mt[i].physical_shape)
                     result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)
                     #result_mt[i] = tvec[drctn*2+plane].matmul(result_mt[i], planes=[plane], time=0)
                     split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*self.chunks)))
@@ -656,8 +658,8 @@ def colswap_vector(tvec, tmat, dim, inittime=0):
     
 def main():
     import timeit
-    dim = 80*2
-    bitsize = 64 #for fixed point representation
+    dim = 80 #dim X dim complex matrix
+    bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
     max_dim_bits = (dim*2).bit_length() #complex domain
@@ -684,29 +686,32 @@ def main():
     WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     tzeromat = []
     for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-        tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1(W), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
+        tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
+        #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
     tvec, tmat = [], []
     for group in (0, 1):
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
             tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
-            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
-            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
+            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
+            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
 
-    #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
-    #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i//2]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[i//2+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
+    tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
+    tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
     parallel = len(tvec)
 
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
-    #lc = LoopCorrection(chunks, dim*2*2)
-    lc = LoopCorrection(chunks, dim*2)
-    result_mt, t = lc.build(tvec, tmat)
-    #result_mt, t = lc.build(tveccombine, tmatcombine)
+    lc = LoopCorrection(chunks, dim*2*2)
+    #lc = LoopCorrection(chunks, dim*2)
+    #result_mt, t = lc.build(tvec, tmat)
+    result_mt, t = lc.build(tveccombine, tmatcombine)
+    #g.split_inner_split
+    print(result_mt[0].shape, result_mt[0].physical_shape)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
     #result_mt, _ = lc.build(result_mt, tmat, t)
     g.resolve_storage_requests()
