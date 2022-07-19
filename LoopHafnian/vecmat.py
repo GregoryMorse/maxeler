@@ -498,13 +498,13 @@ def karatsuba_mul16(tensor1, tensor2, dim):
 def num_to_bits(num, chunks):
     res, shp = np.repeat(num[np.newaxis,...], chunks, axis=0), [chunks] + [1] * len(num.shape)
     return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
-def bits_to_num(num):
-    return np.sum(num.astype(np.int64) << np.arange(0, 7 * num.shape[1], 7), axis=1) #the high byte can be 0/-1 or this overflows...
-def normalize_doubles(num, dimension):
+def bits_to_num(num, offset=3):
+    return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[1]-offset, 7), axis=1) #the high byte can be 0/-1 or this overflows...
+def normalize_doubles(num, dimension, fractionbits=63):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
     adjustmant = mantissas / (1 << ((maxexp[:,np.newaxis] if dimension==1 else maxexp) - exponents))
-    return maxexp, np.rint(np.ldexp(adjustmant, 62)).astype(np.int64) #(64, -62) bit fixed point integers
+    return maxexp, np.rint(np.ldexp(adjustmant, fractionbits)).astype(np.int64) #(64, -62) bit fixed point integers
 def renormalize_doubles(num, exp):
     return num.astype(np.float64) / (2 ** exp.astype(np.float64))
 def vector_complex_to_real(cplx):
@@ -521,6 +521,8 @@ def extract_int8(var):
 WEST, EAST = 0, 1
 def get_slice4(drctn, start, end, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S4(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
+def get_slice2(drctn, start, end, bank=0):
+    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S2(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
 def get_slice1(drctn, start, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S1(" + str(start) + "), B1(" + str(bank) + ")"
 class LoopCorrection(g.Component):
@@ -579,7 +581,7 @@ class LoopCorrection(g.Component):
             rev_alu = [6] if drctn == WEST else [9]
             first_alu = [0] if drctn == WEST else [3]
             second_alu = [1] if drctn == WEST else [2]
-            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
             t = inittime+plane*10
             for i in range(self.chunks):
                 with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
@@ -614,23 +616,43 @@ class LoopCorrection(g.Component):
                 shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[3 if drctn==WEST else 7])
                 masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=SG4_FROM[4], time=0), alus=rev_last_alu, output_streams=SG4_FROM[4])
                 split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=SG4_TO[2 if drctn == WEST else 6]))
-                nextmasks = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=[0] if drctn == WEST else [15], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                #nextshifts = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=SG4_TO[0]), alus=[0] if drctn == WEST else [15], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=SG4_TO[0]), alus=[0] if drctn == WEST else [15], output_streams=SG4_TO[3 if drctn==WEST else 7]).write(name="fixshift" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
                 split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks])
                 g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-                allshifts.append(nextmasks)
+                allshifts.append(nextshifts) #allshifts.append(nextmasks)
                 g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 
             #chunks-1 correct 7-bit int8s
             #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
             with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY+9+10): #predecessors=[pred], time=None) as pred:
                 cursplit = split_result[-1].read(streams=SG4_FROM[3])
-                masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=SG4_FROM[0])
-                shifts = g.right_shift(cursplit, self.shiftqrt[2*drctn].read(streams=SG4_FROM[1], time=0), alus=first_alu, output_streams=SG4_FROM[1])
+                #masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=SG4_FROM[0])
+                #shifts = g.right_shift(cursplit, self.shiftqrt[2*drctn].read(streams=SG4_FROM[1], time=0), alus=first_alu, output_streams=SG4_FROM[1])
+                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=SG4_FROM[1], time=0), alus=first_alu, output_streams=SG4_FROM[1])
+                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=SG4_FROM[0])
                 #split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1]).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane)))
                 final_result.append(extract_int8(g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1]))).write(name="extract" + dirstr, layout=get_slice1(drctn, 43, plane)))
+                #final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=SG4_TO[1]).write(name="extract" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks]))
             #print("Cycle time: ", t+MATMULDELAY+9+10+31+19) #31 through ALU, 19 to write to S43
         g.add_mem_constraints(tvec + final_result, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         return final_result, t+MATMULDELAY+9+10+31+19
+
+def colswap_vector(tvec, tmat, dim, inittime=0):
+    permmap = []
+    for drctn in (WEST, EAST):
+        permmap.append(g.from_data(np.array(inst.encode_permute_map([(x&~1)+1-(x&1) for x in range(dim)])).astype(np.uint8), layout=get_slice1(drctn, 42)))
+    g.add_mem_constraints(tmat, permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    final_result = []
+    for drctn in (WEST, EAST):
+        dirstr = ("W" if drctn == WEST else "E") + "_t" + str(inittime)
+        SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
+        SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
+        #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
+        with g.ResourceScope(name="colswap" + dirstr, time=inittime):
+            final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
+    g.add_mem_constraints(tvec, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles 
     
 def main():
     import timeit
@@ -680,9 +702,10 @@ def main():
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
-    lc = LoopCorrection(chunks, dim*2)
-    result_mt, t = lc.build(tvec, tmat)
-    result_mt, _ = lc.build(result_mt, tmat, t)
+    #lc = LoopCorrection(chunks, dim*2)
+    #result_mt, t = lc.build(tvec, tmat)
+    result_mt = colswap_vector(tvec, tmat, dim*2)
+    #result_mt, _ = lc.build(result_mt, tmat, t)
     g.resolve_storage_requests()
 
     print_utils.infoc("\nCompiling model ...")
@@ -700,6 +723,9 @@ def main():
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
     originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
     originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+    import functools
+    print(originpvec)
+    originpmat = [np.array(functools.reduce(directSum, [[[0, 1], [1, 0]]] * (dim//2))) for _ in range(parallel)]
     """
     for i in range(parallel):
         realresult = np.hstack((originpvec[i].real, originpvec[i].imag)) @ np.hstack((originpmat[i].real, -originpmat[i].imag)).transpose()
@@ -714,8 +740,8 @@ def main():
     #originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
     #originpvec[0] = np.full((dim,), 9.5)
     #originpmat[0] = np.full((dim, dim), 9.5)
-    #originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    #originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
+    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
     #originpvec[0], originpmat[0] = originpvec[1], originpmat[1]
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
@@ -726,7 +752,7 @@ def main():
     oracleres = [None]
     def oracle():
         B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-        oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i]) @ B[i]).astype(np.cdouble) for i in range(parallel)]
+        oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i])).astype(np.cdouble) for i in range(parallel)]
     toracle = timeit.timeit(oracle, number=10)/10
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
@@ -735,12 +761,13 @@ def main():
     #inputs = {t1.name: inp1, t2.name: inp2}
     results = [None]
     def actual():
+        fractionbits = 63
         inputs = {}
         exp_inpvecs, exp_inpmats = [], []
         for i in range(parallel):
-            exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0)
+            exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0, fractionbits)
             inpvec = num_to_bits(normals, chunks)
-            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), 1)
+            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), 1, fractionbits)
             inpmat = num_to_bits(normals, chunks)
             inputs[tvec[i].name] = inpvec
             inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
@@ -748,17 +775,18 @@ def main():
         res = runner(**inputs)
         results[0] = []
         for i in range(parallel):
-            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose())
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
             #the results come back truncating the lower 7*(chunks-1) bits
-            results[0].append(vector_complex_to_real(renormalize_doubles(result, 62 - 64+7*(chunks-2) - exp_inpvecs[i] - exp_inpmats[i])))
+            result_num = 0
+            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i] * result_num)))
     tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-        #print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
-        print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
+        print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        #print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
         else:
