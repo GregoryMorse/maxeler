@@ -87,7 +87,7 @@ public class SumUpPermDFEKernel extends Kernel {
             //optimization.popNoPipelining();
             io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), lastTick);
         } else {
-            DFEType finalTypeFix128 = dfeFixOffset(128, -124, SignMode.TWOSCOMPLEMENT);
+            DFEType finalTypeFix128 = dfeFixOffset(192, -186, SignMode.TWOSCOMPLEMENT); //CPU stream width should be multiple of 128, so extra 32 bits supplied
             DFEComplexType finalCplxFix128Type = new DFEComplexType(finalTypeFix128);
             DFEComplex cursum = tickCount < 3 ? constant.zero(cplxFix128Type) : stream.offset(sum, -3);
             sum <== DFEComplexType.newInstance(this, Utility.addExact(cursum.getReal(), colProdVals[0].getReal(), false, this).cast(dataTypeFix128),
