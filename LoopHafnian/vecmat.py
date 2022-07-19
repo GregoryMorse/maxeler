@@ -582,7 +582,7 @@ class LoopCorrection(g.Component):
             first_alu = [0] if drctn == WEST else [3]
             second_alu = [1] if drctn == WEST else [2]
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
-            t = inittime+plane*10
+            t = inittime+plane*self.dim//16
             for i in range(self.chunks):
                 with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
                     #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
@@ -609,7 +609,7 @@ class LoopCorrection(g.Component):
                         g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                     allshifts.append(nextshifts if i == self.chunks-1 else nextmasks)
                     g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-                    t += (27 if i==0 else 30)
+                    t += max(self.dim//16*2, (27 if i==0 else 30))
             #with complex multiplication at dimension 80 and 64-bit, we surely need 2 of these rounds to converge
             with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-18): #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
                 cursplit = split_result[-1].read(streams=SG4_FROM[5])
@@ -656,11 +656,11 @@ def colswap_vector(tvec, tmat, dim, inittime=0):
     
 def main():
     import timeit
-    dim = 80
+    dim = 80*2
     bitsize = 64 #for fixed point representation
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
-    max_dim_bits = (dim*2).bit_length()
+    max_dim_bits = (dim*2).bit_length() #complex domain
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
     signedhighbit = bitsize * 2 - 1 + max_dim_bits
     signedlowbit = signedhighbit - bitsize
@@ -683,23 +683,30 @@ def main():
     WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
     WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     tzeromat = []
-    #for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-    #    tzeromat = g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1(W), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")
+    for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+        tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1(W), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
     tvec, tmat = [], []
-    for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-        tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + "1", layout=get_slice1(drctn, 43, plane)))
-        tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + "1", layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
+    for group in (0, 1):
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
+            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
+            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
+    g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+
+    #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
+    #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i//2]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[i//2+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
+    #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
     parallel = len(tvec)
 
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
+    #lc = LoopCorrection(chunks, dim*2*2)
     lc = LoopCorrection(chunks, dim*2)
     result_mt, t = lc.build(tvec, tmat)
+    #result_mt, t = lc.build(tveccombine, tmatcombine)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
     #result_mt, _ = lc.build(result_mt, tmat, t)
     g.resolve_storage_requests()
