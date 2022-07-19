@@ -680,31 +680,27 @@ def main():
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
-    tvec1a = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW0P", layout=get_slice1(WEST, 43, 0))
-    tmat1a = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    #tvec1b = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW0P", layout=get_slice1(WEST, 43, 0))
-    #tmat1b = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW0P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(0)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec2 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AW1P", layout=get_slice1(WEST, 43, 1))
-    tmat2 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BW1P", layout=f"H1(W), -1, S16(25-27,29-37,39-42), B1(1)") #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    tvec3 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE0P", layout=get_slice1(EAST, 43, 0))
-    tmat3 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE0P", layout=f"H1(E), -1, S16(26-27,29-42)")
-    tvec4 = g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="AE1P", layout=get_slice1(EAST, 43, 1))
-    tmat4 = g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="BE1P", layout=f"H1(E), -1, S16(26-27,29-42)")
-    g.add_mem_constraints([tvec1a], [tvec2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints([tmat1a], [tmat2], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints([tvec3], [tvec4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints([tmat3], [tmat4], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
+    WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    tzeromat = []
+    #for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+    #    tzeromat = g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1(W), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")
+    tvec, tmat = [], []
+    for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+        dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+        tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + "1", layout=get_slice1(drctn, 43, plane)))
+        tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + "1", layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
+    g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     #g.PhysicalShape(1, 10, 100, 1, tuple([1]*10))
-    tvec, tmat = [tvec1a, tvec2, tvec3, tvec4], [tmat1a, tmat2, tmat3, tmat4]
-    #tvec, tmat = [tvec1, tvec2], [tmat1, tmat2]
     parallel = len(tvec)
 
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
-    #lc = LoopCorrection(chunks, dim*2)
-    #result_mt, t = lc.build(tvec, tmat)
-    result_mt = colswap_vector(tvec, tmat, dim*2)
+    lc = LoopCorrection(chunks, dim*2)
+    result_mt, t = lc.build(tvec, tmat)
+    #result_mt = colswap_vector(tvec, tmat, dim*2)
     #result_mt, _ = lc.build(result_mt, tmat, t)
     g.resolve_storage_requests()
 
@@ -723,9 +719,8 @@ def main():
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
     originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
     originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
-    import functools
-    print(originpvec)
-    originpmat = [np.array(functools.reduce(directSum, [[[0, 1], [1, 0]]] * (dim//2))) for _ in range(parallel)]
+    #import functools
+    #originpmat = [np.array(functools.reduce(directSum, [[[0, 1], [1, 0]]] * (dim//2))) for _ in range(parallel)]
     """
     for i in range(parallel):
         realresult = np.hstack((originpvec[i].real, originpvec[i].imag)) @ np.hstack((originpmat[i].real, -originpmat[i].imag)).transpose()
@@ -777,7 +772,7 @@ def main():
         for i in range(parallel):
             result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
             #the results come back truncating the lower 7*(chunks-1) bits
-            result_num = 0
+            result_num = 1
             results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i] * result_num)))
     tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
