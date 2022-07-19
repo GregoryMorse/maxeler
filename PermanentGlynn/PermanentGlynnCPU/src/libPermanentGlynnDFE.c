@@ -226,6 +226,9 @@ long double dfeFloatToLD(__int128 res)
 #define INITS 4
 #define COLDIV (MTX_SIZE / INITS)
 
+#ifdef USE_FLOAT
+typedef __int128 Fix192;
+#else
 typedef struct { //little-endian, must be 64-bit aligned
     int64_t lowBits;
     __int128 highBits;
@@ -240,6 +243,7 @@ int fix192to128(Fix192* fix)
         return 1;
     } else return 0;
 }
+#endif
 
 /**
 @brief Interface function to calculate the Permanent using Glynns formula on DFE
