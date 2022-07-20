@@ -23,9 +23,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
     public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat, boolean colMux) {
         super(parameters);
-        //optimization.pushFanoutLimit(4, FanoutLimitType.TREE);
+
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(128, -122, SignMode.TWOSCOMPLEMENT);
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
 
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
@@ -33,7 +33,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols / initKerns);
         int limit = cols;
         DFEComplex[] colSumFix = new DFEComplex[cols];
+        int[] errorTol = new int[cols];
 
+        int tol = 6; //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+	
         // tick count
         DFEVar isCalc = null;
         DFEVar isLocal = null, parity = null, curMplicity = null;
@@ -100,6 +103,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }
                 colSumFix[j] = cplxFix64Type.newInstance(this);
                 colSumFix[j] <== control.mux(colIndices[j], colSumPreList);
+                errorTol[j] = tol;		
                 /*if (j == cols-1)
                     colSumFix[j] <== control.mux(colIndices[j]-colIndices[j-1], colSumPreFix.getElementsAsList());
                 else {
@@ -121,13 +125,14 @@ public class PermanentGlynnDFEKernel extends Kernel {
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
                     colSumFix[j * (cols / initKerns) + idx] = useFloat ? optimization.pipeline(colmnSumVector[idx]) : colmnSumVector[idx];
+	                errorTol[j * (cols / initKerns) + idx] = tol;
                 }
             }
         }
         //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
         //optimization.pushDSPFactor(0.0, MathOps.ADD_SUB);
         //optimization.pushDSPFactor(0.0, MathOps.MUL);
-        int extraprec = 16; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
+        //int extraprec = 16; //40->20->10->5->3->2->1  2->4->8->16->32->40  1->3->7->15->31->39
         //DSP usage from maxeler optimization manual: "On MAX5 a DSP has input port widths of 18 and 27 bit." therefore a bits*b bits requires ceil(a/18)*ceil(b/27)
         //however it is unclear if an approximation algorithm is used for example with dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT)
         //multiplying 2 64-bit numbers should give a 128-bit result, which is then rounded truncating most of the bits
@@ -142,15 +147,23 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //bd={x:((x-18)%17!=0 and (x-18)%17<=7)+(1+(x-25+17-1)//17)*(((x-18)%17==0 or (x-18)%17>7)+(x-18+17-1)//17) for x in range(1, 128+1)}
         //{64: 16, 65: 16, 66: 16, 67: 16, 68: 16, 69: 16, 70: 17, 71: 17, 72: 17, 73: 17, 74: 17, 75: 17, 76: 17, 77: 25, 78: 25, 79: 25, 80: 25, 81: 25, 82: 25, 83: 25, 84: 25, 85: 25, 86: 25, 87: 26, 88: 26, 89: 26, 90: 26, 91: 26, 92: 26, 93: 26, 94: 36, 95: 36, 96: 36, 97: 36, 98: 36, 99: 36, 100: 36, 101: 36, 102: 36, 103: 36, 104: 37, 105: 37, 106: 37, 107: 37, 108: 37, 109: 37, 110: 37, 111: 49, 112: 49, 113: 49, 114: 49, 115: 49, 116: 49, 117: 49, 118: 49, 119: 49, 120: 49, 121: 50, 122: 50, 123: 50, 124: 50, 125: 50, 126: 50, 127: 50, 128: 64}
         //bd={x:((y-18)%17!=0 and (y-18)%17<=7)+(1+(x-25+17-1)//17)*(((y-18)%17==0 or (y-18)%17>7)+(y-18+17-1)//17) for x, y in ((65, 64), (93, 93), (110, 110), (127, 127))}
-        //(bd[65]*20+bd[93]*10+bd[110]*5+bd[127]*4)*3*4==11580 DSps
+        //(bd[65]*20+bd[93]*10+bd[110]*5+bd[127]*4)*3*4==11580 DSPs
         //bd={65: 11, 93: 18, 110: 27, 127: 36} then uses 8148 DSPs
-        while (limit > 1) { //20 at 64x65, 10 at 93x93, 5 at 110x110, 2 at 127x127, 1 at 127x127, 1 at 127x127  
+        //lets assume 32x32-64x64 is normalized to 1/2^-5 to 1/2^-6 and even these worst case column sums are average
+        //2^-6 with 53 bits is 59 bits so we are okay at the start
+        //2^-6*2^-6=2^-12 with 53 bits is 65 bits - we dont really need to increase on the first round - 20 remain
+        //2^-12*2^-12=2^-24 with 53 bits is 77 bits - still quite low - 10 remain
+        //2^-24*2^-24=2^-48 with 53 bits is 101 bits - no issues - 5 remain (4+1)
+        //2^-48*2^-48=2^-96 with 53 bits is 149 bits
+        //however we only need accuracy in range of 2^-40 to 2^-104
+        //Utility.latencyDump(colSumFix[0].getReal(), colSumFix[0].getImaginary(), this);
+        while (limit > 1) { //20 at 64x65, 10 at 93x93, 5 at 110x110, 2 at 127x127, 1 at 127x127, 1 at 127x127
             //extra leading bit needed with Gauss or Karatsuba as the addition/subtraction of real/imaginary components maybe be between -2 and 2
-            int totalprec = 64 + extraprec;
+            /*int totalprec = 64 + extraprec;
             if (extraprec != 0) {
                 int dsps = Utility.getDSPCount(totalprec, totalprec);
                 while (Utility.getDSPCount(totalprec+1, totalprec+1) <= dsps+1) totalprec++; 
-            }
+            }*/
             //DFEType dataTypeFixCur     = dfeFixOffset(totalprec, -totalprec+2, SignMode.TWOSCOMPLEMENT);
             //DFEComplexType cplxFixCurType = new DFEComplexType(dataTypeFixCur);
 
@@ -161,31 +174,36 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //optimization.pushFixOpMode(Optimization.bitSizeExact(curBits), Optimization.offsetExact(-curBits + 4), MathOps.MUL);
                 //colSumFix[idx] = colSumFix[2*idx].cast(cplxFixCurType) * colSumFix[2*idx+1].cast(cplxFixCurType);
                 //optimization.popFixOpMode(MathOps.MUL);
+                errorTol[idx] = errorTol[2 * idx] + errorTol[2 * idx + 1];
+                int totalprec = 64 + errorTol[idx] / 2;
+                while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
+                       Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+                totalprec-=3; //save 2 extra bits for inner and outer addition in 3M formula
+                //if (idx == 0) System.out.println((colSumFix[2 * idx].getType().getTotalBits()/2) + "x" + (colSumFix[2 * idx + 1].getType().getTotalBits()/2) + "->" + totalprec);  
                 colSumFix[idx] = Utility.doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
             }
             //if (limit <= 5) optimization.popDSPFactor();
 
             if (2 * limitNew < limit) {
                 limitNew++;
-                colSumFix[limitNew - 1] = colSumFix[limit - 1];
-                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limitNew - 1], 8+4 + (useFloat ? 2+7 : 0), this);
+                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limit - 1], 9+1+1 + (useFloat ? 3+7 : 0), this); //9 for multiplication, 1 for cast, 1 for complex addition/subtraction
+                errorTol[limitNew - 1] = errorTol[limit - 1];
             }
 
             limit = limitNew;
-            extraprec *= 2;
-            if (extraprec > 63) extraprec = 63;
+            //extraprec *= 2;
+            //if (extraprec > 63) extraprec = 63;
 
         }
-        parity = Utility.repeatPipeline(parity, 72+(useFloat ? 61+1 : 0), this);        
-        curMplicity = Utility.repeatPipeline(curMplicity, 65+(useFloat ? 54+1 : 0), this);
+        parity = Utility.repeatPipeline(parity, 72+(useFloat ? 61+1 : 0)+(dual ? 0 : 1), this);        
+        curMplicity = Utility.repeatPipeline(curMplicity, 64+(useFloat ? 54+1 : 0), this);
         //DFEComplex save = colSumFix[0];
         if (useFloat) {
             DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
             //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
             colSumFix[0] = DFEComplexType.newInstance(this, Utility.doFloatMult(colSumFix[0].getReal(), mplicityFloat, this), Utility.doFloatMult(colSumFix[0].getImaginary(), mplicityFloat, this));
         } else {
-            //colSumFix[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 127, 2, this), Utility.mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 127, 2, this));
-            colSumFix[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 128, 6, this), Utility.mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 128, 6, this));
+            colSumFix[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 160, 6, this), Utility.mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 160, 6, this));
         }
         //if (!dual) debug.simPrintf("%KObj% %KObj% %d\n", save, colSumFix[0], curMplicity); 
         //optimization.popDSPFactor();
