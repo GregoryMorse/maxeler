@@ -89,11 +89,14 @@ public class SumUpPermDFEKernel extends Kernel {
         } else {
             DFEType finalTypeFix128 = dfeFixOffset(192, -186, SignMode.TWOSCOMPLEMENT); //CPU stream width should be multiple of 128, so extra 32 bits supplied
             DFEComplexType finalCplxFix128Type = new DFEComplexType(finalTypeFix128);
-            DFEComplex cursum = tickCount < 3 ? constant.zero(cplxFix128Type) : stream.offset(sum, -3);
+            DFEVar initTick = optimization.pipeline(tickCount < 3),
+                    firstTick = Utility.repeatPipeline(tickCount === 0, 3),
+                    secondTick = Utility.repeatPipeline(tickCount < 2, 3);
+            DFEComplex cursum = initTick ? constant.zero(cplxFix128Type) : stream.offset(sum, -3);
             sum <== DFEComplexType.newInstance(this, Utility.addExact(cursum.getReal(), colProdVals[0].getReal(), false, this).cast(dataTypeFix128),
                                            Utility.addExact(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this).cast(dataTypeFix128));
-            sum = DFEComplexType.newInstance(this, Utility.triAddExact(sum.getReal(), optimization.pipeline(stream.offset(sum.getReal(), -1)), Utility.repeatPipeline(stream.offset(sum.getReal(), -2), 2, this), false, false, this).cast(dataTypeFix128),
-                                           Utility.triAddExact(sum.getImaginary(), optimization.pipeline(stream.offset(sum.getImaginary(), -1)), Utility.repeatPipeline(stream.offset(sum.getImaginary(), -2), 2, this), false, false, this).cast(dataTypeFix128));
+            sum = DFEComplexType.newInstance(this, Utility.triAddExact(sum.getReal(), firstTick ? constant.zero(dataTypeFix128) : stream.offset(sum.getReal(), -1), secondTick ? constant.zero(dataTypeFix128) : optimization.pipeline(stream.offset(sum.getReal(), -2)), false, false, this).cast(dataTypeFix128),
+                                           Utility.triAddExact(sum.getImaginary(), firstTick ? constant.zero(dataTypeFix128) : stream.offset(sum.getImaginary(), -1), secondTick ? constant.zero(dataTypeFix128) : optimization.pipeline(stream.offset(sum.getImaginary(), -2)), false, false, this).cast(dataTypeFix128));
             io.output("res", sum.cast(finalCplxFix128Type), finalCplxFix128Type, Utility.repeatPipeline(lastTick, 5, this));
         }
 
