@@ -230,14 +230,15 @@ long double dfeFloatToLD(__int128 res)
 typedef __int128 Fix192;
 #else
 typedef struct { //little-endian, must be 64-bit aligned
-    int64_t lowBits;
+    uint64_t lowBits;
     __int128 highBits;
 } __attribute__((packed)) Fix192;
 
 int fix192to128(Fix192* fix)
 {
     long long check = fix->highBits >> 64;
-    if (check == 0 || (check == -1 && (fix->highBits & 0x8000000000000000ULL) != 0)) { //run of 64 0s or 65 1s to handle positive/negative
+    int nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
+    if ((check == 0 && !nextBit) || (check == -1 && nextBit)) { //run of 65 0s or 65 1s to handle positive/negative
         fix->highBits <<= 64;
         fix->highBits |= fix->lowBits;
         return 1;
