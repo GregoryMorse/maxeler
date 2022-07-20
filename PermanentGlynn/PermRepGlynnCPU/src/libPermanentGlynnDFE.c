@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <MaxSLiCInterface.h>
 
 #ifdef MAXELER_SIM
@@ -245,6 +246,26 @@ long double dfeFloatToLD(__int128 res)
 #define COLDIV (MTX_SIZE / INITS)
 #define USECOLMUX 0
 
+#ifdef USE_FLOAT
+typedef __int128 Fix192;
+#else
+typedef struct { //little-endian, must be 64-bit aligned
+    uint64_t lowBits;
+    __int128 highBits;
+} __attribute__((packed)) Fix192;
+
+int fix192to128(Fix192* fix)
+{
+    long long check = fix->highBits >> 64;
+    int nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
+    if ((check == 0 && !nextBit) || (check == -1 && nextBit)) { //run of 65 0s or 65 1s to handle positive/negative
+        fix->highBits <<= 64;
+        fix->highBits |= fix->lowBits;
+        return 1;
+    } else return 0;
+}
+#endif
+
 uint64_t roundUp(uint64_t num, uint64_t nearest)
 {
     return num + (num % nearest == 0 ? 0 : (nearest - num % nearest));
@@ -269,13 +290,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     //printf("%lld, %d\n", numOfPartialPerms, rows);
 
 	// variable to store the result
-	//__int128 res[2];
-    size_t resbytes = sizeof(__int128) * 2 * totalPerms; //*(changecount+1);
-    //__int128 res[2];
-    __int128* res = (__int128*)malloc(resbytes);
+    size_t resbytes = sizeof(Fix192) * 2 * totalPerms; //*(changecount+1);
+    Fix192* res = (Fix192*)malloc(resbytes);
 #ifdef DUAL
-    __int128* res2 = (__int128*)malloc(resbytes);
-    //__int128 res2[2];
+    Fix192* res2 = (Fix192*)malloc(resbytes);
 #endif
 
     union {
@@ -382,29 +400,27 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 	printf("Permanent calulation on DFE finished\n");
 #endif
 
-    //128-bit fixed point with 124 fractional bits conversion by dividing by 2^124==(2^62)*(2^62) 
-    uint64_t mulSumPerms = 1ULL << (mulsum + numOfPartialPerms-1);
     //perm->real = 0, perm->imag = 0;
     //int parity = 0;
     for (uint64_t i = 0; i < totalPerms; i++) {
 #ifdef USE_FLOAT
+#ifdef DUAL
+    perm[i].real = dfeFloatToLD(res[i*2]) + dfeFloatToLD(res2[i*2]);
+    perm[i].imag = dfeFloatToLD(res[i*2+1]) + dfeFloatToLD(res2[i*2+1]);
+#else
     perm[i].real = dfeFloatToLD(res[i*2]);
     perm[i].imag = dfeFloatToLD(res[i*2+1]);
-#ifdef DUAL
-    perm[i].real += dfeFloatToLD(res2[i*2]);
-    perm[i].imag += dfeFloatToLD(res2[i*2+1]);
 #endif
-    perm[i].real /= mulSumPerms, perm[i].imag /= mulSumPerms;
+    perm[i].real = ldexp(perm[i].real, -(mulsum + numOfPartialPerms-1));
+    perm[i].imag = ldexp(perm[i].imag, -(mulsum + numOfPartialPerms-1));
 #else
-    long double factor = (long double)(1ULL<<62);
+    int adjust1 = fix192to128(&res[i*2]), adjust2 = fix192to128(&res[i*2+1]); //start with (192, -186) adjust=0 then (128, -122) else (128, -186)
 #ifdef DUAL
-        res[i*2] += res2[i*2];
-        res[i*2+1] += res2[i*2+1];
-#endif    
-        long double real = ((long double)res[i*2])/factor/factor;
-        long double imag = ((long double)res[i*2+1])/factor/factor;
-    
-        real /= mulSumPerms, imag /= mulSumPerms;
+        res[i*2].highBits += res2[i*2].highBits;
+        res[i*2+1].highBits += res2[i*2+1].highBits;
+#endif
+        long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
+                    imag = ldexpl((long double)res[i*2+1].highBits, (adjust2 ? -186 : -122) - (mulsum + numOfPartialPerms-1));
         // renormalize the result according to the normalization of the input matrix
         for (int jdx=0; jdx<photons; jdx++ ) {
             real *= renormalize_data[colIndices[i*photons+jdx]];
