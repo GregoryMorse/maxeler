@@ -2,8 +2,6 @@ package permanentglynn;
 
 import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
-import com.maxeler.platform.max5.manager.ImplementationStrategy;
-import com.maxeler.platform.max5.manager.SynthesisStrategy;
 import com.maxeler.platform.max5.manager.BuildConfig;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
@@ -43,69 +41,22 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         final PermanentGlynnDFEManagerAlveoU250 manager = new PermanentGlynnDFEManagerAlveoU250(params);
         manager.getManagerConfig().setDefaultStreamFifoDepth(512); //64 minimum, 512 is default, with 300/320MHz and 4 registers per crossing, the minimum moves to 128, might cause stalling if too low
         BuildConfig conf = manager.getBuildConfig();
+
+        boolean isProbe = false;
         conf.setOptimizationGoal(BuildConfig.OptimizationGoal.SPEED);
         conf.setBuildEffort(BuildConfig.Effort.HIGH);
         conf.setImplementationNearMissRetries(2);
         conf.setImplementationNearMissThreshold(100000); //0-1000000 are considered within threshold for build success on MAX5
-        
-        //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
-        //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
-        //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
-        
-        int bufg = 4+16+4+1; //base on number of streams, rather than default of 12
-        int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
-        //rather than FsmExtraction.ONE_HOT, AUTO may be better
-        //Directive.ALTERNATE_ROUTABILITY may be better than Directive.DEFAULT
-        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
-        conf.setSynthesisStrategy(customPerfOptHigh); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
-        
-        //route options: RouteOpt.ALTERNATE_CLB_ROUTING, RouteOpt.EXPLORE, RouteOpt.createCustom(RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), RouteOpt.createCustom(RouteOpt.EXPLORE, true, false, "")
-        
-        //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
-        ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
-        ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
-        
-        boolean isProbe = false;
-        ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //all different placement strategies (sorted approximately best to worst)...
-             //for congestion strategies, explore same placement as high, aggressive physical strategy
-            ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
-            ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
-            PERFORMANCE_BALANCE_SLRS, PERFORMANCE_HIGH_UTIL_SLRS,
-            ImplementationStrategy.PERFORMANCE_SPREAD_SLLS, ImplementationStrategy.PERFORMANCE_BALANCE_SLLS,
-            ImplementationStrategy.PERFORMANCE_EXPLORE,
-            ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT, ImplementationStrategy.PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT, //same placement strategy, different physical strategy
-            ImplementationStrategy.PERFORMANCE_EARLY_BLOCK_PLACEMENT,
-            ImplementationStrategy.PERFORMANCE_NET_DELAY_HIGH, ImplementationStrategy.PERFORMANCE_NET_DELAY_LOW,
-            ImplementationStrategy.PERFORMANCE_RETIMING, ImplementationStrategy.PERFORMANCE_EXTRA_TIMING_OPT,
-            ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT,
-            ImplementationStrategy.VIVADO_DEFAULT,
-            //ImplementationStrategy.FLOW_RUN_PHYS_OPT //default placement strategy
-            ImplementationStrategy.FLOW_RUNTIME_OPTIMIZED, ImplementationStrategy.FLOW_QUICK,
-            //ImplementationStrategy.AREA_EXPLORE, ImplementationStrategy.AREA_EXPLORE_SEQUENTIAL, ImplementationStrategy.AREA_EXPLORE_WITH_REMAP, //default placement strategy
-            //ImplementationStrategy.POWER_DEFAULT_OPTS, ImplementationStrategy.POWER_EXPLORE_AREA, //default placement strategy
-        };
-        
-        ImplementationStrategy[] postOptStrategies = new ImplementationStrategy[] {
-            ImplementationStrategy.PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT,
-            ImplementationStrategy.PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT,
-            ImplementationStrategy.MAXELER1, ImplementationStrategy.MAXELER2,
-            ImplementationStrategy.MAXELER3, ImplementationStrategy.MAXELER4
-        };
-        
-        //PERFORMANCE_REFINE_PLACEMENT -> PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT
-        //PERFORMANCE_EXPLORE -> PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT
-        //FLOW_RUN_PHYS_OPT -> FLOW_RUN_POST_ROUTE_PHYS_OPT
-        //PERFORMANCE_NET_DELAY_HIGH -> MAXELER1, MAXELER3
-        //PERFORMANCE_RETIMING -> MAXELER2
-        //CONGESTION_SSI_SPREAD_LOGIC_HIGH -> MAXELER4
-        //Ranking best to worst: 
-        conf.setImplementationStrategies(isProbe ? probeStrategies : postOptStrategies);
+                
+        conf.setSynthesisStrategy(Utility.getHighPerfSynthStrategy()); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
+
+        //Inspect output timing scores and rank from best to worst
+        conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
         conf.setParallelism(5);
 
-        manager.setDefaultStreamClockFrequency(params.getFrequency()); //200
+        manager.setDefaultStreamClockFrequency(params.getFrequency());
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
-
 
         manager.build();
     }
