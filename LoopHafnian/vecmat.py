@@ -583,7 +583,7 @@ class LoopCorrection(g.Component):
             first_alu = [0] if drctn == WEST else [3]
             second_alu = [1] if drctn == WEST else [2]
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
-            t = inittime+plane*self.dim//16
+            t = inittime+plane*max(self.dim//16, 10)
             for i in range(self.chunks):
                 with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
                     #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
@@ -591,7 +591,7 @@ class LoopCorrection(g.Component):
                     mxm_rq = g.tensor.create_mxm_request(planes=[drctn*2+plane], num_planes=1)
                     iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0) #.read(streams=g.SG16_W[plane] if drctn == WEST else g.SG16_E[plane]), time=0 if plane==0 else -18)
                     #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
-                    print(tvec[drctn*2+plane].shape, tvec[drctn*2+plane].physical_shape, result_mt[i].shape, result_mt[i].physical_shape)
+                    #print(tvec[drctn*2+plane].shape, tvec[drctn*2+plane].physical_shape, result_mt[i].shape, result_mt[i].physical_shape)
                     result_mt[i] = tvec[drctn*2+plane].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)
                     #result_mt[i] = tvec[drctn*2+plane].matmul(result_mt[i], planes=[plane], time=0)
                     split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*self.chunks)))
@@ -658,7 +658,7 @@ def colswap_vector(tvec, tmat, dim, inittime=0):
     
 def main():
     import timeit
-    dim = 80 #dim X dim complex matrix
+    dim = 8 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
@@ -689,31 +689,29 @@ def main():
         tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
         #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
     tvec, tmat = [], []
-    for group in (0, 1):
+    for group in (0,):
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
             tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
-            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
-            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
+            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
+            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
 
-    tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
-    tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
+    #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
+    #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
     parallel = len(tvec)
 
     print_utils.infoc(
         "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     )
-    lc = LoopCorrection(chunks, dim*2*2)
-    #lc = LoopCorrection(chunks, dim*2)
-    #result_mt, t = lc.build(tvec, tmat)
-    result_mt, t = lc.build(tveccombine, tmatcombine)
-    #g.split_inner_split
-    print(result_mt[0].shape, result_mt[0].physical_shape)
+    #lc = LoopCorrection(chunks, dim*2*2)
+    lc = LoopCorrection(chunks, dim*2)
+    result_mt, t = lc.build(tvec, tmat)
+    #result_mt, t = lc.build(tveccombine, tmatcombine)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
-    #result_mt, _ = lc.build(result_mt, tmat, t)
+    result_mt, _ = lc.build(result_mt, tmat, t)
     g.resolve_storage_requests()
 
     print_utils.infoc("\nCompiling model ...")
@@ -747,8 +745,8 @@ def main():
     #originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
     #originpvec[0] = np.full((dim,), 9.5)
     #originpmat[0] = np.full((dim, dim), 9.5)
-    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53))
-    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53))
+    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53)+2j)
+    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53)+2j)
     #originpvec[0], originpmat[0] = originpvec[1], originpmat[1]
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
@@ -759,7 +757,7 @@ def main():
     oracleres = [None]
     def oracle():
         B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-        oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i])).astype(np.cdouble) for i in range(parallel)]
+        oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i]) @ B[i]).astype(np.cdouble) for i in range(parallel)]
     toracle = timeit.timeit(oracle, number=10)/10
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
@@ -774,7 +772,8 @@ def main():
         for i in range(parallel):
             exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0, fractionbits)
             inpvec = num_to_bits(normals, chunks)
-            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), 1, fractionbits)
+            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+            #exp_inpmat, normals = np.zeros((dim*2,), dtype=np.int32), np.rint(np.ldexp(matrix_real_to_complex(originpmat[i]), fractionbits)).astype(np.int64)
             inpmat = num_to_bits(normals, chunks)
             inputs[tvec[i].name] = inpvec
             inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
@@ -784,15 +783,14 @@ def main():
         for i in range(parallel):
             result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
             #the results come back truncating the lower 7*(chunks-1) bits
-            result_num = 1
-            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i] * result_num)))
+            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i])))
     tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-        print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        #print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
         #print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
