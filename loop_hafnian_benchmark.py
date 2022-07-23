@@ -5,7 +5,7 @@ from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, P
 from thewalrus import hafnian, hafnian_repeated
 from scipy.stats import unitary_group
 
-DEPTH=26
+DEPTH=44
 saveFolder = "resultslh"
 def make_symmetric(A): return A + A.T
 def load_test_data():
