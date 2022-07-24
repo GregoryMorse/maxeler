@@ -4,6 +4,27 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.platform.max5.manager.BuildConfig;
 
+import java.io.File;
+import java.util.Collection;
+import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Arrays;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import com.maxeler.utils.Hasher;
+import com.maxeler.platform.max5.toolchain.cache.VivadoCacheManager;
+import com.maxeler.maxeleros.managercompiler.configuration.ManagerConfiguration;
+import com.maxeler.platform.max5.toolchain.build.VivadoBuildConfiguration;
+import com.maxeler.platform.max5.toolchain.build.VivadoImplementationStrategy;
+import com.maxeler.conf.base.MaxCompilerBuildConf;
+import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
+import com.maxeler.platform.max5.toolchain.build.alveo.AlveoToolchain;
+import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
+import com.maxeler.maxdc.BuildManager;
+import com.maxeler.maxdc.BuildPass;
+import com.maxeler.maxdc.Toolchain;
+
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
         super(args);
@@ -29,6 +50,58 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
 
+    public class CustomAlveoToolchain extends AlveoToolchain
+    {
+        public List<BuildPass> getBuildPasses(final BuildManager buildManager, final ManagerConfiguration managerConfiguration)
+        {
+            VivadoBuildConfiguration buildConf = ((VivadoBuildConfiguration)getManagerConfig().get(VivadoBuildConfiguration.class));
+            List<BuildPass> buildPasses = super.getBuildPasses(buildManager, managerConfiguration);
+            buildConf.setBuildLevel(VivadoBuildConfiguration.Level.SYNTHESIS);
+            List<BuildPass> removePasses = super.getBuildPasses(buildManager, managerConfiguration);
+            return buildPasses.subList(removePasses.size(), buildPasses.size());
+        }
+    } 
+    public void rebuildFromTimingMetImplementation(String implementationStrategyName)
+    {
+        //first remove all non-matching implementation strategies
+        VivadoBuildConfiguration buildConf = ((VivadoBuildConfiguration)getManagerConfig().get(VivadoBuildConfiguration.class));
+        Collection<VivadoImplementationStrategy> strats = buildConf.getImplementationStrategies();
+        strats.removeIf(e -> !e.getName().equals(implementationStrategyName));
+        buildConf.setImplementationStrategies(strats.stream().collect(Collectors.toCollection(ArrayList::new)));
+        
+        //name is strangely a upper ASCII \u00d4 or in Java Unicode character "Ô" 
+        List<Field> find = Arrays.stream(XilinxAlveoU250Board.class.getDeclaredFields()).filter(f -> Modifier.isPrivate(f.getModifiers()) && f.getType().equals(Toolchain.class)).collect(Collectors.toCollection(ArrayList::new));
+        
+        //limit the build to remove both COMPILE_ONLY and SYNTHESIS
+        XilinxAlveoU250Board board = (XilinxAlveoU250Board)this.m_platform;
+        try {
+            Field fld = board.getClass().getDeclaredField(find.get(0).getName());
+            fld.setAccessible(true);
+            fld.set(board, new CustomAlveoToolchain());
+            fld.setAccessible(false);
+        } catch (NoSuchFieldException|IllegalAccessException e) {
+            throw new IllegalArgumentException("Toolchain field not found or accessible");
+        }
+               
+        //add implementation strategy checkpoint file hash to the VivadoCache 
+        final Hasher hasher = new Hasher();
+        //we are already in the "scratch" directory         
+        this.getBuildManager().pushWorkingDir("xilinx_vivado");
+        this.getBuildManager().pushWorkingDir("implementation");
+        this.getBuildManager().pushWorkingDir(implementationStrategyName);
+        this.getBuildManager().pushWorkingDir("xilinx_vivado");
+        this.getBuildManager().pushWorkingDir("route");
+        hasher.append(new File(new BuildFilePostRouteDcp(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_post_route.dcp", false, implementationStrategyName).getAbsoluteName()));
+        this.getBuildManager().popWorkingDir();
+        this.getBuildManager().popWorkingDir();
+        this.getBuildManager().popWorkingDir();
+        this.getBuildManager().popWorkingDir();
+        this.getBuildManager().popWorkingDir();
+        final String hash = hasher.getHash();
+        final VivadoCacheManager vivadoCacheManager = new VivadoCacheManager(this.m_buildManager); //VivadoCacheManager.get(this.m_buildManager);        
+        vivadoCacheManager.copyFromPreviousBuild();
+        vivadoCacheManager.addImplementationInfo(implementationStrategyName, hash);
+    }
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
@@ -58,6 +131,11 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
 
+        final String implementationStrategyName = "CUSTOM3";
+        manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
+        if (!implementationStrategyName.isEmpty())
+            manager.rebuildFromTimingMetImplementation(implementationStrategyName);
+                    
         manager.build();
     }
 
