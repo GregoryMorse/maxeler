@@ -94,6 +94,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                     for (int i = 0; i < lines.size(); i++) {
                         if (lines.get(i).startsWith("write_checkpoint")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
+                            pw.println("\t place_design -post_place_opt");
                             pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]");
                             //pw.println("\tset_clock_uncertainty 0.2 -from [get_clocks] -to [get_clocks]"); //200 picoseconds/0.2 nanoseconds
                             pw.println("\tphys_opt_design -directive AggressiveExplore");
@@ -189,6 +190,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
     } 
     public void rebuildFromTimingMetImplementation(String implementationStrategyName)
     {
+        //vivado -mode tcl / vivado -mode gui -> open_checkpoint /scratch/xilinx_vivado/implementation/*/xilinx_vivado/route/*.dcp
+        //com.maxeler.platform.max5.toolchain.build.VivadoResourceUsage build_name build_dir SYNTH|PAR (SYNTH=preliminary, PAR=final)
+        //com.maxeler.platform.max5.toolchain.build.VivadoResourceAnnotation build_name build_dir
+        //com.maxeler.platform.max5.toolchain.build.VivadoToolchain -> IMPLEMENTATION + FULL_BUILD
+        //com.maxeler.platform.max5.libs.manager.Max5ManagerBuildInternal -> realBuild (called by DFEManager)
+        //com.maxeler.platform.max5.toolchain.cache.VivadoCacheManager -> addImplementationInfo(IMPLEMENTATION_STRATEGY_NAME, ROUTE_CHECKPOINT)
+        
         //first remove all non-matching implementation strategies
         VivadoBuildConfiguration buildConf = ((VivadoBuildConfiguration)getManagerConfig().get(VivadoBuildConfiguration.class));
         if (!implementationStrategyName.isEmpty()) {
@@ -256,7 +264,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setSynthesisStrategy(Utility.getHighPerfSynthStrategy()); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
         //Inspect output timing scores and rank from best to worst
-        conf.setImplementationStrategies(Utility.chooseImplementationStrategies(true, isProbe));
+        conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
         conf.setParallelism(5);
 
         manager.setDefaultStreamClockFrequency(params.getFrequency());
