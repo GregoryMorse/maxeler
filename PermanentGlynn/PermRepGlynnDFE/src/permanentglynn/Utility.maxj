@@ -1758,7 +1758,10 @@ public class Utility {
         //You can also run phys_opt_design with the -sll_reg_hold_fix option after route_design to attempt fixing hold violations on these direct Laguna TX to RX paths with potentially long runtime.
         //PhysOpt.EXPLORE_WITH_HOLD_FIX but hold_fix and sll_reg_hold_fix are different options
 
-        //vivado -mode tcl
+        ImplementationStrategy.PlaceOpt PlaceOptAuto1 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_1"); //High performing predicted directive
+        ImplementationStrategy.PlaceOpt PlaceOptAuto2 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_2"); //Second best predicted directive
+        ImplementationStrategy.PlaceOpt PlaceOptAuto3 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_3"); //Third best predicted directive
+
         //phys_opt_design [-fanout_opt] [-placement_opt] [-routing_opt] [-slr_crossing_opt] [-rewire] [-insert_negative_edge_ffs] [-critical_cell_opt] [-dsp_register_opt] [-bram_register_opt] [-uram_register_opt] [-bram_enable_opt] [-shift_register_opt] [-hold_fix] [-aggressive_hold_fix] [-retime] [-force_replication_on_nets <args>] [-directive <arg>] [-critical_pin_opt] [-clock_opt] [-path_groups <args>] [-tns_cleanup] [-sll_reg_hold_fix] [-quiet] [-verbose]
         //boolean fanoutOpt, boolean placementOpt, boolean routingOpt, boolean slrCrossingOpt, boolean rewire, boolean criticalCellOpt, boolean dspRegisterOpt, boolean bramRegisterOpt, boolean uramRegisterOpt, boolean bramEnableOpt, boolean shiftRegisterOpt, boolean holdFix, boolean retime, java.lang.String forceReplicationOnNets, boolean criticalPinOpt, boolean clockOpt, java.lang.String pathGroups, java.lang.String additionalOptions
         //https://docs.xilinx.com/r/en-US/ug904-vivado-implementation/Available-Physical-Optimizations
@@ -1812,6 +1815,9 @@ public class Utility {
         strategies.put("MAXELER4", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
         strategies.put("PERFORMANCE_BALANCE_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
         strategies.put("PERFORMANCE_HIGH_UTIL_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("AUTO_1", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto1, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("AUTO_2", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto2, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("AUTO_3", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto3, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
         
         return strategies;
     }
@@ -1819,11 +1825,19 @@ public class Utility {
     {
         
         if (!customPhysOpt) {
+            ImplementationStrategy.PlaceOpt PlaceOptAuto1 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_1"); //High performing predicted directive
+            ImplementationStrategy.PlaceOpt PlaceOptAuto2 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_2"); //Second best predicted directive
+            ImplementationStrategy.PlaceOpt PlaceOptAuto3 = ImplementationStrategy.PlaceOpt.createCustom(false, false, false, false, false, false, "-directive Auto_3"); //Third best predicted directive
+        
             //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
             ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
             ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+            ImplementationStrategy AUTO_1 = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto1, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+            ImplementationStrategy AUTO_2 = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto2, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
+            ImplementationStrategy AUTO_3 = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto3, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
         
             ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
+                AUTO_1, AUTO_2, AUTO_3,
                  //for congestion strategies, explore same placement as high, aggressive physical strategy
                 ImplementationStrategy.CONGESTION_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SPREAD_LOGIC_EXPLORE,
                 ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.CONGESTION_SSI_SPREAD_LOGIC_EXPLORE,
@@ -1855,6 +1869,7 @@ public class Utility {
             
             ImplementationStrategy[] probeStrategies = new ImplementationStrategy[] { //nearly all different placement strategies...
                  //for congestion strategies, explore same placement as high, aggressive physical strategy
+                strategies.get("AUTO_1"), strategies.get("AUTO_2"), strategies.get("AUTO_3"),
                 strategies.get("CONGESTION_SPREAD_LOGIC_HIGH"), strategies.get("CONGESTION_SPREAD_LOGIC_MEDIUM"), strategies.get("CONGESTION_SPREAD_LOGIC_LOW"), strategies.get("CONGESTION_SPREAD_LOGIC_EXPLORE"),
                 strategies.get("CONGESTION_SSI_SPREAD_LOGIC_HIGH"), strategies.get("CONGESTION_SSI_SPREAD_LOGIC_LOW"), strategies.get("CONGESTION_SSI_SPREAD_LOGIC_EXPLORE"),
                 strategies.get("PERFORMANCE_BALANCE_SLRS"), strategies.get("PERFORMANCE_HIGH_UTIL_SLRS"),
