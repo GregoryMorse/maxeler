@@ -143,7 +143,9 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
                         if (lines.get(i).equals("if {[get_property SLACK [get_timing_paths -setup]] >= 0 && [get_property SLACK [get_timing_paths -hold]] < 0} {")) {
-                            pw.println("");
+                            pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
+                            pw.println("\tphys_opt_design -tns_cleanup -slr_crossing_opt");
+                            pw.println("}");
                         } else if (lines.get(i).equals("\tphys_opt_design -hold_fix")) {
                             lines.set(i, lines.get(i) + " -aggressive_hold_fix -sll_reg_hold_fix"); 
                         }
