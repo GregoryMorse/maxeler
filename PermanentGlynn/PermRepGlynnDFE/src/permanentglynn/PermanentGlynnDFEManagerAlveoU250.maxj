@@ -39,9 +39,9 @@ import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
 import com.maxeler.platform.max5.toolchain.file.BuildFileBusSkewLog;
 import com.maxeler.platform.max5.toolchain.file.BuildFileChecksumRam;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePowerReportImpl;
-import com.maxeler.platform.max5.libs.Max5ChecksumMetadata;
-import com.maxeler.maxeleros.MappedElementsManager;
-import com.maxeler.maxdc.EntityStructural;
+//import com.maxeler.platform.max5.libs.Max5ChecksumMetadata;
+//import com.maxeler.maxeleros.MappedElementsManager;
+//import com.maxeler.maxdc.EntityStructural;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
