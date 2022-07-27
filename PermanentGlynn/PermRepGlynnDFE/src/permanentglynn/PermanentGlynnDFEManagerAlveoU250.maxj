@@ -64,7 +64,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //write_checkpoint -force com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/route/
-    //vivado -mode batch -source runRoute.tcl
+    //vivado -mode batch -source runRoute.tcl -tclargs com_maxeler_platform_max5_board_XilinxAlveoU250Top
     //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.Max5MaxfileGenerator PermanentGlynn_dualDFE_XilinxAlveoU250_DFE PermanentGlynn_dualDFE MAX5C <impname>
     public class CustomVivadoPlace extends VivadoPlace
     {
