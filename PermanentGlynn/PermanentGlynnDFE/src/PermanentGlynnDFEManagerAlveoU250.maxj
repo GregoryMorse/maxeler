@@ -50,7 +50,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
-        declareParam("frequency", EngineParameters.DataType.INT, 280);
+        declareParam("frequency", EngineParameters.DataType.INT, 320);
     }
     public boolean dual() {
         return getParam("dual");
@@ -67,18 +67,14 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
+
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/place/
     //vivado -mode tcl
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //write_checkpoint -force com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/route/
     //vivado -mode batch -source runRoute.tcl -tclargs com_maxeler_platform_max5_board_XilinxAlveoU250Top
-    //com.maxeler.platform.max5.toolchain.Max5MaxfileGenerator <build_dir> <build_name> MAX5C <impname>
-    //com.maxeler.platform.max5.toolchain.build.VivadoResourceUsage <build_name> <build_dir> SYNTH|PAR
-    //com.maxeler.platform.max5.toolchain.build.VivadoResourceAnnotation <build_name> <build_dir>
     //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.Max5MaxfileGenerator PermanentGlynn_dualDFE_XilinxAlveoU250_DFE PermanentGlynn_dualDFE MAX5C <impname>
-    //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.build.VivadoResourceUsage PermanentGlynn_dualDFE PermanentGlynn_dualDFE_XilinxAlveoU250_DFE SYNTH|PAR
-    //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.build.VivadoResourceAnnotation PermanentGlynn_dualDFE PermanentGlynn_dualDFE_XilinxAlveoU250_DFE 
     public class CustomVivadoPlace extends VivadoPlace
     {
         public CustomVivadoPlace(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy)
@@ -291,12 +287,12 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
         manager.setDefaultStreamClockFrequency(params.getFrequency());
 
-        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat()));
-        
+        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
+
         final String implementationStrategyName = "";
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
-
+                    
         manager.build();
     }
 
