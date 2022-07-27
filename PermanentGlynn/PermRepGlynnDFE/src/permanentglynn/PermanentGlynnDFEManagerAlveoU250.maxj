@@ -109,10 +109,10 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                             pw.println("place_design -post_place_opt");
                         } else if (lines.get(i).startsWith("write_checkpoint")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");                            
-                            pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]");
+                            //pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]"); //get_clocks {mmcm_STREAM*}
                             //pw.println("\tset_clock_uncertainty 0.2 -from [get_clocks] -to [get_clocks]"); //200 picoseconds/0.2 nanoseconds
                             pw.println("\tphys_opt_design -directive AggressiveExplore");
-                            pw.println("\tset_clock_uncertainty 0 -setup -hold [get_clocks]");
+                            //pw.println("\tset_clock_uncertainty 0 -setup -hold [get_clocks]");
                             //pw.println("\tset_clock_uncertainty 0 -from [get_clocks] -to [get_clocks]");
                             pw.println("}");
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
@@ -131,16 +131,18 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
     }
     public class CustomVivadoRoute extends VivadoRoute
     {
-        public CustomVivadoRoute(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy)
+        public CustomVivadoRoute(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy, boolean skipCompileSynth)
         {
             super(buildManager, vivadoImplementationStrategy);
-            buildManager.pushWorkingDir("xilinx_vivado");
-            buildManager.pushWorkingDir("route");
-            buildManager.addBuildFile(new BuildFilePowerReportImpl(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".power.rpt", false));
-            buildManager.addBuildFile(new BuildFileChecksumRam(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_checksum.txt", false));
-            buildManager.addBuildFile(new BuildFileBusSkewLog(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".bus_skew.rpt", false));                
-            buildManager.popWorkingDir();
-            buildManager.popWorkingDir();
+            if (skipCompileSynth) {
+                buildManager.pushWorkingDir("xilinx_vivado");
+                buildManager.pushWorkingDir("route");
+                buildManager.addBuildFile(new BuildFilePowerReportImpl(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".power.rpt", false));
+                buildManager.addBuildFile(new BuildFileChecksumRam(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_checksum.txt", false));
+                buildManager.addBuildFile(new BuildFileBusSkewLog(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".bus_skew.rpt", false));                
+                buildManager.popWorkingDir();
+                buildManager.popWorkingDir();
+            }
         }
         protected ProcResult runVivadoProcOnCluster(final ProcSpec procSpec, final String s) {
             String cmd = procSpec.getCommand();
@@ -194,10 +196,10 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 }
                 cachePasses = buildPasses;
             } else if (skipCompileSynth) {
-                final MappedElementsManager mappedElementsManager = new MappedElementsManager(buildManager, (EntityStructural)new EntityStructural(buildManager) {}, true);
+                /*final MappedElementsManager mappedElementsManager = new MappedElementsManager(buildManager, (EntityStructural)new EntityStructural(buildManager) {}, true);
                 mappedElementsManager.setAppID(0);
                 mappedElementsManager.setRevID(0);
-                Max5ChecksumMetadata.get(buildManager).finaliseData(mappedElementsManager.getMappedElementsInfo());
+                Max5ChecksumMetadata.get(buildManager).finaliseData(mappedElementsManager.getMappedElementsInfo());*/
                 VivadoCacheManager.get(buildManager).copyFromPreviousBuild();
             }
             return cachePasses;
@@ -207,7 +209,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         }
         
         public VivadoImplPass getRoutePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
-            return new CustomVivadoRoute(buildManager, vivadoImplementationStrategy);
+            return new CustomVivadoRoute(buildManager, vivadoImplementationStrategy, skipCompileSynth);
         }        
     } 
     public void rebuildFromTimingMetImplementation(String implementationStrategyName)
