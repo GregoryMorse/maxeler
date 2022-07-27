@@ -14,12 +14,12 @@ import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
+import java.util.stream.IntStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import com.maxeler.utils.Hasher;
 import com.maxeler.conf.base.MaxCompilerBuildConf;
 import com.maxeler.maxeleros.managercompiler.configuration.ManagerConfiguration;
-import com.maxeler.maxdc.MaxFileDataFile;
 import com.maxeler.maxdc.BuildManager;
 import com.maxeler.maxdc.BuildPass;
 import com.maxeler.maxdc.Toolchain;
@@ -31,13 +31,17 @@ import com.maxeler.platform.max5.toolchain.build.VivadoBuildConfiguration;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplementationStrategy;
 import com.maxeler.platform.max5.toolchain.build.alveo.AlveoToolchain;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplPass;
+import com.maxeler.platform.max5.toolchain.build.VivadoSynth;
+import com.maxeler.platform.max5.toolchain.build.VivadoImplementation;
 import com.maxeler.platform.max5.toolchain.build.VivadoPlace;
 import com.maxeler.platform.max5.toolchain.build.VivadoRoute;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
 import com.maxeler.platform.max5.toolchain.file.BuildFileBusSkewLog;
 import com.maxeler.platform.max5.toolchain.file.BuildFileChecksumRam;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePowerReportImpl;
-
+import com.maxeler.platform.max5.libs.Max5ChecksumMetadata;
+import com.maxeler.maxeleros.MappedElementsManager;
+import com.maxeler.maxdc.EntityStructural;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
@@ -46,7 +50,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
-        declareParam("frequency", EngineParameters.DataType.INT, 320);
+        declareParam("frequency", EngineParameters.DataType.INT, 280);
     }
     public boolean dual() {
         return getParam("dual");
@@ -63,14 +67,18 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
-
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/place/
     //vivado -mode tcl
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //write_checkpoint -force com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/route/
     //vivado -mode batch -source runRoute.tcl -tclargs com_maxeler_platform_max5_board_XilinxAlveoU250Top
+    //com.maxeler.platform.max5.toolchain.Max5MaxfileGenerator <build_dir> <build_name> MAX5C <impname>
+    //com.maxeler.platform.max5.toolchain.build.VivadoResourceUsage <build_name> <build_dir> SYNTH|PAR
+    //com.maxeler.platform.max5.toolchain.build.VivadoResourceAnnotation <build_name> <build_dir>
     //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.Max5MaxfileGenerator PermanentGlynn_dualDFE_XilinxAlveoU250_DFE PermanentGlynn_dualDFE MAX5C <impname>
+    //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.build.VivadoResourceUsage PermanentGlynn_dualDFE PermanentGlynn_dualDFE_XilinxAlveoU250_DFE SYNTH|PAR
+    //java -cp $MAXCOMPILERDIR/lib/Max4Platform.jar:$MAXCOMPILERDIR/lib/Max5Platform.jar:$MAXCOMPILERDIR/lib/GenericIPPlatform.jar:$MAXCOMPILERDIR/lib/MaxCompiler.jar com.maxeler.platform.max5.toolchain.build.VivadoResourceAnnotation PermanentGlynn_dualDFE PermanentGlynn_dualDFE_XilinxAlveoU250_DFE 
     public class CustomVivadoPlace extends VivadoPlace
     {
         public CustomVivadoPlace(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy)
@@ -97,9 +105,10 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 } catch (IOException e) { throw new IllegalArgumentException("IO error reading " + tclFile); }
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
-                        if (lines.get(i).startsWith("write_checkpoint")) {
-                            pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
-                            pw.println("\tplace_design -post_place_opt");
+                        if (lines.get(i).startsWith("phys_opt_design")) {
+                            pw.println("place_design -post_place_opt");
+                        } else if (lines.get(i).startsWith("write_checkpoint")) {
+                            pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");                            
                             pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]");
                             //pw.println("\tset_clock_uncertainty 0.2 -from [get_clocks] -to [get_clocks]"); //200 picoseconds/0.2 nanoseconds
                             pw.println("\tphys_opt_design -directive AggressiveExplore");
@@ -112,7 +121,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
                             pw.println("\tphys_opt_design -directive AggressiveFanoutOpt");
                             pw.println("}");
-                        }                        
+                        }
                         pw.println(lines.get(i));
                     }
                 } catch (IOException e) { throw new IllegalArgumentException("IO error writing " + tclFile); }
@@ -177,20 +186,19 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         public List<BuildPass> getBuildPasses(final BuildManager buildManager, final ManagerConfiguration managerConfiguration)
         {
             if (cachePasses == null) {
-                VivadoBuildConfiguration buildConf = ((VivadoBuildConfiguration)getManagerConfig().get(VivadoBuildConfiguration.class));
                 List<BuildPass> buildPasses = super.getBuildPasses(buildManager, managerConfiguration);
                 if (skipCompileSynth) {
-                    buildConf.setBuildLevel(VivadoBuildConfiguration.Level.SYNTHESIS);
-                    List<BuildPass> removePasses = super.getBuildPasses(buildManager, managerConfiguration);                    
-                    cachePasses = buildPasses.subList(removePasses.size(), buildPasses.size());
-                } else cachePasses = buildPasses;
-            } else if (skipCompileSynth) {
-                VivadoCacheManager.get(buildManager).copyFromPreviousBuild();
-                final MaxFileDataFile maxFileDataFile = new MaxFileDataFile(buildManager, "MaxCompilerDesignData.dat", false);
-                if (!maxFileDataFile.exists()) {
-                    throw new IllegalArgumentException("Could not find MaxCompilerDesignData.dat");
+                    int fromSynth = IntStream.range(0, buildPasses.size()).filter(i -> buildPasses.get(i) instanceof VivadoSynth).findFirst().getAsInt();
+                    int toImp = IntStream.range(0, buildPasses.size()).filter(i -> buildPasses.get(i) instanceof VivadoImplementation).findFirst().getAsInt();
+                    buildPasses.subList(fromSynth, toImp).clear();
                 }
-                buildManager.addBuildFile(maxFileDataFile);
+                cachePasses = buildPasses;
+            } else if (skipCompileSynth) {
+                final MappedElementsManager mappedElementsManager = new MappedElementsManager(buildManager, (EntityStructural)new EntityStructural(buildManager) {}, true);
+                mappedElementsManager.setAppID(0);
+                mappedElementsManager.setRevID(0);
+                Max5ChecksumMetadata.get(buildManager).finaliseData(mappedElementsManager.getMappedElementsInfo());
+                VivadoCacheManager.get(buildManager).copyFromPreviousBuild();
             }
             return cachePasses;
         }
@@ -283,12 +291,12 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
         manager.setDefaultStreamClockFrequency(params.getFrequency());
 
-        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
-
+        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat()));
+        
         final String implementationStrategyName = "";
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
-                    
+
         manager.build();
     }
 
