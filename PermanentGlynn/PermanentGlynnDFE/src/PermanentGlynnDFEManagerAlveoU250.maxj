@@ -125,6 +125,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         public CustomVivadoRoute(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy)
         {
             super(buildManager, vivadoImplementationStrategy);
+            buildManager.pushWorkingDir("xilinx_vivado");
+            buildManager.pushWorkingDir("route");
+            buildManager.addBuildFile(new BuildFilePowerReportImpl(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".power.rpt", false));
+            buildManager.addBuildFile(new BuildFileChecksumRam(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_checksum.txt", false));
+            buildManager.addBuildFile(new BuildFileBusSkewLog(buildManager, "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".bus_skew.rpt", false));                
+            buildManager.popWorkingDir();
+            buildManager.popWorkingDir();
         }
         protected ProcResult runVivadoProcOnCluster(final ProcSpec procSpec, final String s) {
             String cmd = procSpec.getCommand();
@@ -238,9 +245,6 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             this.getBuildManager().pushWorkingDir("xilinx_vivado");
             this.getBuildManager().pushWorkingDir("route");
             hasher.append(new File(new BuildFilePostRouteDcp(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_post_route.dcp", false, implementationStrategyName).getAbsoluteName()));
-            this.getBuildManager().addBuildFile(new BuildFilePowerReportImpl(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".power.rpt", false));
-            this.getBuildManager().addBuildFile(new BuildFileChecksumRam(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_checksum.txt", false));
-            this.getBuildManager().addBuildFile(new BuildFileBusSkewLog(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".bus_skew.rpt", false));                
             this.getBuildManager().popWorkingDir();
             this.getBuildManager().popWorkingDir();
             this.getBuildManager().popWorkingDir();
