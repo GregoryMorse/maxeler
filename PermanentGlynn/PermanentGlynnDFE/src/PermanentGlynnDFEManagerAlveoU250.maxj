@@ -29,11 +29,15 @@ import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
 import com.maxeler.platform.max5.toolchain.cache.VivadoCacheManager;
 import com.maxeler.platform.max5.toolchain.build.VivadoBuildConfiguration;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplementationStrategy;
-import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
 import com.maxeler.platform.max5.toolchain.build.alveo.AlveoToolchain;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplPass;
 import com.maxeler.platform.max5.toolchain.build.VivadoPlace;
 import com.maxeler.platform.max5.toolchain.build.VivadoRoute;
+import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
+import com.maxeler.platform.max5.toolchain.file.BuildFileBusSkewLog;
+import com.maxeler.platform.max5.toolchain.file.BuildFileChecksumRam;
+import com.maxeler.platform.max5.toolchain.file.BuildFilePowerReportImpl;
+
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
@@ -234,6 +238,9 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
             this.getBuildManager().pushWorkingDir("xilinx_vivado");
             this.getBuildManager().pushWorkingDir("route");
             hasher.append(new File(new BuildFilePostRouteDcp(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_post_route.dcp", false, implementationStrategyName).getAbsoluteName()));
+            this.getBuildManager().addBuildFile(new BuildFilePowerReportImpl(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".power.rpt", false));
+            this.getBuildManager().addBuildFile(new BuildFileChecksumRam(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + "_checksum.txt", false));
+            this.getBuildManager().addBuildFile(new BuildFileBusSkewLog(this.getBuildManager(), "com_maxeler_platform_max5_board_XilinxAlveoU250Top" + ".bus_skew.rpt", false));                
             this.getBuildManager().popWorkingDir();
             this.getBuildManager().popWorkingDir();
             this.getBuildManager().popWorkingDir();
