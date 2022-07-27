@@ -1825,7 +1825,18 @@ public class Utility {
     }
     public static ImplementationStrategy[] chooseImplementationStrategies(boolean customPhysOpt, boolean isProbe)
     {
-        
+        /*create_project p1 -force -part xcu250-figd2104-2L-e
+        set steps [list opt place phys_opt route]
+        set run [get_runs impl_1]
+        join [list_property_value strategy [get_runs impl_1] ]
+        foreach s $steps {
+            puts "${s}_design Directives:"
+            set dirs [list_property_value STEPS.${s}_DESIGN.ARGS.DIRECTIVE $run]
+            set dirs [regsub -all {\s} $dirs \n]
+            puts "$dirs\n"
+        } 
+        close_project -delete       
+        */        
         if (!customPhysOpt) {
             //boolean timingDriven, boolean timingSummary, boolean unplace, boolean postPlaceOpt, boolean fanoutOpt, boolean bufgOpt, java.lang.String additionalOptions
             //The directive option is incompatible with other options with the exception of -no_fanout_opt, -no_bufg_opt, -quiet, and -verbose
@@ -1833,6 +1844,7 @@ public class Utility {
             ImplementationStrategy.PlaceOpt PlaceOptAuto2 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_2"); //Second best predicted directive
             ImplementationStrategy.PlaceOpt PlaceOptAuto3 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_3"); //Third best predicted directive
         
+            //https://docs.xilinx.com/r/en-US/ug904-vivado-implementation/Directives-Used-by-opt_design-and-place_design-in-Implementation-Strategies
             //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
             ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
             ImplementationStrategy PERFORMANCE_HIGH_UTIL_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
