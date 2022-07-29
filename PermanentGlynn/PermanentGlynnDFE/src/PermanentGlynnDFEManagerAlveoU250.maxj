@@ -35,6 +35,7 @@ import com.maxeler.platform.max5.toolchain.build.VivadoSynth;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplementation;
 import com.maxeler.platform.max5.toolchain.build.VivadoPlace;
 import com.maxeler.platform.max5.toolchain.build.VivadoRoute;
+import com.maxeler.platform.max5.toolchain.build.VivadoGenerateMaxFileXilinx;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
 import com.maxeler.platform.max5.toolchain.file.BuildFileBusSkewLog;
 import com.maxeler.platform.max5.toolchain.file.BuildFileChecksumRam;
@@ -204,6 +205,9 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 VivadoCacheManager.get(buildManager).copyFromPreviousBuild();
             }
             return cachePasses;
+        }
+        protected BuildPass getGenerateMaxFileBuildPass(final BuildManager buildManager) {
+            return (BuildPass)new VivadoGenerateMaxFileXilinx(buildManager);
         }
         public VivadoImplPass getPlacePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoPlace(buildManager, vivadoImplementationStrategy);
