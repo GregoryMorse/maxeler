@@ -35,13 +35,11 @@ import com.maxeler.platform.max5.toolchain.build.VivadoSynth;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplementation;
 import com.maxeler.platform.max5.toolchain.build.VivadoPlace;
 import com.maxeler.platform.max5.toolchain.build.VivadoRoute;
+import com.maxeler.platform.max5.toolchain.build.VivadoGenerateMaxFileXilinx;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePostRouteDcp;
 import com.maxeler.platform.max5.toolchain.file.BuildFileBusSkewLog;
 import com.maxeler.platform.max5.toolchain.file.BuildFileChecksumRam;
 import com.maxeler.platform.max5.toolchain.file.BuildFilePowerReportImpl;
-//import com.maxeler.platform.max5.libs.Max5ChecksumMetadata;
-//import com.maxeler.maxeleros.MappedElementsManager;
-//import com.maxeler.maxdc.EntityStructural;
 
 class PermanentGlynnEngineParameters extends EngineParameters {
     public PermanentGlynnEngineParameters(String[] args) {
@@ -106,13 +104,14 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
                         if (lines.get(i).startsWith("phys_opt_design")) {
-                            pw.println("place_design -post_place_opt");
+                            //pw.println("place_design -post_place_opt");
                         } else if (lines.get(i).startsWith("write_checkpoint")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");                            
-                            //pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]"); //get_clocks {mmcm_STREAM*}
+                            pw.println("place_design -post_place_opt");
+                            pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]"); //get_clocks {mmcm_STREAM*}
                             //pw.println("\tset_clock_uncertainty 0.2 -from [get_clocks] -to [get_clocks]"); //200 picoseconds/0.2 nanoseconds
                             pw.println("\tphys_opt_design -directive AggressiveExplore");
-                            //pw.println("\tset_clock_uncertainty 0 -setup -hold [get_clocks]");
+                            pw.println("\tset_clock_uncertainty 0 -setup -hold [get_clocks]");
                             //pw.println("\tset_clock_uncertainty 0 -from [get_clocks] -to [get_clocks]");
                             pw.println("}");
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
@@ -196,18 +195,16 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 }
                 cachePasses = buildPasses;
             } else if (skipCompileSynth) {
-                /*final MappedElementsManager mappedElementsManager = new MappedElementsManager(buildManager, (EntityStructural)new EntityStructural(buildManager) {}, true);
-                mappedElementsManager.setAppID(0);
-                mappedElementsManager.setRevID(0);
-                Max5ChecksumMetadata.get(buildManager).finaliseData(mappedElementsManager.getMappedElementsInfo());*/
                 VivadoCacheManager.get(buildManager).copyFromPreviousBuild();
             }
             return cachePasses;
         }
+        protected BuildPass getGenerateMaxFileBuildPass(final BuildManager buildManager) {
+            return (BuildPass)new VivadoGenerateMaxFileXilinx(buildManager);
+        }
         public VivadoImplPass getPlacePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoPlace(buildManager, vivadoImplementationStrategy);
         }
-        
         public VivadoImplPass getRoutePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoRoute(buildManager, vivadoImplementationStrategy, skipCompileSynth);
         }        
