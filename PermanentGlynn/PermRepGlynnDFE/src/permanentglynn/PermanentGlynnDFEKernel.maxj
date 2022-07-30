@@ -195,8 +195,8 @@ public class PermanentGlynnDFEKernel extends Kernel {
             //if (extraprec > 63) extraprec = 63;
 
         }
-        parity = Utility.repeatPipeline(parity, 72+(useFloat ? 61+1 : 0)+(dual ? 0 : 1), this);        
-        curMplicity = Utility.repeatPipeline(curMplicity, 64+(useFloat ? 54+1 : 0), this);
+        parity = Utility.repeatPipeline(parity, 81+(useFloat ? 61+1 : 0)+(dual ? 0 : 1), this);        
+        curMplicity = Utility.repeatPipeline(curMplicity, 71+(useFloat ? 54+1 : 0), this);
         //DFEComplex save = colSumFix[0];
         if (useFloat) {
             DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
