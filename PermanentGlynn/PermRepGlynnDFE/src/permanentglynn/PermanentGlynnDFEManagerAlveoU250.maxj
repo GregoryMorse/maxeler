@@ -107,7 +107,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                             //pw.println("place_design -post_place_opt");
                         } else if (lines.get(i).startsWith("write_checkpoint")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");                            
-                            pw.println("place_design -post_place_opt");
+                            pw.println("\tplace_design -post_place_opt");
                             pw.println("\tset_clock_uncertainty 0.2 -setup -hold [get_clocks]"); //get_clocks {mmcm_STREAM*}
                             //pw.println("\tset_clock_uncertainty 0.2 -from [get_clocks] -to [get_clocks]"); //200 picoseconds/0.2 nanoseconds
                             pw.println("\tphys_opt_design -directive AggressiveExplore");
