@@ -414,7 +414,6 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].real = ldexp(perm[i].real, -(mulsum + numOfPartialPerms-1));
     perm[i].imag = ldexp(perm[i].imag, -(mulsum + numOfPartialPerms-1));
 #else
-    int adjust1 = fix192to128(&res[i*2]), adjust2 = fix192to128(&res[i*2+1]); //start with (192, -186) adjust=0 then (128, -122) else (128, -186)
 #ifdef DUAL
     int ha = res[i*2].lowBits >> 63, ha2 = res2[i*2].lowBits >> 63;
     int hb = res[i*2+1].lowBits >> 63, hb2 = res2[i*2+1].lowBits >> 63;
@@ -422,6 +421,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 63)));
     res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 63)));
 #endif
+    int adjust1 = fix192to128(&res[i*2]), adjust2 = fix192to128(&res[i*2+1]); //start with (192, -186) adjust=0 then (128, -122) else (128, -186)
         long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
                     imag = ldexpl((long double)res[i*2+1].highBits, (adjust2 ? -186 : -122) - (mulsum + numOfPartialPerms-1));
         // renormalize the result according to the normalization of the input matrix
