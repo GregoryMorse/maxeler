@@ -419,8 +419,8 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     int ha = res[i*2].lowBits >> 63, ha2 = res2[i*2].lowBits >> 63;
     int hb = res[i*2+1].lowBits >> 63, hb2 = res2[i*2+1].lowBits >> 63;
     res[i*2].lowBits += res2[i*2].lowBits, res[i*2+1].lowBits += res2[i*2+1].lowBits;
-    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | (ha ^ ha2) & !(res[i*2].lowBits >> 63));
-    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | (hb ^ hb2) & !(res[i*2+1].lowBits >> 63));
+    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 63)));
+    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 63)));
 #endif
         long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
                     imag = ldexpl((long double)res[i*2+1].highBits, (adjust2 ? -186 : -122) - (mulsum + numOfPartialPerms-1));
