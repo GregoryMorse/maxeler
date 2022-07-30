@@ -186,7 +186,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
             if (2 * limitNew < limit) {
                 limitNew++;
-                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limit - 1], 9+1+1 + (useFloat ? 3+7 : 0), this); //9 for multiplication, 1 for cast, 1 for complex addition/subtraction
+                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limit - 1], 9+1+1+1+(limitNew==2 ? 1 : 0) + (useFloat ? 3+7 : 0), this); //9 for multiplication, 1 for cast, 1 for complex addition/subtraction
                 errorTol[limitNew - 1] = errorTol[limit - 1];
             }
 
