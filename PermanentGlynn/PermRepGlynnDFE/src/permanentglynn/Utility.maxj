@@ -282,6 +282,18 @@ public class Utility {
     public static int gcd(int x, int y) {
         return y == 0 ? x : gcd(y, x % y);
     }
+    public static DFEVar bigCast(DFEVar a, DFEFix targetType, KernelBase<?> base)
+    {
+        DFEFix aType = (DFEFix) a.getType();
+        if (aType.getTotalBits() <= 128) return a.cast(targetType);
+        int guardBit = aType.getFractionBits() - targetType.getFractionBits() + 1; //guard bit is one past the round bit, we let the sticky handle with low casting 
+        DFEVar lowCast = a.slice(0, guardBit).reinterpret(KernelBase.dfeFixOffset(guardBit, -guardBit+1, SignMode.UNSIGNED)).cast(KernelBase.dfeUInt(2));
+        DFEVar s = base.optimization.pipeline(a.slice(guardBit, aType.getTotalBits() - guardBit).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - guardBit, 0, aType.getSignMode())));
+        DFEVar c = lowCast.get(1).reinterpret(KernelBase.dfeBool());
+        List<List<DFEVar>> chunks = getBitChunks128(s, c, false, true);
+        return addExact(s, c, false, base).cat(repeatPipeline(lowCast.get(0), 1 + (chunks != null ? chunks.size() - 1 : 0), base))
+            .reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - guardBit + 1 + 1, -targetType.getFractionBits(), aType.getSignMode())).cast(targetType);
+    }
     public static DFEVar mulKaratsubaRectangularExact(DFEVar a, DFEVar b, int bits, int intBits, KernelBase<?> base)
     {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
@@ -290,8 +302,9 @@ public class Utility {
         DFEVar result = mulKaratsubaRectangular(a.reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())),
                                         b.reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode())), 0, totalDelay, base); //aType.getTotalBits() <= 112 && bType.getTotalBits() <= 120 ? 0 : 2
         result = result
-            .reinterpret(KernelBase.dfeFixOffset(getMulOutpBits(aType, bType), -(aType.getFractionBits() + bType.getFractionBits()), ((DFEFix)result.getType()).getSignMode()))
-            .cast(KernelBase.dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()));
+            .reinterpret(KernelBase.dfeFixOffset(getMulOutpBits(aType, bType), -(aType.getFractionBits() + bType.getFractionBits()), ((DFEFix)result.getType()).getSignMode()));
+        result = bigCast(result, KernelBase.dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()), base);
+        //result = result.cast(KernelBase.dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()));
         //debug.simPrintf(result !== mulExact(a, b, bits, intBits, base), "%d %X %X %X %X\n", aType.getTotalBits(), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), mulExact(a, b, bits, intBits, base).reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), a.reinterpretbase.(KernelBase.dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())), b.reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode()))); //mulKaratsubaExact(a, b, bits, intBits).reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())),
         return result;
     }
