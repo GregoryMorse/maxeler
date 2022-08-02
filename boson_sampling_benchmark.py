@@ -87,19 +87,22 @@ def magicgu(nmax, d):
 def mathcomb(n, k): #binomial coefficients
   import math #return math.comb(n, k)
   return math.factorial(n) // (math.factorial(k) * math.factorial(n-k)) 
-def get_bincoeff_magic():
+def get_bincoeff_magic(dim):
     import random
-    largestbincoeff = mathcomb(40, 20)*21
-    assert largestbincoeff.bit_length() == 42 #38+4 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
-    magicmulshift = [magicgu(largestbincoeff, d) for d in range(1, 41+1)]
-    print([x[0].bit_length() for x in magicmulshift])
+    largestbincoeff = mathcomb(dim, dim//2)*(dim//2+1)
+    #38+4 bits is the largest, anything smaller e.g. math.comb(2, 1)**20==1048576 not a concern math.comb(40, 20)==137846528820
+    magicmulshift = [magicgu(largestbincoeff, d) for d in range(1, dim+1+1)]
+    print("Size", dim, "Largest bincoeff bits", mathcomb(dim, dim//2).bit_length(), "Largest multiplied bincoeff bits", largestbincoeff.bit_length(), "Largest magic number bits", max([x[0].bit_length() for x in magicmulshift]))
     for _ in range(100000):
         assert all(random.randint(0, largestbincoeff // (d+1)) * x[0] >> x[1] for d, x in enumerate(magicmulshift))
     return magicmulshift
-#[(1, 0), (1, 1), (2932031007403, 43), (1, 2), (879609302221, 42), (2932031007403, 44), (2513169434917, 44), (1, 3), (1954687338269, 44), (879609302221, 43), (799644820201, 43), (2932031007403, 45), (338311270085, 42), (2513169434917, 45), (4691249611845, 46), (1, 4), (1034834473201, 44), (1954687338269, 45), (1851809057307, 45), (879609302221, 44), (3350892579889, 46), (799644820201, 44), (3059510616421, 46), (2932031007403, 46), (2814749767107, 46), (338311270085, 43), (1303124892179, 45), (2513169434917, 46), (151656776245, 42), (4691249611845, 47), (4539918979205, 47), (1, 5), (1066193093601, 45), (1034834473201, 45), (4021071095867, 47), (1954687338269, 46), (475464487687, 44), (1851809057307, 46), (3608653547573, 47), (879609302221, 45), (858155416801, 45)] #15, 30 and 31 are 43 bits!!!
-#print(get_bincoeff_magic())
-#bcm = get_bincoeff_magic()
-#print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
+
+#[next(iter(itertools.dropwhile(lambda x: x[1] < 1<<bitsize, ((photons, math.comb(photons, photons//2)) for photons in range(0, 160))))) for bitsize in (32,64,128)]
+def fpga_bincoeff(dim):
+    bcm = get_bincoeff_magic(dim) #print(get_bincoeff_magic(dim))
+    print(", ".join(str(x[0]) + "L" for x in bcm), ", ".join(str(x[1]) for x in bcm))
+#fpga_bincoeff(40)
+#fpga_bincoeff(48)
 #test_complex_sampling(print_histogram())
 
 DEPTH = 40 if hasSim else 60
@@ -574,11 +577,11 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
 def paper_tests():
     for i in (10, 20, 30, 40,):
         verify_timing(DEPTH, i, None, batchsize=1)
-        verify_timing(DEPTH, i, None, batchsize=DEPTH)
+        #verify_timing(DEPTH, i, None, batchsize=DEPTH)
 if not hasSim: paper_tests()
 for i in range(10 if hasSim else 0, 40+1):
     verify_timing(DEPTH, i, None, batchsize=1)
-    verify_timing(DEPTH, i, None, batchsize=3)
+    #verify_timing(DEPTH, i, None, batchsize=3)
     #verify_timing(DEPTH, i, shots=10)
 #verify_timing(DEPTH, 10, None)
 #verify_timing(30, 10, 10)
