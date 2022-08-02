@@ -1,15 +1,15 @@
 
 import numpy as np
 
-from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive
+from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive, PowerTraceHafnianDouble, PowerTraceHafnianLongDouble, PowerTraceHafnianInf 
 from thewalrus import hafnian, hafnian_repeated
 from scipy.stats import unitary_group
 
-DEPTH=44
+DEPTH=22
 saveFolder = "resultslh"
 def make_symmetric(A): return A + A.T
 def load_test_data():
-  nmax = 40
+  nmax = 80
   randfuncs = (unitary_group.rvs, )#generate_random_unitary):
   import os, pickle
   if not os.path.isdir(saveFolder): os.mkdir(saveFolder)
@@ -22,12 +22,44 @@ def load_test_data():
     with open(os.path.join(saveFolder, "matrices.bin"), "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
+  
+#functools.reduce(lambda x, y: x*y//math.gcd(x, y), range(1, 80)).bit_length()
+#functools.reduce(lambda x, y: x*y//math.gcd(x, y), [math.factorial(x) for x in range(1, 40)]).bit_length()
 
-calculators = [None, None]
+hcalculators = [None, None, None, None, None]
+calculators = [None, None, None, None, None]
 
+def hafnian_walrus(Arep):
+    return hafnian(Arep, loop=False)
+def hafnian_repeated_walrus(Arep):
+    return hafnian_repeated(Arep, np.array([1]*(len(Arep)), dtype=np.int64), loop=False)
+def hafnian_powertrace(Arep):
+    if hcalculators[0] is None: hcalculators[0] = PowerTraceHafnian(Arep)
+    else: hcalculators[0].matrix = Arep
+    return hcalculators[0].calculate()
+def hafnian_powertrace_recursive(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    #if calculators[1] is None:
+    hcalculators[1] = PowerTraceHafnianRecursive(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    #else: hcalculators[1].matrix = Arep; hcalculators[1].occupancy = np.array([1]*(len(Arep)//2), dtype=np.int64)
+    return hcalculators[1].calculate()
+def hafnian_powertrace_double(Arep):
+    if hcalculators[2] is None: hcalculators[2] = PowerTraceHafnianDouble(Arep)
+    else: hcalculators[2].matrix = Arep
+    return hcalculators[2].calculate()
+def hafnian_powertrace_longdouble(Arep):
+    if hcalculators[3] is None: hcalculators[3] = PowerTraceHafnianLongDouble(Arep)
+    else: hcalculators[3].matrix = Arep
+    return hcalculators[3].calculate()
+def hafnian_powertrace_inf(Arep):
+    if hcalculators[4] is None: hcalculators[4] = PowerTraceHafnianInf(Arep)
+    else: hcalculators[4].matrix = Arep
+    return hcalculators[4].calculate()
+    
 def lhafnian_walrus(Arep):
+    return hafnian(Arep, loop=True)
+def lhafnian_repeated_walrus(Arep):
     return hafnian_repeated(Arep, np.array([1]*(len(Arep)), dtype=np.int64), loop=True)
-    #return hafnian(Arep, loop=True)
 def lhafnian_powertrace(Arep):
     if calculators[0] is None: calculators[0] = PowerTraceLoopHafnian(Arep)
     else: calculators[0].matrix = Arep
@@ -39,19 +71,25 @@ def lhafnian_powertrace_recursive(Arep):
     #else: calculators[1].matrix = Arep; calculators[1].occupancy = np.array([1]*(len(Arep)//2), dtype=np.int64)
     return calculators[1].calculate()
     
-largeLoopHafnianFuncs = (lhafnian_powertrace, lhafnian_powertrace_recursive, lhafnian_walrus)
+largeLoopHafnianFuncs = (lhafnian_powertrace, lhafnian_powertrace_recursive, lhafnian_walrus, lhafnian_repeated_walrus)
+largeHafnianFuncs = (hafnian_powertrace_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_powertrace_recursive, hafnian_walrus, hafnian_repeated_walrus)
 testLoopHafnianFuncs = ()
+testHafnianFuncs = ()
 
 paperNames = {lhafnian_powertrace: "PiquassoBoost", lhafnian_powertrace_recursive: "PiquassoBoost Recursive",
-              lhafnian_walrus: "thewalrus"}
+              lhafnian_walrus: "thewalrus", lhafnian_repeated_walrus: "thewalrus repeated", 
+              hafnian_powertrace: "PiquassoBoost Hybrid", hafnian_powertrace_double: "PiquassoBoost Double", hafnian_powertrace_longdouble: "PiquassoBoost LongDouble", 
+              hafnian_powertrace_recursive: "PiquassoBoost Recursive",
+              hafnian_walrus: "thewalrus", hafnian_repeated_walrus: "thewalrus repeated", hafnian_powertrace_inf: "MPFR Inf"}
 
-def verify_timing(nmax, batchsize=1):
+def verify_timing(nmax, batchsize=1, loop=True):
   ERRBOUND = 1e-6
-  largeFuncs = largeLoopHafnianFuncs
+  largeFuncs = largeLoopHafnianFuncs if loop else largeHafnianFuncs
   suffix = "" if batchsize == 1 else str(batchsize)
-  verdata = "verifydata.bin"
-  resdata = "resultdata" + suffix + ".bin"
-  xaxis = list(range(0, nmax+1, 2))
+  prefix = "" if loop else "h"
+  verdata = prefix + "verifydata.bin"
+  resdata = prefix + "resultdata" + suffix + ".bin"
+  xaxis = list(range(0, nmax+1, 1)) #list(range(0, nmax+1, 2))
   gen_test_data = load_test_data()
   import os, pickle, timeit
   if os.path.isfile(os.path.join(saveFolder, verdata)):
@@ -66,7 +104,7 @@ def verify_timing(nmax, batchsize=1):
     A = gen_test_data[key]
     if not key in res: res[key] = {}
     if not key in results: results[key] = {}
-    for func in testLoopHafnianFuncs:
+    for func in (testLoopHafnianFuncs if loop else testHafnianFuncs):
       if func.__name__ in res[key]: del res[key][func.__name__]
     for func in largeFuncs:
       if not func.__name__ in res[key]: res[key][func.__name__] = []
@@ -74,7 +112,7 @@ def verify_timing(nmax, batchsize=1):
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
         if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or True:          
-          mplier = 5 if dim < 24 else 1
+          mplier = 5 if dim < 24 and func != hafnian_powertrace_inf else 1
           v = [None]
           def save_result():
               if batchsize == 1: v[0] = func(A[dim])
@@ -96,7 +134,7 @@ def verify_timing(nmax, batchsize=1):
             pickle.dump(results, f)        
         if dim >= 24: print(dim, func.__name__, res[key][func.__name__][dim], results[key][func.__name__][dim])
     if batchsize == 1:
-      with open(os.path.join(saveFolder, "verifydata.csv"), "w") as f:
+      with open(os.path.join(saveFolder, prefix + "verifydata.csv"), "w") as f:
           import csv
           writer = csv.writer(f, delimiter='\t')
           writer.writerow(["Absolute Error compared to " + largeFuncs[0].__name__]) 
@@ -104,7 +142,7 @@ def verify_timing(nmax, batchsize=1):
           writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) for x in largeFuncs] for i in xaxis])
           writer.writerow(["Relative Error compared to " + largeFuncs[0].__name__]) 
           writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
-          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for x in largeFuncs] for i in xaxis])
+          writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for x in largeFuncs] for i in xaxis if (i & 1) == 0])
           writer.writerow(["Loop Hafnian Computation Raw Results"])
           writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
           writer.writerows([[i] + [res[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
@@ -113,13 +151,14 @@ def verify_timing(nmax, batchsize=1):
             if dim != 0: writer.writerow([""] + [str(j) for j in range(dim)])
             for i in range(dim):
               writer.writerow([i] + [A[dim][i][j] for j in range(dim)])
-    with open(os.path.join(saveFolder, "resultdata" + suffix + ".csv"), "w") as f:
+    with open(os.path.join(saveFolder, prefix + "resultdata" + suffix + ".csv"), "w") as f:
       import csv
       writer = csv.writer(f, delimiter='\t')
       writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
       writer.writerows([[i] + [results[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
 
     for i in xaxis:
+      if (i & 1) != 0: continue
       #assert all(abs(res[key][largeFuncs[0].__name__][i] - res[key][x][i]) < ERRBOUND for x in res[key] if x != largeFuncs[0].__name__)
       failures = [(i, x, res[key][x][i], res[key][largeFuncs[0].__name__][i], abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i]))) for x in (y.__name__ for y in largeFuncs) if x != largeFuncs[0].__name__ and abs((res[key][largeFuncs[0].__name__][i] - res[key][x][i]) / abs(res[key][largeFuncs[0].__name__][i])) > ERRBOUND]
       if len(failures) != 0: print("ACCURACY FAILURES: ", failures); #assert False, failures
@@ -129,8 +168,8 @@ def verify_timing(nmax, batchsize=1):
     import math
     plt.rcParams['text.usetex'] = True
     from matplotlib.ticker import MaxNLocator
-    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "loophafacc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
-    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "loophaftime" + suffix, "Time ($\\log_{10}$ s)")
+    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis if (i & 1) == 0]) for f in largeFuncs[1:]], prefix + "loophafacc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis if (i & 1) == 0]) for f in largeFuncs], prefix + "loophaftime" + suffix, "Time ($\\log_{10}$ s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
@@ -139,7 +178,7 @@ def verify_timing(nmax, batchsize=1):
         idxdict = {}
         for i, val in enumerate(vals):
           idxdict[val[0]] = i
-          lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
+          lines.append(ax1.plot([i for i in xaxis if (i & 1) == 0], val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size ($n$)")  
         ax1.set_yscale('log', base=10)
         ax1.set_ylabel(ylbl)
@@ -156,4 +195,4 @@ def verify_timing(nmax, batchsize=1):
         ax1.legend()
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
-verify_timing(DEPTH, 1)
+verify_timing(DEPTH, 1, False)
