@@ -15,7 +15,6 @@ import com.maxeler.platform.max5.manager.BuildConfig;
 import com.maxeler.platform.max5.manager.ImplementationStrategy;
 import com.maxeler.platform.max5.manager.SynthesisStrategy;
 
-
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
@@ -914,9 +913,27 @@ public class Utility {
         if (aType.getFractionBits() > bcType.getFractionBits()) { //isBSub isCSub in above calculation not relevant to fraction bits so we reuse...
             int bitDiff = aType.getFractionBits() - bcType.getFractionBits();
             DFEVar asplice = a.slice(0, bitDiff);
-            a = a.slice(bitDiff, aType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - bitDiff, -(aType.getFractionBits() - bitDiff), aType.getSignMode()));
-            List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
-            DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
+            List<List<DFEVar>> chunks;
+            DFEVar result;
+            if (aType.getTotalBits() == bitDiff) {
+                if (isBSub && isCSub) {
+                    a = base.constant.zero(KernelBase.dfeBool());
+                    chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
+                    result = doTriAddExact(a, b, c, isBSub, isCSub, base);                    
+                } else if (isCSub) {
+                    chunks = getBitChunks128(b, c, isCSub, true);
+                    result = doAddExact(b, c, isCSub, base);
+                    resultType = KernelBase.dfeFixOffset(resultType.getTotalBits()-1, resultType.getOffset(), resultType.getSignMode());
+                } else {
+                    chunks = getBitChunks128(c, b, isBSub, true);
+                    result = doAddExact(c, b, isBSub, base);
+                    resultType = KernelBase.dfeFixOffset(resultType.getTotalBits()-1, resultType.getOffset(), resultType.getSignMode());
+                }
+            } else {
+                a = a.slice(bitDiff, aType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - bitDiff, -(aType.getFractionBits() - bitDiff), aType.getSignMode()));
+                chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
+                result = doTriAddExact(a, b, c, isBSub, isCSub, base);
+            }
             return result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);            
         } else if (!isBSub && bType.getFractionBits() > acType.getFractionBits()) {
             int bitDiff = bType.getFractionBits() - acType.getFractionBits();
@@ -1849,7 +1866,7 @@ public class Utility {
             puts "$dirs\n"
         } 
         close_project -delete       
-        */
+        */        
         if (!customPhysOpt) {
             //Auto_* do not exist until Vivado 2022.1
             //boolean timingDriven, boolean timingSummary, boolean unplace, boolean postPlaceOpt, boolean fanoutOpt, boolean bufgOpt, java.lang.String additionalOptions
@@ -1857,7 +1874,7 @@ public class Utility {
             //ImplementationStrategy.PlaceOpt PlaceOptAuto1 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_1"); //High performing predicted directive
             //ImplementationStrategy.PlaceOpt PlaceOptAuto2 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_2"); //Second best predicted directive
             //ImplementationStrategy.PlaceOpt PlaceOptAuto3 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_3"); //Third best predicted directive
-            
+        
             //https://docs.xilinx.com/r/en-US/ug904-vivado-implementation/Directives-Used-by-opt_design-and-place_design-in-Implementation-Strategies
             //ImplementationStrategy PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT_CUSTOM = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), ImplementationStrategy.PhysOpt.EXPLORE);
             ImplementationStrategy PERFORMANCE_BALANCE_SLRS = ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PhysOpt.EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, ImplementationStrategy.PhysOpt.DISABLED);
