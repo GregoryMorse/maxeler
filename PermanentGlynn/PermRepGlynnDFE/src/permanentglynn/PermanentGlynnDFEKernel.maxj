@@ -186,7 +186,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
             if (2 * limitNew < limit) {
                 limitNew++;
-                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limit - 1], 9+1+1+1+(limitNew==2 ? 1 : 0) + (useFloat ? 3+7 : 0), this); //9 for multiplication, 1 for cast, 1 for complex addition/subtraction
+                colSumFix[limitNew - 1] = Utility.repeatPipeline(colSumFix[limit - 1], 9+1+1+1+(limitNew==2 ? 1 : 0)+(cols==48 ? 1 : 0) + (useFloat ? 3+7 : 0), this); //9 for multiplication, 1 for cast, 1 for complex addition/subtraction
                 errorTol[limitNew - 1] = errorTol[limit - 1];
             }
 
@@ -196,7 +196,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
         }
         parity = Utility.repeatPipeline(parity, 81+(useFloat ? 61+1 : 0)+(dual ? 0 : 1), this);        
-        curMplicity = Utility.repeatPipeline(curMplicity, 71+(useFloat ? 54+1 : 0), this);
+        curMplicity = Utility.repeatPipeline(curMplicity, 71+(cols==48 ? 1 : 0)+(useFloat ? 54+1 : 0), this);
         //DFEComplex save = colSumFix[0];
         if (useFloat) {
             DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
