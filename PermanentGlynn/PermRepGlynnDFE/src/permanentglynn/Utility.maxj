@@ -1652,8 +1652,14 @@ public class Utility {
             if (bits + split >= bitsToAddress) return base.control.mux(base.optimization.pipeline(sel), values); 
             DFEVar[] sels = parallelFanout(sel.slice(bits, split), values.size(), 32, base);
             List<T> nextValues = new ArrayList<>();
-            for (int i = 0; i < values.size(); i += (1 << split))
-                nextValues.add(base.control.mux(sels[i / 32], values.subList(i, i+Math.min(1 << split, values.size() - i))));
+            for (int i = 0; i < values.size(); i += (1 << split)) {
+                List<T> curvals = values.subList(i, i+Math.min(1 << split, values.size() - i));
+                if (curvals.size() == 1) {
+                    nextValues.add(base.optimization.pipeline(curvals.get(0)));
+                } else {
+                    nextValues.add(base.control.mux(sels[i / 32], curvals));
+                }
+            }
             values = nextValues;
             sel = base.optimization.pipeline(sel.slice(bits + split, bitsToAddress - bits - split));
         }
