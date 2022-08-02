@@ -18,9 +18,9 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.Optimizatio
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
     boolean placeFanouts = true;
-    //40x40 is a large enough limit in all cases
     final boolean colMux = false; //column multiplexing is very resource expensive and causes heavy congestion
-    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq) {
+    //must be multiple of kernel count
+    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq, int dim) {
         OptimizationOptions opt = getCurrentKernelConfig().optimization;
         //minimumStreamFifoDepth = 64
         //defaultStreamFifoDepth = 512
@@ -37,7 +37,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        int dim = isSim ? 40 : 40; //must be multiple of kernel count
         int rows = dim;
         int cols = rows;
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
@@ -133,9 +132,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        //int dim = isSim ? 40 : 40; //must be multiple of kernel count
-        //int rows = dim;
-        //int cols = rows;
         int loopLength = useFloat ? 15 : 9; //based on multiplexer initialization (1) + fixed point multiplication (5) + a right shift multiplexer (1), for float multiplexer initialization (1) + addition/subtraction (13) + addition/subtraction multiplexer (1)
         int initKerns = 4;
 
