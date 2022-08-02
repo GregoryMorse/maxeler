@@ -1,16 +1,16 @@
 
 
 SIM:
-	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentGlynn_singleSIM -Dresult-dir=./builds/simulation -Dengine-params=\"frequency=320\"
+	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentGlynn_singleSIM -Dresult-dir=./builds/simulation -Dengine-params=\"frequency=330\"
 
 SIMDUAL:
-	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentGlynn_dualSIM -Dresult-dir=./builds/simulation -Dengine-params=\"dual=true frequency=320\"
+	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentGlynn_dualSIM -Dresult-dir=./builds/simulation -Dengine-params=\"dual=true frequency=330\"
 
 DFE:
-	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentGlynn_singleDFE -Dresult-dir=./builds/bitstream -Dengine-params=\"frequency=320\"
+	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentGlynn_singleDFE -Dresult-dir=./builds/bitstream -Dengine-params=\"frequency=330\"
 
 DFEDUAL:
-	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentGlynn_dualDFE -Dresult-dir=./builds/bitstream -Dengine-params=\"dual=true frequency=320\"
+	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE -Dmaxfile-name=PermanentGlynn_dualDFE -Dresult-dir=./builds/bitstream -Dengine-params=\"dual=true frequency=330\"
 
 SIMF:
 	ant build -Dmanager=permanentglynn.PermanentGlynnDFEManagerAlveoU250 -Dtarget=DFE_SIM -Dmaxfile-name=PermanentGlynn_singleSIMF -Dresult-dir=./builds/simulation -Dengine-params=\"useFloat=true frequency=240\"
