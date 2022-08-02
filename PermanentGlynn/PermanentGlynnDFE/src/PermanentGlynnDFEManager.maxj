@@ -19,8 +19,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.Optimizatio
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
 
     boolean placeFanouts = true;
-    //40x40 is a large enough limit in all cases
-    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq) {
+    //dim must be multiple of kernel count
+    default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq, int dim) {
         OptimizationOptions opt = getCurrentKernelConfig().optimization;
         //minimumStreamFifoDepth = 64
         //defaultStreamFifoDepth = 512
@@ -37,7 +37,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        int dim = isSim ? 40 : 40; //must be multiple of kernel count
         int rows = dim;
         int cols = rows;
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
@@ -115,9 +114,6 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        //int dim = isSim ? 40 : 40; //must be multiple of kernel count
-        //int rows = dim;
-        //int cols = rows;
         int initKerns = 4;
 
         EngineInterface ei = new EngineInterface();
