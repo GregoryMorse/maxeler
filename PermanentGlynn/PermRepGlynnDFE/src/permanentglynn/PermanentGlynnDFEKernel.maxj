@@ -34,7 +34,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         int limit = cols;
         DFEComplex[] colSumFix = new DFEComplex[cols];
         int[] errorTol = new int[cols];
-
+        int bincoeffbits = cols == 40 ? 38 : 45;
         int tol = 6; //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
 	
         // tick count
@@ -79,10 +79,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
                 if (j == 0) {
-                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + 38), isCalc);
+                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + bincoeffbits), isCalc);
                     colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
-                    curMplicity = rawBits.slice(colSumType.getTotalBits(), 38).reinterpret(dfeUInt(38));
-                    parity = rawBits.slice(colSumType.getTotalBits() + 38, 1).reinterpret(dfeBool());
+                    curMplicity = rawBits.slice(colSumType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
+                    parity = rawBits.slice(colSumType.getTotalBits() + bincoeffbits, 1).reinterpret(dfeBool());
                 } else {
                     colmnSumVector <== io.input("colSums" + j, colSumType, isCalc);
                 }
@@ -115,10 +115,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
                 if (j == 0) {
-                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + 38));
+                    DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + bincoeffbits));
                     colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
-                    curMplicity = rawBits.slice(colSumType.getTotalBits(), 38).reinterpret(dfeUInt(38));
-                    parity = rawBits.slice(colSumType.getTotalBits() + 38, 1).reinterpret(dfeBool());
+                    curMplicity = rawBits.slice(colSumType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
+                    parity = rawBits.slice(colSumType.getTotalBits() + bincoeffbits, 1).reinterpret(dfeBool());
                 } else {
                     colmnSumVector <== io.input("colSums" + j, colSumType);
                 }
