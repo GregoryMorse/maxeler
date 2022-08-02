@@ -48,7 +48,8 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     protected void declarations() {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
-        declareParam("frequency", EngineParameters.DataType.INT, 280);
+        declareParam("frequency", EngineParameters.DataType.INT, 330);
+        declareParam("maxDim", EngineParameters.DataType.INT, 40);        
     }
     public boolean dual() {
         return getParam("dual");
@@ -61,6 +62,9 @@ class PermanentGlynnEngineParameters extends EngineParameters {
     }
     public int getFrequency() {
         return getParam("frequency");
+    }
+    public int getMaxDim() {
+        return getParam("maxDim");
     }
 }
 
@@ -266,7 +270,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
-        setup(this, params.dual(), params.isSim(), params.useFloat(), params.getFrequency());
+        setup(this, params.dual(), params.isSim(), params.useFloat(), params.getFrequency(), params.getMaxDim());
     }
 
     public static void main(final String[] argv) {
