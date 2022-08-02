@@ -821,14 +821,23 @@ public class Utility {
         DFEFix resultType = getTriAddExactType(aType, bType, cType, isBSub, isCSub);
         if (resultType.getTotalBits() <= CHUNKSIZE) return null; //no chunking is needed
         int lsb; 
-        if (aType.getFractionBits() > Math.max(bType.getFractionBits(), cType.getFractionBits())) { //if splicing did not yet occur we account for it anyway
-            lsb = -Math.max(bType.getFractionBits(), cType.getFractionBits());
-        } else if (bType.getFractionBits() > Math.max(aType.getFractionBits(), cType.getFractionBits())) {
-            lsb = -Math.max(aType.getFractionBits(), cType.getFractionBits());
-        } else if (cType.getFractionBits() > Math.max(aType.getFractionBits(), bType.getFractionBits())) {
-            lsb = -Math.max(aType.getFractionBits(), bType.getFractionBits());
-        } else lsb = -Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits());
-        
+        DFEFix bcType = isCSub ? getAddExactType(bType, cType, isCSub) : getAddExactType(cType, bType, isBSub);
+        DFEFix acType = getAddExactType(aType, cType, isCSub);
+        DFEFix abType = getAddExactType(aType, bType, isBSub);
+        if ((!isBSub || !isCSub) && -aType.getFractionBits() > bcType.getIntegerBits()) {
+            return getBitChunks128(b, c, isCSub, true);
+        } else if (!isBSub && -bType.getFractionBits() > acType.getIntegerBits()) {
+            return getBitChunks128(a, c, isCSub, true);
+        } else if (!isCSub && -cType.getFractionBits() > abType.getIntegerBits()) {
+            return getBitChunks128(a, b, isBSub, true);
+        }
+        if (aType.getFractionBits() > bcType.getFractionBits()) { //if splicing did not yet occur we account for it anyway
+            lsb = -bcType.getFractionBits();
+        } else if (!isBSub && bType.getFractionBits() > acType.getFractionBits()) {
+            lsb = -acType.getFractionBits();
+        } else if (!isCSub && cType.getFractionBits() > abType.getFractionBits()) {
+            lsb = -abType.getFractionBits();
+        } else lsb = -Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits());        
         int msb = Math.max(Math.max(aType.getIntegerBits(), bType.getIntegerBits()), cType.getIntegerBits());
         List<List<DFEVar>> chunks = new ArrayList<>();
         for (int i = lsb; i < msb; ) { //going from least to most significant byte order might miss special optimizations for binary/tri-adder, very difficult to handle generally 
@@ -889,12 +898,15 @@ public class Utility {
         DFEFix abType = getAddExactType(aType, bType, isBSub);
         if ((!isBSub || !isCSub) && -aType.getFractionBits() > bcType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(b, c, isCSub, true);
+            resultType = KernelBase.dfeFixOffset(bcType.getTotalBits()+aType.getTotalBits()-aType.getFractionBits() - bcType.getIntegerBits(), -bcType.getFractionBits(), resultType.getSignMode());
             return repeatPipeline(a, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bcType.getIntegerBits()))).cat(addExact(b, c, isCSub, base)).reinterpret(resultType);
         } else if (!isBSub && -bType.getFractionBits() > acType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, c, isCSub, true);
+            resultType = KernelBase.dfeFixOffset(acType.getTotalBits()+bType.getTotalBits()-bType.getFractionBits() - acType.getIntegerBits(), -acType.getFractionBits(), resultType.getSignMode());
             return repeatPipeline(b, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - acType.getIntegerBits()))).cat(addExact(a, c, isCSub, base)).reinterpret(resultType);
         } else if (!isCSub && -cType.getFractionBits() > abType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isBSub, true);
+            resultType = KernelBase.dfeFixOffset(abType.getTotalBits()+cType.getTotalBits()-cType.getFractionBits() - abType.getIntegerBits(), -abType.getFractionBits(), resultType.getSignMode());
             return repeatPipeline(c, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-cType.getFractionBits() - abType.getIntegerBits()))).cat(addExact(a, b, isBSub, base)).reinterpret(resultType);
         }
         //first we splice off any trailing bits
@@ -1238,6 +1250,11 @@ public class Utility {
         //base.debug.simPrintf(result !== n1 * n2, "%f %f %f %f %f %f %f\n", n1, n2, n1 * n2, result, n1m, n2m, mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, base));
         return result; //return n1 * n2;
     }
+    public static DFEVar maxIntegerBits(DFEVar a, int bits)
+    {
+        DFEFix aType = (DFEFix)a.getType();
+        return a.cast(KernelBase.dfeFixOffset(bits + aType.getFractionBits(), -aType.getFractionBits(), aType.getSignMode()));
+    }
     public static DFEComplex doMult(DFEComplex n1, DFEComplex n2, int bits, boolean useUngar, boolean useFloat, KernelBase <?> owner) {
         //(a+bi)(c+di)=(ac-bd)+(bc+ad)i 4 multiplications 2 additions 4M+2A
         //vs. 3 multiplications 5 additions 3M+5A
@@ -1278,10 +1295,10 @@ public class Utility {
                 DFEVar cab = repeatPipeline(
                     mulKaratsubaRectangularExact(repeatPipeline(c, 1 + (chunks != null ? chunks.size()-1 : 0), owner), addExact(a, b, false, owner), bits, 3, owner), //2..-2 requires 3 integer bits
                     depth - (1 + (chunks != null ? chunks.size()-1 : 0)), owner);
-                DFEComplex ret = DFEComplexType.newInstance(owner, addExact(cab, repeatPipeline(
-                        mulKaratsubaRectangularExact(repeatPipeline(b, 1 + (chunkscd != null ? chunkscd.size()-1 : 0), owner), addExact(c, d, false, owner), bits, 3, owner), depth - (1 + (chunkscd != null ? chunkscd.size()-1 : 0)), owner), true, owner),
-                    addExact(cab, repeatPipeline(
-                        mulKaratsubaRectangularExact(repeatPipeline(a, 1 + (chunksdc != null ? chunksdc.size()-1 : 0), owner), addExact(d, c, true, owner), bits, 3, owner), depth - (1 + (chunksdc != null ? chunksdc.size()-1 : 0)), owner), false, owner));
+                DFEComplex ret = DFEComplexType.newInstance(owner, maxIntegerBits(addExact(cab, repeatPipeline(
+                        mulKaratsubaRectangularExact(repeatPipeline(b, 1 + (chunkscd != null ? chunkscd.size()-1 : 0), owner), addExact(c, d, false, owner), bits, 3, owner), depth - (1 + (chunkscd != null ? chunkscd.size()-1 : 0)), owner), true, owner), 2),
+                    maxIntegerBits(addExact(cab, repeatPipeline(
+                        mulKaratsubaRectangularExact(repeatPipeline(a, 1 + (chunksdc != null ? chunksdc.size()-1 : 0), owner), addExact(d, c, true, owner), bits, 3, owner), depth - (1 + (chunksdc != null ? chunksdc.size()-1 : 0)), owner), false, owner), 2));
                 return ret;
             }
         }
