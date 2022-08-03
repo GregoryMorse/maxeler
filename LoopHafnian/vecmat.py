@@ -318,6 +318,149 @@ def minimalPolynomial(mat):
 def factoriallcms(n):
   import math, functools
   return functools.reduce(lambda x, y: x*y//math.gcd(x, y), range(1, n+1))
+def householder(vec):
+    n = len(vec)
+    s = np.dot(vec[1:n], vec[1:n])
+    v = vec.copy(); v[0] = 1
+    if s == 0: B = 0
+    else:
+        m = np.sqrt(vec[0]*vec[0]+s)
+        if vec[0] <= 0: v[0] = vec[0] - m
+        else: v[0] = -s / (vec[0] + m)
+        B = 2*v[0]*v[0]/(s + v[0]*v[0])
+        v = v / v[0]
+    return v, B
+def qr_linalg():
+    #np.linalg.qr(mat, mode='raw')
+    return np.linalg.qr(mat, mode='complete')[1]
+def qr_householder(mat):
+    mat = mat.copy()
+    m = n = len(mat)
+    for j in range(n):
+        v, B = householder(mat[j:m, j])
+        mat[j:m, j:n] = (np.eye(m-j, dtype=mat.dtype)-B*v[:,np.newaxis]@v[np.newaxis,:]) @ mat[j:m, j:n]
+        if j < m-1: mat[j+1:m, j] = v[1:m-j+1]
+    mat = np.triu(mat)
+    return mat
+def qr_givens(mat):
+    print(householder_qr(mat))
+    mat = mat.copy()
+    m = n = len(mat)
+    for j in range(n):
+        for i in range(m - 1, j, -1):
+            c, s = givens(mat[i-1,j], mat[i,j])
+            mat[i-1:i+1,j:n] = np.array([[c, s], [-s, c]]).T @ mat[i-1:i+1,j:n]
+    mat = np.triu(mat)
+    print(mat)
+    return mat 
+def givens(a, b):
+    if b == 0: c, s = 1, 0
+    else:
+        if abs(b) > abs(a):
+            tau = -a/b
+            s = 1/np.sqrt(1+tau*tau)
+            c = s * tau
+        else:
+            tau = -b/a
+            c = 1/np.sqrt(1+tau*tau)
+            s = c * tau
+    return c, s
+def fastgivens(x, d):
+    if x[1] != 0:
+        a = -x[0]/x[1]
+        b = -a*d[1]/d[0]
+        g = -a*b
+        if g <= 1:
+            typ = 1
+            tau = d[0]
+            d[0] = (1 + tau)*d[1]
+            d[1] = (1 + g)*tau
+        else:
+            typ = 2
+            a, b, g = 1 / a, 1 / b, 1 / g
+            d[0] = (1 + g)*d[0]
+            d[1] = (1 + g)*d[1]
+    else:
+        typ, a, b = 2, 0, 0
+    return a, b, typ
+def hessenberg_to_qr(mat):
+    n = len(mat)
+    mat = mat.copy()
+    for j in range(n-1):
+        c, s = givens(mat[j,j], mat[j+1,j])
+        mat[j:j+2, j:n] = np.array([[c, s], [-s, c]]).T @ mat[j:j+2, j:n]
+    mat = np.triu(mat)
+    return mat
+def hessenberg_scipy(mat):
+    from scipy.linalg import hessenberg
+    return hessenberg(mat)
+def hessenberg_givens(mat):
+    print(mat, hessenberg_scipy(mat))
+    from scipy.linalg import block_diag
+    n = len(mat)
+    mat = mat.copy()
+    G = np.eye(n, dtype=mat.dtype)
+    for j in range(n-2):
+        for i in range(n-1, j+1, -1):
+            c, s = givens(mat[i-1,j], mat[i,j])
+            g = np.array([[c, s], [-s, c]])
+            G = block_diag(np.eye(j, dtype=mat.dtype), g, np.eye(n-j-2)) @ G
+            #G[i-1:i+1,:] = g @ G[i-1:i+1,:]
+            mat[i-1:i+1,j:n] = g.T @ mat[i-1:i+1,j:n]
+            mat[:,i-1:i+1] = mat[:,i-1:i+1] @ g
+    mat = np.triu(mat, -1)
+    print(mat, G, mat @ G)
+    return mat
+def qr_hessenberg(mat): return hessenberg_to_qr(hessenberg_scipy(mat))
+def hessenberg_householder(mat):
+    n = len(mat)
+    mat = mat.copy()
+    m = n
+    for j in range(0, n-2):
+        v, B = householder(mat[j+1:m, j])
+        #I = np.eye(m-j, dtype=mat.dtype)
+        #I[1:,1:] -= B*v[:,np.newaxis]@v[np.newaxis,:]
+        #print(I @ mat[j:m, j:n])
+        #mat[j:m, j:n] = I @ mat[j:m, j:n]
+        mat[j+1:m, j:n] = mat[j+1:m, j:n] - B*v[:,np.newaxis]@(v[np.newaxis,:] @ mat[j+1:m, j:n])
+        mat[:,j+1:n] = mat[:,j+1:n] - B*(mat[:,j+1:n]@v[:,np.newaxis])@v[np.newaxis,:]        
+        if j < m-1: mat[j+2:m, j] = v[1:m-j+1]
+    mat = np.triu(mat, -1)
+    return mat
+def labudde(mat): #https://ipsen.math.ncsu.edu/ps/charpoly3.pdf
+    n = len(mat); k = n - 1
+    c = np.zeros(mat.shape, dtype=mat.dtype)
+    c[0,0]  = -mat[0,0]
+    c[0,1] = c[0,0] - mat[1,1]
+    c[1,1] = mat[0,0]*mat[1,1] - mat[0,1] * mat[1,0]
+    def betaprod(s, e): return multiprod(mat[d,d-1] for d in range(s, e+1)) if s <= e else 1
+    for i in range(2, k+1):
+        c[0,i] = c[0,i-1] - mat[i,i]
+        for j in range(1, i):
+            c[j, i] = c[j, i-1] - mat[i,i]*c[j-1,i-1] - sum(mat[i-m-1,i]*betaprod(i-m, i)*c[j-m-2,i-m-2] for m in range(0, j-1)) - mat[i-j,i]*betaprod(i-j+1, i)
+        c[i,i] = -mat[i,i]*c[i-1,i-1] - sum(mat[i-m-1,i]*betaprod(i-m, i)*c[i-m-2,i-m-2] for m in range(0, i-1)) - mat[0,i]*betaprod(1, i)
+    for i in range(k+1, n):
+        c[0,i] = c[0,i-1] - mat[i,i]
+        if k >= 1:
+            for j in range(1, k+1):
+                c[j, i] = c[j, i-1] - mat[i,i]*c[j-1,i-1] - sum(mat[i-m-1,i]*betaprod(i-m, i)*c[j-m-2,i-m-2] for m in range(0, j-1)) - mat[i-j,i]*betaprod(i-j+1, i)
+    return [c[j,n-1] for j in range(0, k+1)]
+def compute_powertrace_quartic(mat):
+    n = len(mat)
+    tr = [sum(B[i][i] for i in range(len(B)))]
+    M = mat
+    while len(tr) != n:
+        M = matMul(M, mat) 
+        tr.append(sum(M[i][i] for i in range(len(M))))
+    return tr
+def compute_charpoly(mat):    
+    return labudde(hessenberg_givens(mat))
+dim = 5
+M = np.random.rand(dim, dim)*2-1
+assert compute_charpoly(M) == np.poly(M), (compute_charpoly(M), np.poly(M)) 
+
+def power_traces(mat):
+    charpoly = compute_charpoly(mat)
 #[factoriallcms(n) for n in range(1, 15)]
 #https://arxiv.org/pdf/1805.12498.pdf
 def hafnian_eff(mat, isInt=False, isLoop=False):
@@ -346,13 +489,14 @@ def hafnian_eff(mat, isInt=False, isLoop=False):
       loopCorrections = [] #[matMul(matMul(v,  colswap), vt)[0][0]]
       #w = [[v[0][i^1]] for i in range(len(v[0]))]
       w = matMul(colswap, vt)
-      print(vt, w)
       #paper has mistake that (XB)^(k-1) where it should be (B^(k-1))X
+      #v*B^(k-1)X*v^T=v*(XAz)^(k-1)X*v^T=v*Az^(k-1)*X^k*v^T
       while len(loopCorrections) != n:
         #Bpow = B if len(loopCorrections) == 1 else matMul(Bpow, B)
         #loopCorrections.append(matMul(matMul(v, matMul(Bpow, colswap)), vt)[0][0])
         loopCorrections.append(matMul(v, w)[0][0])
         w = matMul(B, w)
+        #w = matMul(AZ, w); w = matMul(colswap, w)
       if isInt: lbda = [0] + [tr[k-1] * (fact // k) + loopCorrections[k-1] * fact for k in range(1, n+1)]
       else: lbda = [0] + [tr[k-1] / (2 * k) + loopCorrections[k-1] / 2 for k in range(1, n+1)]
     else:
@@ -391,7 +535,7 @@ def run_haftest():
       #print(timeit.timeit(lambda: hafnian_ryser_time(mat), number=1000))
       #print(timeit.timeit(lambda: hafnian_eff(mat, isInt=True), number=1000))
       print(sol)
-
+#run_haftest()
 def add64(tensors1, tensors2, issub=False):
     res = []
     maskadd = g.constant_tensor(shape=(1, dim), dtype=g.uint32)
@@ -498,7 +642,7 @@ def karatsuba_mul16(tensor1, tensor2, dim):
 def num_to_bits(num, chunks):
     res, shp = np.repeat(num[np.newaxis,...], chunks, axis=0), [chunks] + [1] * len(num.shape)
     return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
-def bits_to_num(num, offset=3):
+def bits_to_num(num, offset=7):
     return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[1]-offset, 7), axis=1) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension, fractionbits=63):
     mantissas, exponents = np.frexp(num)
@@ -651,14 +795,68 @@ def colswap_vector(tvec, tmat, dim, inittime=0):
         SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
         SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
         #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
-        with g.ResourceScope(name="colswap" + dirstr, time=inittime):
+        with g.ResourceScope(name="colswap" + dirstr, time=inittime): #this should use the distributor, not the slow more resource intensive permutor!
             final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
     g.add_mem_constraints(tvec, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles 
+def flatten_zip(z): return [item for sublist in z for item in sublist]
+def flatten_unzip(z): return list(zip(*zip(*([iter(z)] * 2))))
+def init_matrix(tmat, chunks, dim):
+    imagpermmap = [g.from_data(np.array(inst.encode_permute_map(list(range(dim, dim*2)) + list(range(dim)) + list(range(dim*3, dim*4)) + list(range(dim*2, dim*3)))).astype(np.uint8), layout=get_slice1(hemi, 43)) for hemi in (WEST, EAST)]
+    #map_tensor = g.from_data(np.array([i for i in range(16)]*dim*2//16 + [16]*dim*2, dtype=np.uint8))
+    #map_tensor_rev = g.from_data(np.array([16]*dim*2 + [i for i in range(16)]*dim*2//16, dtype=np.uint8))
+    map_tensor, map_tensor_rev, negate_tensor, add1_tensor = [], [], [], []
+    s16rangeW = list(range(25, 27+1))+list(range(29, 37+1))+list(range(39,42+1))
+    s16rangeE = list(range(26, 27+1))+list(range(29,42+1))     
+    identmat = []
+    matmem, matzero = [], []
+    for hemi in (WEST, EAST):
+        map_tensor.append(g.from_data(np.array([[-1]*dim*2+[0]*dim*2], dtype=np.int8), layout=get_slice4(hemi, 0, 3, 0)))
+        #map_tensor_rev.append(g.from_data(np.array([[0]*dim*2+[-1]*dim*2], dtype=np.int8)))
+        negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[0]*dim*2, dtype=np.int8), layout=get_slice4(hemi, 4, 7, 0)))
+        #add1_tensor.append(g.from_data(np.array([0]*dim+[1]*dim, dtype=np.int8), layout=get_slice4(hemi, 8, 11, 0)))
+        #identmat.append(g.eye(320, layout=get_slice4(hemi, 0, 3, 0)))
+        matmem.append(inst.malloc([hemi], s16rangeW if hemi==WEST else s16rangeE, [0], chunks*dim*2*2 // 16, "B_W" if hemi==WEST else "B_E").reshape(2, ))
+        matzero.append(g.zeros(shape=(16, 320), dtype=g.int8, layout="-1, H1(" + ("W" if hemi==WEST else "E") + "), S16(" + (s16rangeW if hemi==WEST else s16rangeE) + "), B1(0)"))
+    #inst.free_mem_by_key("B_W"); inst.free_mem_by_key("E_W")
+    tmatsplit = g.split_vectors(tmat, [chunks*dim*dim//320]*2) #split into WEST and EAST (chunks//2, dim*dim*2//320)
+    with g.ResourceScope(name="imagreal", is_buffered=True, time=0) as pred:
+        imagreal = []
+        for hemi in (WEST, EAST):
+            imagreal.append(g.permute_inner(tmatsplit[hemi], imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0).write(name="imagreal" + ("W" if hemi==WEST else "E"), layout=get_slice1(hemi, 42, 1)))
+    g.add_mem_constraints(tmatsplit, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    tmatjoin = [g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[0], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[0], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320)),
+                g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[1], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[1], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320))] #(chunks//2, dim*2*dim*2//320, 320)
+    with g.ResourceScope(name="shifted", is_buffered=True, time=None, predecessors=[pred]):
+        result = []        
+        for hemi in (WEST, EAST):
+            result_mt_split = flatten_unzip(g.split_vectors(tmatjoin[hemi], [dim//2]*chunks))
+            result_mt_split = g.concat_vectors((*result_mt_split[1], *result_mt_split[0]), (chunks*dim//2, 320))
+            result_mt = g.bitwise_and(result_mt_split.read(streams=g.SG4[2 if hemi==WEST else 5]), map_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5], time=0)
+            result_mt_split = g.split_vectors(result_mt, [chunks//2*dim//2]*2)
+            negalu = g.tensor.create_alu_request([2 if hemi==WEST else 5])
+            result_mt_split[0] = g.split_vectors(result_mt_split[0], [dim//2]*(chunks//2))
+            result_mt_split[1] = g.split_vectors(g.mul(result_mt_split[1], negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [dim//2]*(chunks//2))
+            result_mt = g.concat_vectors(flatten_zip(zip(result_mt_split[1], result_mt_split[0])), (chunks*dim//2, 320))
+            #dist = g.distribute_8(tmat, map_tensor, distributor_req=4, map_stream_req=g.SG1[0], time=0)
+            #dist_rev = g.distribute_8(tmat, map_tensor_rev, distributor_req=6, map_stream_req=g.SG1[0])
+            #result_mt = g.transpose_null(dist, transposer_req=2, stream_order=[0,1,2,3,4,5,6,7]) #.write(name="test", layout="-1, S8")
+            #160 shift is a concurrency of 1...SG1 36 delay in south direction
+            result_mt2 = g.shift(tmatjoin[hemi], dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0 if hemi==WEST else 12], output_streams=g.SG1[0 if hemi==WEST else 12], time=500) #.write(name="test", layout="-1, S16")
+            result_mt2_split = flatten_unzip(g.split_vectors(result_mt2, [dim//2]*chunks))
+            result_mt2_split[0] = g.split_vectors(g.mul(g.concat_vectors(result_mt2_split[0], (chunks//2*dim//2, 320)), negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [dim//2]*(chunks//2))
+            result_mt2 = g.concat_vectors(flatten_zip(zip(result_mt2_split[0], result_mt2_split[1])), (chunks*dim//2, 320))
+            #result_mt2=tmatjoin[hemi].read(streams=g.SG8[2 if hemi==WEST else 3], time=500)
+            #result_rev_mt = g.shift(tmatjoin[hemi], -dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0], output_streams=g.SG1[0], time=0)
+            result.append(g.concat_vectors(flatten_zip(zip(g.split_vectors(result_mt, [1]*(chunks*dim//2)), g.split_vectors(result_mt2, [1]*(chunks*dim//2)))), (chunks*dim, dim*2*2)).write(name="origmat", layout="-1, S16"))
+            #result = g.concat_vectors(imagreal, (chunks*dim*dim*2//320, 320))
     
+    g.resolve_storage_requests()
+    result = g.from_addresses(np.vstack((result[0].addrs.reshape(chunks//2, dim*2), result[1].addrs.reshape(chunks//2, dim*2))).reshape(-1, g.int8.size), 160, g.int8, "truncresult")
+    return result
 def main():
     import timeit
-    dim = 8 #dim X dim complex matrix
+    dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
       
@@ -684,10 +882,13 @@ def main():
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
     WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
     WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    """
     tzeromat = []
     for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
         tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
         #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
+    """
+    """
     tvec, tmat = [], []
     for group in (0,):
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
@@ -697,21 +898,24 @@ def main():
             #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    """
+    tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S8(" + WEST8_1 + "), B1(0)")
 
     #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
     #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
-    parallel = len(tvec)
+    parallel = 1 #len(tvec)
 
-    print_utils.infoc(
-        "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
-    )
+    #print_utils.infoc(
+    #    "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
+    #)
     #lc = LoopCorrection(chunks, dim*2*2)
-    lc = LoopCorrection(chunks, dim*2)
-    result_mt, t = lc.build(tvec, tmat)
+    #lc = LoopCorrection(chunks, dim*2)
+    #result_mt, t = lc.build(tvec, tmat)
     #result_mt, t = lc.build(tveccombine, tmatcombine)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
-    result_mt, _ = lc.build(result_mt, tmat, t)
+    #result_mt, _ = lc.build(result_mt, tmat, t)
+    result_mt = init_matrix(tmat, chunks, dim)
     g.resolve_storage_requests()
 
     print_utils.infoc("\nCompiling model ...")
@@ -727,8 +931,9 @@ def main():
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
-    originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
-    originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+    #originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
+    #originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+    originpmat = unitary_group.rvs(dim)
     #import functools
     #originpmat = [np.array(functools.reduce(directSum, [[[0, 1], [1, 0]]] * (dim//2))) for _ in range(parallel)]
     """
@@ -745,8 +950,8 @@ def main():
     #originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)] #unitary_group.rvs(dim).real
     #originpvec[0] = np.full((dim,), 9.5)
     #originpmat[0] = np.full((dim, dim), 9.5)
-    originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53)+2j)
-    originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53)+2j)
+    #originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53)+2j)
+    #originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53)+2j)
     #originpvec[0], originpmat[0] = originpvec[1], originpmat[1]
     #originpvec = np.ones((dim,), dtype=np.float64)
     #originpmat = np.ones((dim, dim), dtype=np.float64)
@@ -756,8 +961,9 @@ def main():
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
     oracleres = [None]
     def oracle():
-        B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-        oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i]) @ B[i]).astype(np.cdouble) for i in range(parallel)]
+        #B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
+        #oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i]) @ B[i]).astype(np.cdouble) for i in range(parallel)]
+        oracleres[0] = [np.vstack((originpmat.conjugate(), originpmat.imag + originpmat.real*1j))]
     toracle = timeit.timeit(oracle, number=10)/10
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
@@ -768,6 +974,7 @@ def main():
     def actual():
         fractionbits = 63
         inputs = {}
+        """
         exp_inpvecs, exp_inpmats = [], []
         for i in range(parallel):
             exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0, fractionbits)
@@ -778,19 +985,30 @@ def main():
             inputs[tvec[i].name] = inpvec
             inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
             exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
+        """
+        exp_inpmat, normals = normalize_doubles(vector_real_to_complex(originpmat), None, fractionbits)
+        inputs[tmat.name] = num_to_bits(normals, chunks).reshape((chunks*dim*dim*2//320, 320))
         res = runner(**inputs)
+        result = bits_to_num(res[result_mt.name].reshape(chunks, dim*2, dim*2).transpose(1, 2, 0).reshape(dim*2*dim*2, chunks), 7) #.reshape(chunks*dim, 320)[:,:160]
+        results[0] = []
+        #results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat)).reshape(dim*2, dim))
+        results[0].append(np.vstack((vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat).reshape(dim*2,dim*2)[:,:dim]),
+                                     vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat).reshape(dim*2,dim*2)[:,dim:]))))
+        """
         results[0] = []
         for i in range(parallel):
             result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
             #the results come back truncating the lower 7*(chunks-1) bits
             results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i])))
+        """
     tactual = timeit.timeit(actual, number=1)/1
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
+        print(oracleres[i][0], results[i][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print([max(abs(oracleres[i][j].reshape(-1) - results[i][j].reshape(-1))) for j in range(dim*2)])
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-        #print(oracleres[i], results[i]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
         #print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
