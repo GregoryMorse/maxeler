@@ -367,7 +367,7 @@ def fastgivens(x, d):
         if g <= 1:
             typ = 1
             tau = d[0]
-            d[0] = (1 + tau)*d[1]
+            d[0] = (1 + g)*d[1]
             d[1] = (1 + g)*tau
         else:
             typ = 2
@@ -376,7 +376,7 @@ def fastgivens(x, d):
             d[1] = (1 + g)*d[1]
     else:
         typ, a, b = 2, 0, 0
-    return a, b, typ
+    return a, b, typ, d
 def qr_linalg(mat):
     Q, R = np.linalg.qr(mat, mode='complete')
     #print(np.linalg.qr(mat, mode='raw'))
@@ -427,14 +427,15 @@ def qr_fastgivens(mat):
     d = np.ones((m,))
     for j in range(n):
         for i in range(m - 1, j, -1):
-            a, b, typ = fastgivens(R[i-1:i+1,j], d[i-1:i+1])
-            G = np.array([[b, 1], [1, a]]) if type == 1 else np.array([[1, a], [b, 1]])
+            a, b, typ, d[i-1:i+1] = fastgivens(R[i-1:i+1,j], d[i-1:i+1])
+            G = np.array([[b, 1], [1, a]]) if typ == 1 else np.array([[1, a], [b, 1]])
             R[i-1:i+1,j:n] = G.T @ R[i-1:i+1,j:n]
             Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G.conj()
     R = np.triu(R)
-    d = np.sqrt(d)
-    Q = Q @ np.diag(1 / d)
-    R = np.diag(d) @ R
+    assert np.allclose(d, np.diag(Q.T @ Q))
+    D = np.diag(1/np.sqrt(d))
+    #Q = Q @ D
+    #R = D @ R
     print(Q, R, Q @ R, mat)
     assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
@@ -560,7 +561,7 @@ def compute_charpoly(mat):
     return labudde(hessenberg_givens(mat)[0])
 def test_hess_qr():
     dim = 5
-    mat = np.random.rand(dim, dim)*2-1 #+ np.random.rand(dim, dim)*2j-1j
+    mat = np.random.rand(dim, dim)*2-1 + np.random.rand(dim, dim)*2j-1j
     hessenberg_scipy(mat)
     hessenberg_householder(mat)
     hessenberg_givens(mat)
