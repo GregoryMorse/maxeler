@@ -320,27 +320,44 @@ def factoriallcms(n):
   return functools.reduce(lambda x, y: x*y//math.gcd(x, y), range(1, n+1))
 def householder(vec):
     n = len(vec)
-    s = np.dot(vec[1:n], vec[1:n].conj())
-    v = vec.copy(); v[0] = 1
+    s = np.dot(vec[1:n].conj(), vec[1:n])
+    v = np.hstack(([1], vec[1:n]))
     if s == 0: B = 0
     else:
-        m = np.sqrt(vec[0]*vec[0].conj()+s)
-        if vec[0] <= 0: v[0] = vec[0] - m
+        m = np.sqrt(vec[0].conj()*vec[0]+s)
+        if np.iscomplex(vec[0]):
+            sign = 1 if vec[0]==0 else vec[0] / abs(vec[0])
+            v[0] = vec[0] - sign * m
+        elif vec[0] <= 0: v[0] = vec[0] - m
         else: v[0] = -s / (vec[0] + m)
-        B = 2*v[0]*v[0].conj()/(s + v[0]*v[0].conj())
-        v = v / abs(v[0])
+        B = 2*v[0].conj()*v[0]/(s + v[0].conj()*v[0])
+        v = v / v[0]
+    #print(vec, v, B)
     return v, B
-def givens(a, b):
-    if b == 0: c, s = 1, 0
+#https://netlib.org/lapack/lawnspdf/lawn148.pdf
+def givens(a, b): #counter-clockwise rotation
+    if b == 0: c, s, r = 1, 0, a
     else:
-        if abs(b) > abs(a):
-            tau = -a/b
-            s = 1/np.sqrt(1+tau*tau)
-            c = s * tau
+        if np.iscomplex(a) or np.iscomplex(b):
+            sign = 1 if a==0 else a / abs(a)
+            t = np.linalg.norm([a,b])
+            d = 1/t
+            c = abs(a) * d
+            s = -sign.conj() * b * d
+            r = sign * t
+        elif abs(b) > abs(a): #cb+sa=0, -s*b+ca=r then s=-b/r, c=a/r so (b/r)*b+(a/r)a=r r=b/|b|*sqrt(a^2+b^2)
+            sign = 1 if b==0 else b / abs(b)
+            tau = abs(a)/abs(b)
+            s = 1/np.sqrt(1+tau*tau) #s=b/sqrt(a^2+b^2)
+            c = s * a / abs(b) * -sign.conj()
+            r = -b / s
         else:
-            tau = -b/a
+            sign = 1 if a==0 else a / abs(a)
+            tau = abs(b)/abs(a)
             c = 1/np.sqrt(1+tau*tau)
-            s = c * tau
+            s = c * b / abs(a) * -sign.conj()
+            r = a / c
+    assert np.allclose(np.array([[c, s], [-s.conj(), c]]).T @ np.array([a, b]), np.array([r, 0])), (np.array([[c, s], [-s.conj(), c]]).T @ np.array([a, b]), np.array([r, 0]))
     return c, s
 def fastgivens(x, d):
     if x[1] != 0:
@@ -361,12 +378,13 @@ def fastgivens(x, d):
         typ, a, b = 2, 0, 0
     return a, b, typ
 def qr_linalg(mat):
-    Q, R = np.linalg.qr(mat, mode='complete') #np.linalg.qr(mat, mode='raw')
+    Q, R = np.linalg.qr(mat, mode='complete')
+    #print(np.linalg.qr(mat, mode='raw'))
     #print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
     return Q, R
 def qr_householder(mat):
-    print(qr_linalg(mat))
     R = mat.copy()
     m = n = len(mat)
     Q = np.eye(n, dtype=mat.dtype)
@@ -382,9 +400,9 @@ def qr_householder(mat):
         v = np.hstack(([1], R[j+1:m, j]))
         IBvv = np.eye(m-j, dtype=R.dtype)-Bs[j]*v[:,np.newaxis]@v[np.newaxis,:].conj()
         Q[j:m, j:n] = IBvv @ Q[j:m, j:n]
-    print(R)
     R = np.triu(R)
-    print(Q, R, Q @ R, mat)
+    #print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
     return Q, R
 def qr_givens(mat):
@@ -394,24 +412,58 @@ def qr_givens(mat):
     for j in range(n):
         for i in range(m - 1, j, -1):
             c, s = givens(R[i-1,j], R[i,j])
-            G = np.array([[c, s], [-s, c]])
+            G = np.array([[c, s], [-s.conj(), c]])
             R[i-1:i+1,j:n] = G.T @ R[i-1:i+1,j:n]
-            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G
+            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G.conj()
     R = np.triu(R)
     #print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
-    return Q, R 
+    return Q, R
+def qr_fastgivens(mat):
+    R = mat.copy()
+    m = n = len(R)
+    Q = np.eye(n, dtype=mat.dtype)
+    d = np.ones((m,))
+    for j in range(n):
+        for i in range(m - 1, j, -1):
+            a, b, typ = fastgivens(R[i-1:i+1,j], d[i-1:i+1])
+            G = np.array([[b, 1], [1, a]]) if type == 1 else np.array([[1, a], [b, 1]])
+            R[i-1:i+1,j:n] = G.T @ R[i-1:i+1,j:n]
+            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G.conj()
+    R = np.triu(R)
+    d = np.sqrt(d)
+    Q = Q @ np.diag(1 / d)
+    R = np.diag(d) @ R
+    print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
+    assert np.allclose(Q @ R, mat)
+    return Q, R
+def qr_mgs(mat): #modified Gram-Schmidt
+    R = np.zeros(mat.shape, dtype=mat.dtype); R[0,0] = np.linalg.norm(mat[:,0])    
+    m = n = len(mat)
+    Q = np.hstack(((mat[:,0] / R[0,0])[:,np.newaxis], np.zeros((m, n-1))))
+    for k in range(1, n):
+        R[0:k,k] = Q[0:m,0:k].conj().T @ mat[0:m,k]
+        z = mat[0:m,k] - Q[0:m,0:k] @ R[0:k,k]
+        R[k,k] = np.linalg.norm(z)
+        Q[0:m,k] = z/R[k,k]
+    #print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
+    assert np.allclose(Q @ R, mat)
+    return Q, R
 def hessenberg_to_qr(mat):
     n = len(mat)
     R = mat.copy()
     Q = np.eye(n, dtype=mat.dtype)
     for j in range(n-1):
         c, s = givens(R[j,j], R[j+1,j])
-        G = np.array([[c, s], [-s, c]])
+        G = np.array([[c, s], [-s.conj(), c]])
         R[j:j+2, j:n] = G.T @ R[j:j+2, j:n]
-        Q[:,j:j+2] = Q[:,j:j+2] @ G
+        Q[:,j:j+2] = Q[:,j:j+2] @ G.conj()
     R = np.triu(R)
-    print(Q, R, Q @ R, mat)
+    #print(Q, R, Q @ R, mat)
+    assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
     return Q, R
 def qr_hessenberg(mat): return hessenberg_to_qr(hessenberg_scipy(mat)[0])
@@ -421,18 +473,17 @@ def hessenberg_scipy(mat):
     assert np.allclose(Q @ H @ Q.conj().T, mat)
     return H, Q
 def hessenberg_givens(mat):
-    print(hessenberg_scipy(mat))
-    #from scipy.linalg import block_diag
+    #print(hessenberg_scipy(mat))
     n = len(mat)
     H = mat.copy()
     Q = np.eye(n, dtype=mat.dtype)
     for j in range(n-2):
         for i in range(n-1, j+1, -1):
             c, s = givens(H[i-1,j], H[i,j])
-            G = np.array([[c, s], [-s, c]])
+            G = np.array([[c, s], [-s.conj(), c]])
             H[i-1:i+1,j:n] = G.T @ H[i-1:i+1,j:n]
-            H[:,i-1:i+1] = H[:,i-1:i+1] @ G
-            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G
+            H[:,i-1:i+1] = H[:,i-1:i+1] @ G.conj()
+            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G.conj()
     H = np.triu(H, -1)
     #print(H, Q, Q @ H @ Q.conj().T, mat)
     assert np.allclose(Q @ H @ Q.conj().T, mat)
@@ -460,6 +511,25 @@ def hessenberg_householder(mat):
     #print(H, Q, Q @ H @ Q.conj().T, mat)
     assert np.allclose(Q @ H @ Q.conj().T, mat)
     return H, Q
+def hessenberg_mgs(mat): #Arnoldi iteration
+    m = n = len(mat)
+    H = np.zeros((m+1,n), dtype=mat.dtype)    
+    Q = np.hstack(((mat.diagonal() / np.linalg.norm(mat.diagonal()))[:,np.newaxis], np.zeros((m, n)))) #arbitrary
+    for k in range(n):
+        z = mat @ Q[:,k]
+        for j in range(k+1):
+            H[j,k] = Q[:,j].conj().T @ z
+            z = z - H[j,k] * Q[:,j]
+        #R[0:k,k] = Q[0:m,0:k].conj().T @ mat[0:m,k]
+        #z = mat[0:m,k] - Q[0:m,0:k] @ R[0:k,k]        
+        #H[:k+1,k] = Q[:,0:k+1].conj().T @ z
+        #z = v - Q[:,0:k+1] @ H[:k+1,k]
+        H[k+1,k] = np.linalg.norm(z)
+        Q[:,k+1] = z/H[k+1,k]
+    #print(H, Q, mat @ Q[:,:n], Q @ H)
+    #assert np.allclose(Q @ H @ Q.conj().T, mat)
+    assert np.allclose(mat @ Q[:,:n], Q @ H)
+    return H, Q    
 def labudde(mat): #https://ipsen.math.ncsu.edu/ps/charpoly3.pdf
     n = len(mat); k = n - 1
     c = np.zeros(mat.shape, dtype=mat.dtype)
@@ -490,15 +560,18 @@ def compute_charpoly(mat):
     return labudde(hessenberg_givens(mat)[0])
 def test_hess_qr():
     dim = 5
-    mat = np.random.rand(dim, dim)*2-1 + np.random.rand(dim, dim)*2j-1j
+    mat = np.random.rand(dim, dim)*2-1 #+ np.random.rand(dim, dim)*2j-1j
     hessenberg_scipy(mat)
-    #hessenberg_householder(mat)
-    #hessenberg_givens(mat)
+    hessenberg_householder(mat)
+    hessenberg_givens(mat)
+    hessenberg_mgs(mat)
     qr_linalg(mat)
     qr_householder(mat)
     qr_givens(mat)
+    qr_fastgivens(mat)
     qr_hessenberg(mat)
-    assert np.allclose(compute_charpoly(mat), np.poly(mat))
+    qr_mgs(mat)
+    assert np.allclose(compute_charpoly(mat), np.poly(mat)), (compute_charpoly(mat), np.poly(mat))
 test_hess_qr()
 def power_traces(mat):
     charpoly = compute_charpoly(mat)
