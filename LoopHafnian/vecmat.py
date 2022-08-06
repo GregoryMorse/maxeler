@@ -359,12 +359,13 @@ def givens(a, b): #counter-clockwise rotation
             r = a / c
     assert np.allclose(np.array([[c, s], [-s.conj(), c]]).T @ np.array([a, b]), np.array([r, 0])), (np.array([[c, s], [-s.conj(), c]]).T @ np.array([a, b]), np.array([r, 0]))
     return c, s
-def fastgivens(x, d):
+def fastgivens(x, dorig):
+    d = dorig.copy()
     if x[1] != 0:
-        a = -x[0]/x[1]
-        b = -a*d[1]/d[0]
-        g = -a*b
-        if g <= 1:
+        a = -x[0].conj()/x[1].conj()
+        b = (-a*d[1]/d[0]).conj()
+        g = -a*b #a=-x[0]x[1]*/abs(x[1])
+        if abs(g) <= 1: #g*x[1]==b*x[0] x[0]+ax[1]=0 g=-ab=x[0]x[1]*/abs(x[1])b  or x[1]*(1+g)=b*x[0]+x[1]        
             typ = 1
             tau = d[0]
             d[0] = (1 + g)*d[1]
@@ -375,7 +376,10 @@ def fastgivens(x, d):
             d[0] = (1 + g)*d[0]
             d[1] = (1 + g)*d[1]
     else:
-        typ, a, b = 2, 0, 0
+        typ, a, b, g = 2, 0, 0, 0
+    M = np.array([[b, 1], [1, a]]) if typ == 1 else np.array([[1, a], [b, 1]])
+    assert np.allclose(M.conj().T @ x, np.array([x[2-typ]*(1+g), 0])), (M.conj().T @ x, np.array([x[2-typ]*(1+g), 0]))
+    assert np.allclose(M.conj().T @ np.diag(dorig) @ M, np.diag(d)), (M.conj().T @ np.diag(dorig) @ M, np.diag(d))
     return a, b, typ, d
 def qr_linalg(mat):
     Q, R = np.linalg.qr(mat, mode='complete')
@@ -424,19 +428,20 @@ def qr_fastgivens(mat):
     R = mat.copy()
     m = n = len(R)
     Q = np.eye(n, dtype=mat.dtype)
-    d = np.ones((m,))
+    d = np.ones((m,), dtype=mat.dtype)
     for j in range(n):
         for i in range(m - 1, j, -1):
             a, b, typ, d[i-1:i+1] = fastgivens(R[i-1:i+1,j], d[i-1:i+1])
             G = np.array([[b, 1], [1, a]]) if typ == 1 else np.array([[1, a], [b, 1]])
-            R[i-1:i+1,j:n] = G.T @ R[i-1:i+1,j:n]
-            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G.conj()
+            R[i-1:i+1,j:n] = G.conj().T @ R[i-1:i+1,j:n]
+            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G
     R = np.triu(R)
-    assert np.allclose(d, np.diag(Q.T @ Q))
+    assert np.allclose(Q.conj().T @ mat, R), (Q.conj().T @ mat, R)
+    assert np.allclose(d, np.diag(Q.conj().T @ Q)), (d, np.diag(Q.conj().T @ Q))
     D = np.diag(1/np.sqrt(d))
-    #Q = Q @ D
-    #R = D @ R
-    print(Q, R, Q @ R, mat)
+    Q = Q @ D
+    R = D @ R
+    #print(Q, R, Q @ R, mat)
     assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
     return Q, R
