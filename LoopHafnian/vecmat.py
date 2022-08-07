@@ -445,7 +445,7 @@ def qr_fastgivens(mat):
     assert np.allclose(np.eye(len(mat)), Q @ Q.conj().T)
     assert np.allclose(Q @ R, mat)
     return Q, R
-def qr_mgs(mat): #modified Gram-Schmidt
+def qr_mgs(mat): #classical Gram-Schmidt
     R = np.zeros(mat.shape, dtype=mat.dtype); R[0,0] = np.linalg.norm(mat[:,0])    
     m = n = len(mat)
     Q = np.hstack(((mat[:,0] / R[0,0])[:,np.newaxis], np.zeros((m, n-1))))
@@ -494,6 +494,27 @@ def hessenberg_givens(mat):
     #print(H, Q, Q @ H @ Q.conj().T, mat)
     assert np.allclose(Q @ H @ Q.conj().T, mat)
     return H, Q
+def hessenberg_fastgivens(mat):
+    n = len(mat)
+    H = mat.copy()
+    Q = np.eye(n, dtype=mat.dtype)
+    d = np.ones((n,), dtype=mat.dtype)
+    for j in range(n-2):
+        for i in range(n-1, j+1, -1):
+            a, b, typ, d[i-1:i+1] = fastgivens(H[i-1:i+1,j], d[i-1:i+1])
+            G = np.array([[b, 1], [1, a]]) if typ == 1 else np.array([[1, a], [b, 1]])
+            H[i-1:i+1,j:n] = G.conj().T @ H[i-1:i+1,j:n]
+            H[:,i-1:i+1] = H[:,i-1:i+1] @ G
+            Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G
+    H = np.triu(H, -1)
+    assert np.allclose(Q.conj().T @ mat, H @ Q.T), (Q.conj().T @ mat, H @ Q.T)
+    assert np.allclose(d, np.diag(Q.conj().T @ Q)), (d, np.diag(Q.conj().T @ Q))    
+    D = np.diag(1/np.sqrt(d))
+    Q = Q @ D
+    H = D @ H @ D
+    #print(H, Q, Q @ H @ Q.conj().T, mat)
+    assert np.allclose(Q @ H @ Q.conj().T, mat)
+    return H, Q    
 def hessenberg_householder(mat):
     n = len(mat)
     H = mat.copy()
@@ -570,6 +591,7 @@ def test_hess_qr():
     hessenberg_scipy(mat)
     hessenberg_householder(mat)
     hessenberg_givens(mat)
+    hessenberg_fastgivens(mat)
     hessenberg_mgs(mat)
     qr_linalg(mat)
     qr_householder(mat)
