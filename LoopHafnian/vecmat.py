@@ -507,7 +507,7 @@ def hessenberg_fastgivens(mat):
             H[:,i-1:i+1] = H[:,i-1:i+1] @ G
             Q[:,i-1:i+1] = Q[:,i-1:i+1] @ G
     H = np.triu(H, -1)
-    assert np.allclose(Q.conj().T @ mat, H @ Q.T), (Q.conj().T @ mat, H @ Q.T)
+    #assert np.allclose(Q.conj().T @ mat, H @ Q.T), (Q.conj().T @ mat, H @ Q.T)
     assert np.allclose(d, np.diag(Q.conj().T @ Q)), (d, np.diag(Q.conj().T @ Q))    
     D = np.diag(1/np.sqrt(d))
     Q = Q @ D
@@ -538,7 +538,7 @@ def hessenberg_householder(mat):
     #print(H, Q, Q @ H @ Q.conj().T, mat)
     assert np.allclose(Q @ H @ Q.conj().T, mat)
     return H, Q
-def hessenberg_mgs(mat): #Arnoldi iteration
+def hessenberg_arnoldi(mat): #Arnoldi iteration
     m = n = len(mat)
     H = np.zeros((m+1,n), dtype=mat.dtype)    
     Q = np.hstack(((mat.diagonal() / np.linalg.norm(mat.diagonal()))[:,np.newaxis], np.zeros((m, n)))) #arbitrary
@@ -556,7 +556,123 @@ def hessenberg_mgs(mat): #Arnoldi iteration
     #print(H, Q, mat @ Q[:,:n], Q @ H)
     #assert np.allclose(Q @ H @ Q.conj().T, mat)
     assert np.allclose(mat @ Q[:,:n], Q @ H)
-    return H, Q    
+    return H, Q
+def hessenberg_prime_charpoly(intmat, p):
+    n = len(intmat)
+    P = np.zeros((n+1, n+1), dtype=intmat.dtype)
+    P[0,n] = 1
+    """
+    #lower hessenberg
+    for i in range(n-1):
+        P[i+1] = (sum((p - intmat[i,j])*pow(intmat[i,i+1], p-2, p)*P[j] % p for j in range(n)) % p + pow(intmat[i,i+1], p-2, p) * np.concatenate((P[i,1:], [0])) % p) % p
+    P[n] = (sum(intmat[n-1,j]*P[j] % p for j in range(n)) % p - np.concatenate((P[n-1,1:], [0])) % p) % p
+    """
+    for i in range(n-1):
+        P[i+1] = (sum((p - intmat[j,i])*pow(intmat[i+1,i], p-2, p)*P[j] % p for j in range(n)) % p + pow(intmat[i+1,i], p-2, p) * np.concatenate((P[i,1:], [0])) % p) % p
+    P[n] = (sum(intmat[j,n-1]*P[j] % p for j in range(n)) % p - np.concatenate((P[n-1,1:], [0])) % p) % p
+    P[n] = P[n] * pow(P[n,0], p-2, p) % p
+    P[n] = np.where(P[n] < (p-1)//2, P[n], P[n] - p)
+    return P[n]
+def hessenberg_prime(mat): #https://www.sciencedirect.com/science/article/pii/0898122178900081/pdf?md5=5cc1225a5bc5f72092ba50220caec53a&pid=1-s2.0-0898122178900081-main.pdf
+    print(hessenberg_scipy(mat))
+    mant, exp = np.frexp(mat.real)
+    #53/largest mantissa is not optimal - should do a count of trailing zero bits...  but __builtin_ctz not available in numpy?
+    intmat = np.array(np.rint(np.ldexp(mant, exp+53-np.amin(exp))).astype(np.int64).tolist(), dtype=np.object)
+    assert np.allclose(mat, intmat.astype(np.float64) / (2**(53-np.amin(exp).astype(np.float64))))
+    print(np.poly(intmat.astype(np.float64)))
+    n = len(intmat)
+    mm = intmat @ intmat.conj().T
+    M = np.trace(mm) #max(np.linalg.norm(mm), np.trace(mm))
+    Pmin = 2 * max(M**n, n*(n+1)*M**(n-1))
+    print(Pmin.bit_length())
+    Q = np.eye(n, dtype=intmat.dtype)
+    #origmat = intmat / (2**(53-np.amin(exp).astype(np.float64)))
+    p = 2**400-593 #2**54 - 33 #https://primes.utm.edu/lists/2small/0bit.html 
+    #p = 101
+    """
+    i = 0 #lower Hessenberg
+    while i <= n-3:
+        if intmat[i,i+1] == 0:
+            j = next(iter(j for j in range(i+2, n) if a[i,j] != 0), None)
+            if j is None: break
+            intmat[:,i+1], intmat[:,j] = intmat[:,j], intmat[:,i+1]
+            intmat[i+1,:], intmat[j,:] = intmat[j,:], intmat[i+1,:]
+        for k in range(i+2, n):
+            a = (intmat[i,k] * pow(intmat[i,i+1], p-2, p)) % p
+            intmat[:,k] = (intmat[:,k] - a * intmat[:,i+1]) % p
+            intmat[i+1,:] = (a * intmat[k,:] + intmat[i+1,:]) % p
+        i += 1
+    """
+    i = n-1
+    while i >= 2:
+        if intmat[i,i-1] == 0:
+            j = next(iter(j for j in range(i-2, -1, -1) if a[i,j] != 0), None)
+            if j is None: break
+            intmat[:,i-1], intmat[:,j] = intmat[:,j], intmat[:,i-1]
+            intmat[i-1,:], intmat[j,:] = intmat[j,:], intmat[i-1,:]
+        for k in range(i-2, -1, -1):
+            a = (intmat[i,k] * pow(intmat[i,i-1], p-2, p)) % p
+            intmat[:,k] = (intmat[:,k] - a * intmat[:,i-1]) % p
+            intmat[i-1,:] = (a * intmat[k,:] + intmat[i-1,:]) % p
+        i -= 1
+    print(intmat)
+    print(np.poly(intmat.astype(np.float64)))
+    charpoly = hessenberg_prime_charpoly(intmat, p) / np.array([(2**(x*(53-np.amin(exp).astype(np.float64)))) for x in range(n+1)])
+    print(charpoly)
+    intmat = np.where(intmat < (p-1)//2, intmat, intmat - p)
+    H = intmat / np.array([(2**(6.5*(53-np.amin(exp).astype(np.float64)))) for x in range(1,n+1)])[:,np.newaxis] #(2**(53-np.amin(exp).astype(np.float64)))
+    print(H)
+    return H, Q
+def hessenberg_gaussian(mat):
+    n = len(mat)
+    H = mat.copy()
+    Q = np.eye(n, dtype=mat.dtype)
+    i = 0
+    while i <= n-3:
+        if H[i+1,i] == 0:
+            j = next(iter(j for j in range(i+2, n) if a[j,i] != 0), None)
+            if j is None: break
+            H[:,i+1], H[:,j] = H[:,j], H[:,i+1]
+            H[i+1,:], H[j,:] = H[j,:], H[i+1,:]
+        for k in range(i+2, n):
+            a = H[k,i]/H[i+1,i]
+            H[k,:] -= a * H[i+1,:]
+            H[:,i+1] += a * H[:,k]
+            #Q[:,i+1] -= a * H[:,k]
+            Q[k,i+1] = a #need to set Q[k,k], Q[k,i+1], Q[i+1,k], Q[i+1,i+1]
+            #assert np.allclose(Q @ H @ Q.conj().T, mat), (Q @ H @ Q.conj().T, mat, i, k)
+        i += 1
+    print(H, Q, Q @ H @ Q.conj().T, mat)
+    #assert np.allclose(Q @ H @ Q.conj().T, mat)
+    return H, Q
+def hessenberg_gaussian_int(mat):
+    mant, exp = np.frexp(mat.real)
+    #53/largest mantissa is not optimal - should do a count of trailing zero bits...  but __builtin_ctz not available in numpy?
+    intmat = np.array(np.rint(np.ldexp(mant, exp+53-np.amin(exp))).astype(np.int64).tolist(), dtype=np.object)
+    assert np.allclose(mat, intmat.astype(np.float64) / (2**(53-np.amin(exp).astype(np.float64))))
+    n = len(intmat)
+    i = 0
+    while i <= n-3:
+        if intmat[i+1,i] == 0:
+            j = next(iter(j for j in range(i+2, n) if a[j,i] != 0), None)
+            if j is None: break
+            intmat[:,i+1], intmat[:,j] = intmat[:,j], intmat[:,i+1]
+            intmat[i+1,:], intmat[j,:] = intmat[j,:], intmat[i+1,:]
+        for k in range(i+2, n):
+            gcd = np.gcd(intmat[k,i], intmat[i+1,i])
+            a, b = intmat[k,i]//gcd, intmat[i+1,i]//gcd
+            print(a, b)
+            intmat[k,:] += (b-1) * intmat[k,:] #intmat[k,:] *= b
+            intmat[k,:] -= a * intmat[i+1,:]
+            intmat[:,i+1] -= (b-1) * intmat[:,i+1]
+            intmat[:,i+1] += a * intmat[:,k]
+        i += 1
+    print(intmat,np.gcd.reduce(intmat.flatten()))
+    intmat //= np.gcd.reduce(intmat.flatten())
+    charpoly = labudde(intmat) #/ np.array([(2**(x*(53-np.amin(exp).astype(np.float64)))) for x in range(n+1)])
+    print(charpoly)
+    return intmat, None
+#hessenberg_prime(np.array([[4,3,2],[2,3,4],[4,3,5]])) #paper example
 def labudde(mat): #https://ipsen.math.ncsu.edu/ps/charpoly3.pdf
     n = len(mat); k = n - 1
     c = np.zeros(mat.shape, dtype=mat.dtype)
@@ -584,15 +700,18 @@ def compute_powertrace_quartic(mat):
         tr.append(sum(M[i][i] for i in range(len(M))))
     return tr
 def compute_charpoly(mat):    
-    return labudde(hessenberg_givens(mat)[0])
+    return labudde(hessenberg_gaussian(mat)[0])
 def test_hess_qr():
     dim = 5
-    mat = np.random.rand(dim, dim)*2-1 + np.random.rand(dim, dim)*2j-1j
+    mat = np.random.rand(dim, dim)*2-1 #+ np.random.rand(dim, dim)*2j-1j
     hessenberg_scipy(mat)
     hessenberg_householder(mat)
     hessenberg_givens(mat)
     hessenberg_fastgivens(mat)
-    hessenberg_mgs(mat)
+    hessenberg_arnoldi(mat)
+    hessenberg_gaussian(mat)
+    #hessenberg_gaussian_int(mat)
+    #hessenberg_prime(mat)
     qr_linalg(mat)
     qr_householder(mat)
     qr_givens(mat)
