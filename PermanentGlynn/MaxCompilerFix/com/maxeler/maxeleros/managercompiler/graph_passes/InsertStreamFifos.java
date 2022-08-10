@@ -1,7 +1,3 @@
-// 
-// Decompiled by Procyon v0.6.0
-// 
-
 package com.maxeler.maxeleros.managercompiler.graph_passes;
 
 import com.maxeler.maxeleros.managercompiler.libs.PlacementConstraint;
@@ -113,7 +109,7 @@ public class InsertStreamFifos implements WrapperGraphPassPointwise
                 final PlacementConstraint placementConstraint = ioDesc2.getParentNode().getPlacementConstraint();
                 if (placementConstraint != null && placementConstraint.equals(ioDesc.getParentNode().getPlacementConstraint())) {
                     wrapperNodeFifo.setPlacementConstraint(placementConstraint);
-                } else if (placementConstraint != null) {
+                } else if (ioDesc.getParentNode().getPlacementConstraint() != null) {
                     System.out.println("Correcting StreamFIFO '" + s + "' placement to output"); 
                     wrapperNodeFifo.setPlacementConstraint(ioDesc.getParentNode().getPlacementConstraint());
                 }
