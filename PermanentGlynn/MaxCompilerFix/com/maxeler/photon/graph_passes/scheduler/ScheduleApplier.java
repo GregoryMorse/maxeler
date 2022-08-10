@@ -72,7 +72,7 @@ public class ScheduleApplier implements GraphPassPointwise
             if (streamOffsetEq3.max() == streamOffsetEq3.min()) {
                 Node lastNode = null;
                 StreamOffsetEq curOffset = inputLatency2;
-                //System.out.println("Replacing FIFO(" + streamOffsetEq3.max() + ") with pipeline registers");
+                System.out.println("Replacing FIFO(" + streamOffsetEq3.max() + ") with pipeline registers");
                 for (int i = 0; i < streamOffsetEq3.max(); i++) { 
                     final NodeRegister nodeReg = new NodeRegister(photonDesignData, inputDesc.getVar().getSrcOutputDesc().getMaxFanout());
                     curOffset = curOffset.add(1);
