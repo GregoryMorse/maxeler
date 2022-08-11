@@ -352,6 +352,7 @@ union {
 	printf("Start permanent calulation on DFE\n");
 #endif
 
+    max_config_set_int64(MAX_CONFIG_PCIE_TIMEOUT, 30+(1ULL<<(numOfPartialPerms-1-BASEKERNPOW2))/(FREQ*100000ULL));
     max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, 30+(1ULL<<(numOfPartialPerms-1-BASEKERNPOW2))/(FREQ*100000ULL));
      
 #if defined(DUAL) && !defined(MAXELER_SIM)
