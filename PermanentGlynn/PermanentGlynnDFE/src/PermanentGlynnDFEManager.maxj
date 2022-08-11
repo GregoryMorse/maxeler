@@ -107,7 +107,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         }
         addMaxFileConstant("MTXSIZE", dim);
         addMaxFileConstant("BASEKERNPOW2", basekernpow2);
-
+        addMaxFileConstant("FREQ", freq);
     }
 
     static EngineInterface interfaceDefault(boolean dual, boolean isSim) {
