@@ -71,16 +71,39 @@ public class ScheduleApplier implements GraphPassPointwise
             }
             if (streamOffsetEq3.max() == streamOffsetEq3.min()) {
                 Node lastNode = null;
-                System.out.println("Replacing FIFO(" + streamOffsetEq3.max() + ") with pipeline registers");
-                for (int i = 0; i < streamOffsetEq3.max(); i++) { 
+                StreamOffsetEq curDelta = streamOffsetEq3;
+                StreamOffsetEq curOffset = inputLatency2;
+                boolean found;
+                do {
+                    found = false;
+                    for (final Node.OutputDesc outputDesc : (lastNode == null ? node2 : lastNode).getOutputDescs()) {
+                        for (final Node.InputDesc inDesc : outputDesc.getVar().getDstInputDescs()) {
+                            Node checkNode = inDesc.getNode();
+                            if (checkNode instanceof NodeRegister && checkNode.getInputLatency().max() == curOffset.max()) {
+                                lastNode = checkNode;
+                                StreamOffsetEq lat = inDesc.getVar().getSrcOutputDesc().getLatency();
+                                curDelta = curDelta.sub(lat);
+                                curOffset = curOffset.add(lat);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                } while (curDelta.max() != 0 && found);
+                System.out.println("Replacing FIFO(" + streamOffsetEq3.max() + " -> " + curDelta.max() + ") with pipeline registers");
+                if (curDelta.max() == 0) {
+                    node.connectInput(inputDesc.getName(), lastNode.connectOutput("output"));
+                }
+                for (int i = 0; i < curDelta.max(); i++) { 
                     final NodeRegister nodeReg = new NodeRegister(photonDesignData, inputDesc.getVar().getSrcOutputDesc().getMaxFanout());
                     nodeReg.setConstant(false);
-                    nodeReg.setInputLatency(inputLatency2.add(i));
+                    nodeReg.setInputLatency(curOffset.add(i));
                     nodeReg.setOperatorSupplier(photonDesignData.getOperatorSupplier());
                     this.m_schedule.add(nodeReg);
-                    nodeReg.connectInput("input", i == 0 ? inputDesc.getVar() : lastNode.connectOutput("output"));
+                    nodeReg.connectInput("input", lastNode == null ? inputDesc.getVar() : lastNode.connectOutput("output"));
                     lastNode = nodeReg;
-                    if (i == streamOffsetEq3.max()-1) 
+                    if (i == curDelta.max()-1) 
                         node.connectInput(inputDesc.getName(), nodeReg.connectOutput("output"));
                 }
                 continue;
