@@ -10,20 +10,24 @@
 #include "PermanentGlynn_singleSIMF.h"
 #define MTX_SIZE PermanentGlynn_singleSIMF_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_singleSIMF_BASEKERNPOW2
+#define FREQ PermanentGlynn_singleSIMF_FREQ
 #else
 #include "PermanentGlynn_dualSIMF.h"
 #define MTX_SIZE PermanentGlynn_dualSIMF_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_dualSIMF_BASEKERNPOW2
+#define FREQ PermanentGlynn_dualSIMF_FREQ
 #endif
 #else
 #ifndef DUAL
 #include "PermanentGlynn_singleSIM.h"
 #define MTX_SIZE PermanentGlynn_singleSIM_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_singleSIM_BASEKERNPOW2
+#define FREQ PermanentGlynn_singleSIM_FREQ
 #else
 #include "PermanentGlynn_dualSIM.h"
 #define MTX_SIZE PermanentGlynn_dualSIM_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_dualSIM_BASEKERNPOW2
+#define FREQ PermanentGlynn_dualSIM_FREQ
 #endif
 #endif
 #else
@@ -32,20 +36,24 @@
 #include "PermanentGlynn_singleDFEF.h"
 #define MTX_SIZE PermanentGlynn_singleDFEF_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_singleDFEF_BASEKERNPOW2
+#define FREQ PermanentGlynn_singleDFEF_FREQ
 #else
 #include "PermanentGlynn_dualDFEF.h"
 #define MTX_SIZE PermanentGlynn_dualDFEF_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_dualDFEF_BASEKERNPOW2
+#define FREQ PermanentGlynn_dualDFEF_FREQ
 #endif
 #else
 #ifndef DUAL
 #include "PermanentGlynn_singleDFE.h"
 #define MTX_SIZE PermanentGlynn_singleDFE_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_singleDFE_BASEKERNPOW2
+#define FREQ PermanentGlynn_singleDFE_FREQ
 #else
 #include "PermanentGlynn_dualDFE.h"
 #define MTX_SIZE PermanentGlynn_dualDFE_MTXSIZE
 #define BASEKERNPOW2 PermanentGlynn_dualDFE_BASEKERNPOW2
+#define FREQ PermanentGlynn_dualDFE_FREQ
 #endif
 #endif
 #endif
@@ -344,6 +352,8 @@ union {
 	printf("Start permanent calulation on DFE\n");
 #endif
 
+    max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, 30+(1ULL<<(numOfPartialPerms-1-BASEKERNPOW2))/(FREQ*100000ULL));
+     
 #if defined(DUAL) && !defined(MAXELER_SIM)
     //runArrayFunc(array, arractions);
     max_run_t* run0 = runFunc(group, arractions[0]), *run1 = runFunc(group, arractions[1]); max_wait(run0); max_wait(run1);
