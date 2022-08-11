@@ -81,9 +81,9 @@ public class ScheduleApplier implements GraphPassPointwise
                             Node checkNode = inDesc.getNode();
                             if (checkNode instanceof NodeRegister && checkNode.getInputLatency().max() == curOffset.max()) {
                                 lastNode = checkNode;
-                                StreamOffsetEq lat = inDesc.getVar().getSrcOutputDesc().getLatency();
-                                curDelta = curDelta.sub(lat);
-                                curOffset = curOffset.add(lat);
+                                StreamOffsetEq lat = checkNode.getOutputDesc("output").getLatency();                                
+                                curDelta = curDelta.sub(1);
+                                curOffset = curOffset.add(1);
                                 found = true;
                                 break;
                             }
