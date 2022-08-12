@@ -124,7 +124,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         addMaxFileConstant("BASEKERNPOW2", basekernpow2);
         addMaxFileConstant("INITKERNS", initKerns);
         addMaxFileConstant("LOOPLENGTH", loopLength);
-
+        addMaxFileConstant("FREQ", freq);
     }
 
 
