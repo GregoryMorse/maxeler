@@ -12,7 +12,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.KernelMath;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-//import com.maxeler.maxcompiler.v2.utils.MathUtils;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 
 
@@ -32,7 +32,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
 
         // tick count
-        DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar msizeadj = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(MathUtils.bitsToRepresentUnsigned(maxtickbits)));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, constant.var(dfeUInt(maxtickbits), 1) << msizeadj);
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
