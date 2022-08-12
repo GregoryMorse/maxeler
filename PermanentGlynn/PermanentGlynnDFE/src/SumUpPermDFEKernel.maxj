@@ -10,6 +10,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 
 public class SumUpPermDFEKernel extends Kernel {
@@ -22,7 +23,7 @@ public class SumUpPermDFEKernel extends Kernel {
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
 
         // tick count
-        DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
+        DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(MathUtils.bitsToRepresentUnsigned(maxtickbits)));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
         
         DFEVar lastTick = optimization.pipeline(tickCount === ticksmax - 1);
