@@ -261,6 +261,35 @@ def load_test_data():
     with open(os.path.join(saveFolder, "matrices.bin"), "wb") as f:
       pickle.dump(gen_test_data, f)
   return gen_test_data
+def verify_identities(nmax):
+    import math, timeit
+    gen_func = [lambda n: np.ones((0,0)) if n==0 else np.full((n, n), 1/n) + np.zeros((n, n)) *1j, #minimum permanent bound
+                lambda n: np.ones((0,0)) if n==0 else np.vstack((np.ones((n-1, n)), np.hstack(([[0]], np.ones((1,n-1)))))) - np.eye(n) + np.zeros((n, n)) *1j - np.diag([1]*(n-1), 1), #menage numbers
+                lambda n: np.ones((n, n)) - np.eye(n) + np.zeros((n, n)) *1j, #menage problem
+                lambda n: np.ones((n, n)) + np.ones((n, n)) *1j, #all ones real and complex
+                lambda n: np.ones((n, n)) + np.zeros((n, n)) *1j, #all ones
+                lambda n: np.eye(n) + np.zeros((n, n)) *1j, #identity matrix
+                lambda n: np.eye(n) *1j, #imaginary identity matrix
+                lambda n: np.eye(n) + np.ones((n, n)) *1j] #identity matrix real and complex
+    oracle_func = [lambda n: math.factorial(n)/n**n,
+                   lambda n: 1 if n==0 else sum((-1)**k*2*n/(2*n-k)*math.comb(2*n-k,k)*math.factorial(n-k) for k in range(n+1)),
+                   lambda n: math.factorial(n)*sum((-1)**i/math.factorial(i) for i in range(n+1)),
+                   lambda n: (1+1j)**n*math.factorial(n),
+                   lambda n: math.factorial(n),
+                   lambda n: 1,
+                   lambda n: 1j**n,
+                   lambda n: math.factorial(n)*sum((-1)**k/math.factorial(n-2*k) for k in range(n//2+1)) + math.factorial(n)*sum((-1)**k/math.factorial(n-1-2*k) for k in range((n-1)//2+1))*1j]
+    for i in range(0, len(gen_func)):
+        for x in range(0, nmax+1):
+            mat = gen_func[i](x)
+            res = [None]
+            def save_result():
+                res[0] = permanent_Glynn_DFEDual(mat) 
+            r = timeit.timeit(save_result, number=1); res = res[0]
+            o = oracle_func[i](x)
+            print(x, r, res, o, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
+            #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
+verify_identities(48); assert False
 def verify_timing(nmax, batchsize=1):
   ERRBOUND = 1e-6
   largeFuncs = largePermFuncs
@@ -290,9 +319,9 @@ def verify_timing(nmax, batchsize=1):
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
-        #if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
-        #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in (permanent_Simple_Double, permanent_Simple_LongDouble): #dfePermFuncs:
+        if func in dfePermFuncs and dim == 0 or dim == 1 and not func in dfePermFuncs:
+          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim]), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfePermFuncs:          
           mplier = 5 if dim < 24 and func != permanent_Glynn_Cpp_Inf else 1
           v = [None]
           #if func in dfePermFuncs: print(check_power())
