@@ -86,7 +86,7 @@ def verify_timing(nmax, batchsize=1, loop=True):
   ERRBOUND = 1e-6
   largeFuncs = largeLoopHafnianFuncs if loop else largeHafnianFuncs
   suffix = "" if batchsize == 1 else str(batchsize)
-  prefix = "" if loop else "h"
+  prefix = "loophaf" if loop else "haf"
   verdata = prefix + "verifydata.bin"
   resdata = prefix + "resultdata" + suffix + ".bin"
   xaxis = list(range(0, nmax+1, 1)) #list(range(0, nmax+1, 2))
@@ -143,7 +143,7 @@ def verify_timing(nmax, batchsize=1, loop=True):
           writer.writerow(["Relative Error compared to " + largeFuncs[0].__name__]) 
           writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
           writer.writerows([[i] + [abs(res[key][largeFuncs[0].__name__][i] - res[key][x.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for x in largeFuncs] for i in xaxis if (i & 1) == 0])
-          writer.writerow(["Loop Hafnian Computation Raw Results"])
+          writer.writerow([("Loop " if loop else "") + "Hafnian Computation Raw Results"])
           writer.writerow(["Size (n)"] + [f.__name__ for f in largeFuncs])
           writer.writerows([[i] + [res[key][x.__name__][i] for x in largeFuncs] for i in xaxis])
           for dim in range(nmax+1):
@@ -168,8 +168,8 @@ def verify_timing(nmax, batchsize=1, loop=True):
     import math
     plt.rcParams['text.usetex'] = True
     from matplotlib.ticker import MaxNLocator
-    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis if (i & 1) == 0]) for f in largeFuncs[1:]], prefix + "loophafacc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
-    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis if (i & 1) == 0]) for f in largeFuncs], prefix + "loophaftime" + suffix, "Time ($\\log_{10}$ s)")
+    verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis if (i & 1) == 0]) for f in largeFuncs[1:]], prefix + "acc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
+    timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis if (i & 1) == 0]) for f in largeFuncs], prefix + "time" + suffix, "Time ($\\log_{10}$ s)")
     for vals, fname, ylbl in ((verinfo, timeinfo) if batchsize == 1 else (timeinfo,)):
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
@@ -186,7 +186,7 @@ def verify_timing(nmax, batchsize=1, loop=True):
         if (vals, fname, ylbl) == timeinfo: pass      
         else: ax1.axhline(y=1e-8, color='gray', linestyle='-'); ax1.axhline(y=1e-10, color='gray', linestyle='-')
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax1.set_title("Loop Hafnian of $n\\times n$ Matrix" + ("" if batchsize==1 else (" Batch=$n$"))) #str(batchsize)
+        ax1.set_title(("Loop " if loop else "") + "Hafnian of $n\\times n$ Matrix" + ("" if batchsize==1 else (" Batch=$n$"))) #str(batchsize)
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
         import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
