@@ -12,12 +12,14 @@
 #define BASEKERNPOW2 PermRepGlynn_singleSIMF_BASEKERNPOW2
 #define INITS PermRepGlynn_singleSIMF_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleSIMF_LOOPLENGTH
+#define FREQ PermRepGlynn_singleSIMF_FREQ
 #else
 #include "PermRepGlynn_dualSIMF.h"
 #define MTX_SIZE PermRepGlynn_dualSIMF_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_dualSIMF_BASEKERNPOW2
 #define INITS PermRepGlynn_dualSIMF_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualSIMF_LOOPLENGTH
+#define FREQ PermRepGlynn_dualSIMF_FREQ
 #endif
 #else
 #ifndef DUAL
@@ -26,12 +28,14 @@
 #define BASEKERNPOW2 PermRepGlynn_singleSIM_BASEKERNPOW2
 #define INITS PermRepGlynn_singleSIM_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleSIM_LOOPLENGTH
+#define FREQ PermRepGlynn_singleSIM_FREQ
 #else
 #include "PermRepGlynn_dualSIM.h"
 #define MTX_SIZE PermRepGlynn_dualSIM_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_dualSIM_BASEKERNPOW2
 #define INITS PermRepGlynn_dualSIM_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualSIM_LOOPLENGTH
+#define FREQ PermRepGlynn_dualSIM_FREQ
 #endif
 #endif
 #else
@@ -42,12 +46,14 @@
 #define BASEKERNPOW2 PermRepGlynn_singleDFEF_BASEKERNPOW2
 #define INITS PermRepGlynn_singleDFEF_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleDFEF_LOOPLENGTH
+#define FREQ PermRepGlynn_singleDFEF_FREQ
 #else
 #include "PermanentGlynn_dualDFEF.h"
 #define MTX_SIZE PermRepGlynn_dualDFEF_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_dualDFEF_BASEKERNPOW2
 #define INITS PermRepGlynn_dualDFEF_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualDFEF_LOOPLENGTH
+#define FREQ PermRepGlynn_dualDFEF_FREQ
 #endif
 #else
 #ifndef DUAL
@@ -56,12 +62,14 @@
 #define BASEKERNPOW2 PermRepGlynn_singleDFE_BASEKERNPOW2
 #define INITS PermRepGlynn_singleDFE_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleDFE_LOOPLENGTH
+#define FREQ PermRepGlynn_singleDFE_FREQ
 #else
 #include "PermRepGlynn_dualDFE.h"
 #define MTX_SIZE PermRepGlynn_dualDFE_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_dualDFE_BASEKERNPOW2
 #define INITS PermRepGlynn_dualDFE_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualDFE_LOOPLENGTH
+#define FREQ PermRepGlynn_dualDFE_FREQ
 #endif
 #endif
 #endif
@@ -382,6 +390,9 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #ifdef DEBUG
 	printf("Start permanent calulation on DFE\n");
 #endif
+
+    max_config_set_int64(MAX_CONFIG_PCIE_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*100000ULL)));
+    max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*100000ULL)));
 
 #if defined(DUAL) && !defined(MAXELER_SIM)
     //runArrayFunc(array, arractions);
