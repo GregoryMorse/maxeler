@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive, PowerTraceHafnianDouble, PowerTraceHafnianLongDouble, PowerTraceHafnianInf 
+from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive, PowerTraceHafnianDouble, PowerTraceHafnianLongDouble, PowerTraceHafnianInf, PowerTraceLoopHafnianDouble, PowerTraceLoopHafnianLongDouble, PowerTraceLoopHafnianInf
 from thewalrus import hafnian, hafnian_repeated
 from scipy.stats import unitary_group
 
@@ -70,13 +70,26 @@ def lhafnian_powertrace_recursive(Arep):
     calculators[1] = PowerTraceLoopHafnianRecursive(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
     #else: calculators[1].matrix = Arep; calculators[1].occupancy = np.array([1]*(len(Arep)//2), dtype=np.int64)
     return calculators[1].calculate()
+def lhafnian_powertrace_double(Arep):
+    if calculators[2] is None: calculators[2] = PowerTraceLoopHafnianDouble(Arep)
+    else: calculators[2].matrix = Arep
+    return calculators[2].calculate()
+def lhafnian_powertrace_longdouble(Arep):
+    if calculators[3] is None: calculators[3] = PowerTraceLoopHafnianLongDouble(Arep)
+    else: calculators[3].matrix = Arep
+    return calculators[3].calculate()
+def lhafnian_powertrace_inf(Arep):
+    if calculators[4] is None: calculators[4] = PowerTraceLoopHafnianInf(Arep)
+    else: calculators[4].matrix = Arep
+    return calculators[4].calculate()
     
-largeLoopHafnianFuncs = (lhafnian_powertrace, lhafnian_powertrace_recursive, lhafnian_walrus, lhafnian_repeated_walrus)
+largeLoopHafnianFuncs = (lhafnian_powertrace_inf, lhafnian_powertrace, lhafnian_powertrace_double, lhafnian_powertrace_longdouble, lhafnian_powertrace_recursive, lhafnian_walrus, lhafnian_repeated_walrus)
 largeHafnianFuncs = (hafnian_powertrace_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_powertrace_recursive, hafnian_walrus, hafnian_repeated_walrus)
 testLoopHafnianFuncs = ()
 testHafnianFuncs = ()
 
-paperNames = {lhafnian_powertrace: "PiquassoBoost", lhafnian_powertrace_recursive: "PiquassoBoost Recursive",
+paperNames = {lhafnian_powertrace: "PiquassoBoost", lhafnian_powertrace_double: "PiquassoBoost Double", lhafnian_powertrace_longdouble: "PiquassoBoost LongDouble",
+              lhafnian_powertrace_recursive: "PiquassoBoost Recursive", lhafnian_powertrace_inf: "MPFR Inf",
               lhafnian_walrus: "thewalrus", lhafnian_repeated_walrus: "thewalrus repeated", 
               hafnian_powertrace: "PiquassoBoost Hybrid", hafnian_powertrace_double: "PiquassoBoost Double", hafnian_powertrace_longdouble: "PiquassoBoost LongDouble", 
               hafnian_powertrace_recursive: "PiquassoBoost Recursive",
@@ -111,8 +124,8 @@ def verify_timing(nmax, batchsize=1, loop=True):
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or True:          
-          mplier = 5 if dim < 24 and func != hafnian_powertrace_inf else 1
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or True:
+          mplier = 5 if dim < 24 and not func in (hafnian_powertrace_inf, lhafnian_powertrace_inf) else 1
           v = [None]
           def save_result():
               if batchsize == 1: v[0] = func(A[dim])
@@ -195,4 +208,5 @@ def verify_timing(nmax, batchsize=1, loop=True):
         ax1.legend()
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
-verify_timing(DEPTH, 1, False)
+verify_timing(DEPTH, 1, True)
+#verify_timing(DEPTH, 1, False)
