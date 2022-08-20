@@ -1,11 +1,11 @@
 
 import numpy as np
 
-from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive, PowerTraceHafnianDouble, PowerTraceHafnianLongDouble, PowerTraceHafnianInf, PowerTraceLoopHafnianDouble, PowerTraceLoopHafnianLongDouble, PowerTraceLoopHafnianInf
+from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, PowerTraceHafnianRecursive, PowerTraceLoopHafnian, PowerTraceLoopHafnianRecursive, PowerTraceHafnianDouble, PowerTraceHafnianLongDouble, PowerTraceHafnianInf, PowerTraceLoopHafnianDouble, PowerTraceLoopHafnianLongDouble, PowerTraceLoopHafnianInf, PowerTraceHafnianRecursiveDouble, PowerTraceHafnianRecursiveLongDouble, PowerTraceHafnianRecursiveInf, PowerTraceLoopHafnianRecursiveDouble, PowerTraceLoopHafnianRecursiveLongDouble, PowerTraceLoopHafnianRecursiveInf
 from thewalrus import hafnian, hafnian_repeated
 from scipy.stats import unitary_group
 
-DEPTH=22
+DEPTH=14
 saveFolder = "resultslh"
 def make_symmetric(A): return A + A.T
 def load_test_data():
@@ -26,8 +26,8 @@ def load_test_data():
 #functools.reduce(lambda x, y: x*y//math.gcd(x, y), range(1, 80)).bit_length()
 #functools.reduce(lambda x, y: x*y//math.gcd(x, y), [math.factorial(x) for x in range(1, 40)]).bit_length()
 
-hcalculators = [None, None, None, None, None]
-calculators = [None, None, None, None, None]
+hcalculators = [None, None, None, None, None, None, None, None]
+calculators = [None, None, None, None, None, None, None, None]
 
 def hafnian_walrus(Arep):
     return hafnian(Arep, loop=False)
@@ -55,6 +55,18 @@ def hafnian_powertrace_inf(Arep):
     if hcalculators[4] is None: hcalculators[4] = PowerTraceHafnianInf(Arep)
     else: hcalculators[4].matrix = Arep
     return hcalculators[4].calculate()
+def hafnian_powertrace_recursive_double(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    hcalculators[5] = PowerTraceHafnianRecursiveDouble(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return hcalculators[5].calculate()
+def hafnian_powertrace_recursive_longdouble(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    hcalculators[6] = PowerTraceHafnianRecursiveLongDouble(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return hcalculators[6].calculate()
+def hafnian_powertrace_recursive_inf(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    hcalculators[7] = PowerTraceHafnianRecursiveInf(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return hcalculators[7].calculate()
     
 def lhafnian_walrus(Arep):
     return hafnian(Arep, loop=True)
@@ -82,18 +94,31 @@ def lhafnian_powertrace_inf(Arep):
     if calculators[4] is None: calculators[4] = PowerTraceLoopHafnianInf(Arep)
     else: calculators[4].matrix = Arep
     return calculators[4].calculate()
+def lhafnian_powertrace_recursive_double(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    calculators[5] = PowerTraceLoopHafnianRecursiveDouble(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return calculators[5].calculate()
+def lhafnian_powertrace_recursive_longdouble(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    calculators[6] = PowerTraceLoopHafnianRecursiveLongDouble(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return calculators[6].calculate()
+def lhafnian_powertrace_recursive_inf(Arep):
+    if (len(Arep) & 1) != 0: return 1+0j if Arep.shape == (0, 0) else 0
+    calculators[7] = PowerTraceLoopHafnianRecursiveInf(Arep, np.array([1]*(len(Arep)//2), dtype=np.int64))
+    return calculators[7].calculate()
     
-largeLoopHafnianFuncs = (lhafnian_powertrace_inf, lhafnian_powertrace, lhafnian_powertrace_double, lhafnian_powertrace_longdouble, lhafnian_powertrace_recursive, lhafnian_walrus, lhafnian_repeated_walrus)
-largeHafnianFuncs = (hafnian_powertrace_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_powertrace_recursive, hafnian_walrus, hafnian_repeated_walrus)
+largeLoopHafnianFuncs = (lhafnian_powertrace_inf, lhafnian_powertrace_recursive_inf, lhafnian_powertrace, lhafnian_powertrace_double, lhafnian_powertrace_longdouble, lhafnian_powertrace_recursive, lhafnian_powertrace_recursive_double, lhafnian_powertrace_recursive_longdouble, lhafnian_walrus, lhafnian_repeated_walrus)
+largeHafnianFuncs = (hafnian_powertrace_inf, hafnian_powertrace_recursive_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_powertrace_recursive, hafnian_powertrace_recursive_double, hafnian_powertrace_recursive_longdouble, hafnian_walrus, hafnian_repeated_walrus)
 testLoopHafnianFuncs = ()
 testHafnianFuncs = ()
 
 paperNames = {lhafnian_powertrace: "PiquassoBoost", lhafnian_powertrace_double: "PiquassoBoost Double", lhafnian_powertrace_longdouble: "PiquassoBoost LongDouble",
-              lhafnian_powertrace_recursive: "PiquassoBoost Recursive", lhafnian_powertrace_inf: "MPFR Inf",
+              lhafnian_powertrace_recursive: "PiquassoBoost Recursive Hybrid", lhafnian_powertrace_recursive_double: "PiquassoBoost Recursive Double", lhafnian_powertrace_recursive_longdouble: "PiquassoBoost Recursive LongDouble",
+              lhafnian_powertrace_inf: "MPFR Inf", lhafnian_powertrace_recursive_inf: "MPFR Inf Recursive",
               lhafnian_walrus: "thewalrus", lhafnian_repeated_walrus: "thewalrus repeated", 
               hafnian_powertrace: "PiquassoBoost Hybrid", hafnian_powertrace_double: "PiquassoBoost Double", hafnian_powertrace_longdouble: "PiquassoBoost LongDouble", 
-              hafnian_powertrace_recursive: "PiquassoBoost Recursive",
-              hafnian_walrus: "thewalrus", hafnian_repeated_walrus: "thewalrus repeated", hafnian_powertrace_inf: "MPFR Inf"}
+              hafnian_powertrace_recursive: "PiquassoBoost Recursive Hybrid", hafnian_powertrace_recursive_double: "PiquassoBoost Recursive Double", hafnian_powertrace_recursive_longdouble: "PiquassoBoost Recursive LongDouble",
+              hafnian_walrus: "thewalrus", hafnian_repeated_walrus: "thewalrus repeated", hafnian_powertrace_inf: "MPFR Inf", hafnian_powertrace_recursive_inf: "MPFR Inf Recursive"}
 
 def verify_timing(nmax, batchsize=1, loop=True):
   ERRBOUND = 1e-6
