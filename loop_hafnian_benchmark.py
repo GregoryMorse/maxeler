@@ -150,7 +150,7 @@ def verify_timing(nmax, batchsize=1, loop=True):
       print("Verifying and Testing", func.__name__)
       for dim in xaxis:
         if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or True:
-          mplier = 5 if dim < 24 and not func in (hafnian_powertrace_inf, lhafnian_powertrace_inf) else 1
+          mplier = 5 if dim < 24 and not func in (hafnian_powertrace_inf, lhafnian_powertrace_inf, hafnian_powertrace_recursive_inf, lhafnian_powertrace_recursive_inf) else 1
           v = [None]
           def save_result():
               if batchsize == 1: v[0] = func(A[dim])
@@ -234,4 +234,4 @@ def verify_timing(nmax, batchsize=1, loop=True):
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
 verify_timing(DEPTH, 1, True)
-#verify_timing(DEPTH, 1, False)
+verify_timing(DEPTH, 1, False)
