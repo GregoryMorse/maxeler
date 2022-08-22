@@ -5,7 +5,7 @@ from piquassoboost.sampling.Boson_Sampling_Utilities import PowerTraceHafnian, P
 from thewalrus import hafnian, hafnian_repeated
 from scipy.stats import unitary_group
 
-DEPTH=8
+DEPTH=52
 saveFolder = "resultslh"
 def make_symmetric(A): return A + A.T
 def load_test_data():
@@ -114,7 +114,7 @@ def lhafnian_powertrace_recursive_inf(Arep, rep):
 largeLoopHafnianRepFuncs = (lhafnian_powertrace_recursive_inf, lhafnian_powertrace_recursive, lhafnian_powertrace_recursive_double, lhafnian_powertrace_recursive_longdouble, lhafnian_repeated_walrus)
 largeLoopHafnianFuncs = (lhafnian_powertrace_inf, lhafnian_powertrace, lhafnian_powertrace_double, lhafnian_powertrace_longdouble, lhafnian_walrus)
 largeHafnianRepFuncs = (hafnian_powertrace_recursive_inf, hafnian_powertrace_recursive, hafnian_powertrace_recursive_double, hafnian_powertrace_recursive_longdouble, hafnian_repeated_walrus) 
-largeHafnianFuncs = (hafnian_powertrace_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_walrus) 
+largeHafnianFuncs = (hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_walrus) #(hafnian_powertrace_inf, hafnian_powertrace, hafnian_powertrace_double, hafnian_powertrace_longdouble, hafnian_walrus) 
 testLoopHafnianFuncs = ()
 testHafnianFuncs = ()
 
@@ -130,7 +130,7 @@ def verify_timing(nmax, batchsize=1, loop=True, repeated=False):
   ERRBOUND = 1e-6
   largeFuncs = (largeLoopHafnianRepFuncs if loop else largeHafnianRepFuncs) if repeated else (largeLoopHafnianFuncs if loop else largeHafnianFuncs)
   suffix = "" if batchsize == 1 else str(batchsize)
-  prefix = "loophaf" if loop else "haf"
+  prefix = ("loophaf" if loop else "haf") + ("rep" if repeated else "")
   verdata = prefix + "verifydata.bin"
   resdata = prefix + "resultdata" + suffix + ".bin"
   xaxis = list(range(0, nmax+1, 1)) #list(range(0, nmax+1, 2))
@@ -240,5 +240,7 @@ def verify_timing(nmax, batchsize=1, loop=True, repeated=False):
         ax1.legend()
         tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
-verify_timing(DEPTH, 1, True, True)
-verify_timing(DEPTH, 1, False, True)
+#verify_timing(DEPTH, 1, True, False)
+verify_timing(DEPTH, 1, False, False)
+#verify_timing(DEPTH, 1, True, True)
+#verify_timing(DEPTH, 1, False, True)
