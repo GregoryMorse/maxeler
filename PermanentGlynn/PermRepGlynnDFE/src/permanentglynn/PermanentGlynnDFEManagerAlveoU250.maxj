@@ -167,7 +167,11 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 } catch (IOException e) { throw new IllegalArgumentException("IO error reading " + tclFile); }
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
-                        if (lines.get(i).equals("if {[get_property SLACK [get_timing_paths -setup]] >= 0 && [get_property SLACK [get_timing_paths -hold]] < 0} {")) {
+                        if (lines.get(i).equals("set_param route.enableHoldExpnBailout 1")) {
+                            pw.println("set preRoutes [get_nets -of [get_timing_paths -max_paths 25]]");
+                            pw.println("lappend preRoutes [get_nets -of [get_timing_paths -hold -max_paths 25]]");
+                            pw.println("route_design -nets [get_nets $preRoutes] -auto_delay");
+                        } else if (lines.get(i).equals("if {[get_property SLACK [get_timing_paths -setup]] >= 0 && [get_property SLACK [get_timing_paths -hold]] < 0} {")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
                             pw.println("\tphys_opt_design -tns_cleanup -slr_crossing_opt");
                             pw.println("}");
