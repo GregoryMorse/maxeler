@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
@@ -20,11 +21,108 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Count;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.Stream.OffsetExpr;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.photon.core.PhotonDesignData;
+import com.maxeler.photon.core.GraphPassPointwise;
+import com.maxeler.photon.core.Node;
+import com.maxeler.photon.nodes.NodeFIFO;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.stream.IntStream;
+//import java.util.stream.Collectors;
 
 public class InitializeColSumDFEKernel extends Kernel {
-
+    public class RemoveFIFOFinalizer implements KernelBase.Finalizer<Kernel>
+    {
+        public class GraphPassRemoveFIFO implements GraphPassPointwise
+        {
+            @Override
+            public Direction direction() {
+                return Direction.FORWARDS;
+            }
+            @Override
+            public void processNode(final Node node, final PhotonDesignData photonDesignData) {
+                if (node instanceof NodeFIFO) {
+                }
+            }
+            @Override
+            public void end(final PhotonDesignData photonDesignData) {
+            }
+            
+            @Override
+            public ReprocessMode reProcessOnChange() {
+                return ReprocessMode.NEVER;
+            }
+        }
+        public void finalizeKernel(Kernel kernel)
+        {
+            //PhotonDesignData pdd = kernel.getPhotonDesignData();
+            //pdd.getCompileManager().runGraphPass(new GraphPassRemoveFIFO());
+        }
+    }
+    public static char[] charAdapter(Character[] l)
+    {
+        char[] res = new char[l.length];
+        for (int i = 0; i < l.length; i++) res[i] = l[i];
+        return res;
+    }
+    public static BigInteger factorial(BigInteger x) {
+        return x.compareTo(BigInteger.ONE) <= 0 ? BigInteger.ONE : x.multiply(factorial(x.subtract(BigInteger.ONE)));
+    }
+    public static BigInteger choose(BigInteger n, BigInteger k) {
+        return factorial(n).divide(factorial(n.subtract(k)).multiply(factorial(k)));
+    }
+    public static class MagicBinCoeff
+    {
+        public static class MagicDivision
+        {
+            BigInteger val;
+            int shift;
+            public MagicDivision(BigInteger val, int shift) {
+                this.val = val; this.shift = shift;
+            }
+        }
+        public static MagicDivision magicgu(BigInteger nmax, BigInteger d)
+        {
+            BigInteger nc = nmax.add(BigInteger.ONE).divide(d).multiply(d).subtract(BigInteger.ONE);
+            int nbits = nmax.bitLength() - 2;
+            for (int p = 0; p <= 2 * nbits; p++) {
+                BigInteger twotop = BigInteger.ONE.shiftLeft(p);
+                if (twotop.compareTo(nc.multiply(d.subtract(BigInteger.ONE).subtract(twotop.subtract(BigInteger.ONE).mod(d)))) > 0) {
+                    BigInteger m = twotop.add(d).subtract(BigInteger.ONE).subtract(twotop.subtract(BigInteger.ONE).mod(d)).divide(d);
+                    return new MagicDivision(m, p);
+                }
+            }
+            return null;
+        }
+        public static class MagicInfo
+        {
+            BigInteger[] vals;
+            int[] shifts; 
+            int largestBinCoeffBits;
+            int largestMpliedBinCoeffBits;
+            int largestMagicNumBits;
+            public MagicInfo(BigInteger[] vals, int[] shifts, int largestBinCoeffBits, int largestMpliedBinCoeffBits, int largestMagicNumBits) {
+                this.vals = vals; this.shifts = shifts;
+                this.largestBinCoeffBits = largestBinCoeffBits;
+                this.largestMpliedBinCoeffBits = largestMpliedBinCoeffBits;
+                this.largestMagicNumBits = largestMagicNumBits;
+            } 
+        }        
+        public static MagicInfo get_bincoeff_magic(int dimension)
+        {
+            BigInteger dim = BigInteger.valueOf(dimension);
+            BigInteger largestbincoeff = choose(dim, dim.shiftRight(1)).multiply(dim.shiftRight(1).add(BigInteger.ONE));
+            MagicDivision[] objs = IntStream.range(1, dimension+1+1).mapToObj(d -> magicgu(largestbincoeff, BigInteger.valueOf(d))).toArray(MagicDivision[]::new);
+            BigInteger[] vals = Arrays.stream(objs).map(x -> x.val).toArray(BigInteger[]::new);
+            int[] shifts = Arrays.stream(objs).mapToInt(x -> x.shift).toArray();
+            return new MagicInfo(vals, shifts, choose(dim, dim.shiftRight(1)).bitLength(), largestbincoeff.bitLength(),
+                Arrays.stream(vals).mapToInt(x -> x.bitLength()).max().getAsInt());
+        }
+    }
     public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat, int loopLength) {
         super(parameters);
+        addKernelFinalizer(new RemoveFIFOFinalizer());
         //int CEPipelining = getKernelConfig().optimization.getCEPipelining();
         //final int counterChainWrapPipeliningLimit = 4;
         //final int counterChainDelay = maxdim / counterChainWrapPipeliningLimit;
@@ -241,24 +339,23 @@ public class InitializeColSumDFEKernel extends Kernel {
             //n=i+1, n=n-1, k=k<n ? n-1-k : k-n, k<n ? bc*k/(n-k+1) : bc*(n-k)/(k+1) -> k<n ? (n-1-k)/(n-1-(n-1-k)+1) : (n-1-(k-n))/(k-n+1)
             DFEVar num = (nextRowChangeIsNeg ? inpmp - curmp : (inpmp<<1) - curmp + 1).cast(dfeUInt(6));
             DFEVar denom = (nextRowChangeIsNeg ? curmp + 1 : curmp-inpmp).cast(dfeUInt(6))-1;
-            long mplierConsts[] = null;
+            //long mplierConsts[] = null;
+            BigInteger mplierConsts[] = null;
             char shiftConsts[] = null;
             int maxbits = 0;
-            if (maxdim == 40) {
-                maxbits = 42; //Size 40 Largest bincoeff bits 38 Largest multiplied bincoeff bits 42 Largest magic number bits 43
-                mplierConsts = new long[] {1L, 1L, 2932031007403L, 1L, 879609302221L, 2932031007403L, 2513169434917L, 1L, 1954687338269L, 879609302221L, 799644820201L, 2932031007403L, 338311270085L, 2513169434917L, 4691249611845L, 1L, 1034834473201L, 1954687338269L, 1851809057307L, 879609302221L, 3350892579889L, 799644820201L, 3059510616421L, 2932031007403L, 2814749767107L, 338311270085L, 1303124892179L, 2513169434917L, 151656776245L, 4691249611845L, 4539918979205L, 1L, 1066193093601L, 1034834473201L, 4021071095867L, 1954687338269L, 475464487687L, 1851809057307L, 3608653547573L, 879609302221L, 858155416801L}; //maximum bit size here is 43 bits on 15, 30 and 31 - not 42!!!
-                shiftConsts = new char[] {0, 1, 43, 2, 42, 44, 44, 3, 44, 43, 43, 45, 42, 45, 46, 4, 44, 45, 45, 44, 46, 44, 46, 46, 46, 43, 45, 46, 42, 47, 47, 5, 45, 45, 47, 46, 44, 46, 47, 45, 45};
-            } else if (maxdim == 48) {
-                maxbits = 50; //Size 48 Largest bincoeff bits 45 Largest multiplied bincoeff bits 50 Largest magic number bits 51
-                mplierConsts = new long[] {1L, 1L, 750599937895083L, 1L, 225179981368525L, 750599937895083L, 643371375338643L, 1L, 250199979298361L, 225179981368525L, 818836295885545L, 750599937895083L, 692861481133923L, 643371375338643L, 1200959900632133L, 1L, 264917625139441L, 250199979298361L, 474063118670579L, 225179981368525L, 214457125112881L, 818836295885545L, 783234717803565L, 750599937895083L, 45035996273705L, 692861481133923L, 1334399889591259L, 643371375338643L, 621186155499379L, 1200959900632133L, 581109629338129L, 1L, 545890863923697L, 264917625139441L, 257348550135457L, 250199979298361L, 486875635391405L, 474063118670579L, 230953827044641L, 225179981368525L, 27460973337625L, 214457125112881L, 837879000441023L, 818836295885545L, 800639933754755L, 783234717803565L, 766570149339659L, 750599937895083L, 91910196476949L};
-                shiftConsts = new char[] {0, 1, 51, 2, 50, 52, 52, 3, 51, 51, 53, 53, 53, 53, 54, 4, 52, 52, 53, 52, 52, 54, 54, 54, 50, 54, 55, 54, 54, 55, 54, 5, 54, 53, 53, 53, 54, 54, 53, 53, 50, 53, 55, 55, 55, 55, 55, 55, 52};
-            } else throw new IllegalArgumentException("Dimension size not yet supported for binomial coefficients");
+            MagicBinCoeff.MagicInfo mi = MagicBinCoeff.get_bincoeff_magic(maxdim);
+            //System.out.println("Size: " + maxdim +  "  Largest bincoeff bits: " + mi.largestBinCoeffBits + "  Largest multiplied bincoeff bits: " + mi.largestMpliedBinCoeffBits + "  Largest magic number bits: " + mi.largestMagicNumBits + " " + Arrays.asList(mi.vals) + " " + Arrays.stream(mi.shifts).boxed().collect(Collectors.toList()));
+            bincoeffbits = mi.largestBinCoeffBits;
+            maxbits = mi.largestMpliedBinCoeffBits;
+            mplierConsts = mi.vals; //Arrays.stream(mi.vals).mapToLong(x -> x.longValue()).toArray();
+            shiftConsts = charAdapter(Arrays.stream(mi.shifts).mapToObj(x -> Character.valueOf((char)x)).toArray(Character[]::new));
             DFEVectorType<DFEVar> divisionMplierType = new DFEVectorType<DFEVar>(dfeUInt(maxbits+1), maxdim+1);
             DFEVector<DFEVar> magicDivisionMpliers = divisionMplierType.newInstance(this);
             HashMap<Character, Integer> shiftToIndex = new HashMap<>();
             List<DFEVar> shiftIndices = new ArrayList<>();
             for (int i = 0; i < maxdim+1; i++) {
-                magicDivisionMpliers[i] <== constant.var(dfeUInt(maxbits+1), mplierConsts[i]);
+                //magicDivisionMpliers[i] <== constant.var(dfeUInt(maxbits+1), mplierConsts[i]);
+                magicDivisionMpliers[i] <== constant.var(dfeUInt(maxbits+1), new Bits(maxbits+1, String.format("%0" + ((maxbits+1+3)/4) + "X", mplierConsts[i])));
                 if (!shiftToIndex.containsKey(shiftConsts[i]))
                     shiftToIndex.put(shiftConsts[i], shiftToIndex.size());
                 shiftIndices.add(constant.var(dfeUInt(4), shiftToIndex.get(shiftConsts[i]))); //0-5 and 42-47 or 50-55 is 12 shifts, 4 bits to select
@@ -303,10 +400,10 @@ public class InitializeColSumDFEKernel extends Kernel {
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
             DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
-            prevColmnSumVector <== firstTick ? constant.zero(colSumType) : stream.offset(allColSums[kern], -loopLength);
+            prevColmnSumVector <== optimization.pipeline(firstTick) ? constant.zero(colSumType) : stream.offset(allColSums[kern], -loopLength);
             allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
         }
-        //for float - mux=1 + float add=13, for fixed piont - mux+add is optimized to conditional add=1
+        //for float - mux=1 + float add=13, for fixed point - mux+add is optimized to conditional add=1
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
             if (kernNum == 0) {
