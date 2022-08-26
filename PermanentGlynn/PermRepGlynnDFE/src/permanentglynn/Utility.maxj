@@ -17,11 +17,17 @@ import com.maxeler.platform.max5.manager.SynthesisStrategy;
 
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
+import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite.IO.PushInput;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite.IO.PullInput;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLite.IO.PushOutput;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
@@ -1371,6 +1377,43 @@ public class Utility {
         smio.connectInput("enable", enable);
         return new DFEVar[] { smio.getOutput("count"), needWrap ? smio.getOutput("wrap") : null };
     }
+    
+    public static class PassThroughKernelLite extends KernelLite {
+        public PassThroughKernelLite(ManagerKernelBase owner, String name, int vecsize, int bits) {
+            super(owner, name);
+            if (vecsize == 1) {
+                DFEType packetType = dfeUInt(bits);
+                PushInput<DFEVar> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
+                //PullInput<DFEVar> inputPacket = io.pullInput("input", packetType, io.almostEmptyLatencyTo("input")); //almostEmptyLatency=1
+                inputPacket.stall <== constant.var(false); //inputPacket.read <== constant.var(true);
+                PushOutput<DFEVar> output =
+                io.pushOutput("output", packetType, inputPacket.getStallLatency() + stream.ioDistance("input", "output"));
+                //io.pushOutput("output", packetType, inputPacket.getAlmostEmptyLatency() + stream.ioDistance("input", "output"));
+                //DFEVar outputStall = dfeBool().newInstance(this);
+                //outputStall <== output.stall;
+                //pushStall(outputStall); popStall();
+                //io.scalarOutput("stall", output.stall.getType()) <== output.stall;
+		        output.valid <== inputPacket.valid; //inputPacket.empty;
+		        output.data <== inputPacket.data;
+                
+            } else {
+                DFEVectorType<DFEVar> packetType = new DFEVectorType<DFEVar>(dfeUInt(bits), vecsize);
+                PushInput<DFEVector<DFEVar>> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
+                //PullInput<DFEVector<DFEVar>> inputPacket = io.pullInput("input", packetType, io.almostEmptyLatencyTo("input")); //almostEmptyLatency=1
+		        inputPacket.stall <== constant.var(false); //inputPacket.read <== constant.var(true);
+                PushOutput<DFEVector<DFEVar>> output =
+                io.pushOutput("output", packetType, inputPacket.getStallLatency() + stream.ioDistance("input", "output"));
+                //io.pushOutput("output", packetType, inputPacket.getAlmostEmptyLatency() + stream.ioDistance("input", "output"));
+                //DFEVar outputStall = dfeBool().newInstance(this);
+                //outputStall <== output.stall;
+                //pushStall(outputStall); popStall();
+                //io.scalarOutput("stall", output.stall.getType()) <== output.stall;
+		        output.valid <== inputPacket.valid; //inputPacket.empty;
+		        output.data <== inputPacket.data;
+            }
+            
+        }
+    }
 
     public static class CounterWithInitValue extends KernelStateMachine //requires a reset signal for initialization, reset happens on current tick, not next tick
     {
@@ -1745,17 +1788,18 @@ public class Utility {
         System.out.println("Fanout Limit Type: " + owner.optimization.peekFanoutLimitType()); //default CHAIN
         System.out.println("Rounding Mode: " + owner.optimization.getRoundingMode()); //default TONEAREVEN
     }
-    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner) //-1 for PCIE
+    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerKernel owner) //-1 for PCIE //ManagerRouting owner
     {
         if (owner != null) {
             for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
                 selectSLR(i, (XilinxAlveoU250Manager)owner);
-                Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
+                KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, 1, input.getSourceWidth()));
+                //Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
-                DFELink inp = fo.getInput();            
+                DFELink inp = fo.getInput("input");
                 inp.setAdditionalRegisters(regPerX);
-                inp <== input;
-                input = fo.addOutput(name + "Chain" + suffix + i);
+                inp <== input;                
+                input = fo.getOutput("output"); //fo.addOutput(name + "Chain" + suffix + i);
                 input.setAdditionalRegisters(regPerX);
                 if (slrEnd >= slrStart) i++; else i--;
             }
