@@ -33,6 +33,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         opt.setInlining(true);
         opt.setOptimizationTechnique(OptimizationOptions.OptimizationTechnique.SPEED);
         opt.setPreserveNodeRegisters(false);
+        opt.setUseGlobalClockBuffer(true);
+        opt.setUseGlobalClockLinesRst(true);
+        getCurrentKernelConfig().debug.setEnabledDebugIOControlRegs(false);
 
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
