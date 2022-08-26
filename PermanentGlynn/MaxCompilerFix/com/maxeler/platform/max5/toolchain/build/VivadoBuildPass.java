@@ -46,7 +46,6 @@ public abstract class VivadoBuildPass implements BuildPass, BuildManagerSupplier
         finally {
             this.m_buildManager.popWorkingDir();
         }
-        this.m_buildManager.popWorkingDir();
     }
     
     protected String getSig() {
