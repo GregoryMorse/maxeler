@@ -21,6 +21,7 @@ import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelBase;
@@ -1379,9 +1380,8 @@ public class Utility {
     }
     
     public static class PassThroughKernelLite extends KernelLite {
-        public PassThroughKernelLite(ManagerKernelBase owner, String name, int vecsize, int bits) {
-            super(owner, name);
-            getKernelConfig().optimization.setUseGlobalClockBuffer(false);
+        public PassThroughKernelLite(ManagerKernelBase owner, String name, KernelConfiguration config, int vecsize, int bits) {
+            super(owner, name, config);
             if (vecsize == 1) {
                 DFEType packetType = dfeUInt(bits);
                 PushInput<DFEVar> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
@@ -1794,7 +1794,9 @@ public class Utility {
         if (owner != null) {
             for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
                 selectSLR(i, (XilinxAlveoU250Manager)owner);
-                KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, 1, input.getSourceWidth()));
+                KernelConfiguration config = new KernelConfiguration(owner.getCurrentKernelConfig());
+                config.optimization.setUseGlobalClockBuffer(false);
+                KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, config, 1, input.getSourceWidth()));
                 //Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
                 DFELink inp = fo.getInput("input");
