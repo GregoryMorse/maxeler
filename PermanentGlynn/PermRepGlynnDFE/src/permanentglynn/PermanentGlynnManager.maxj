@@ -40,8 +40,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        int rows = dim;
+        int rows = dim > 48 ? 48 : dim; //48 rows takes approximately 16 hours at 300MHz so this is a reasonable practical upper row limit
         int cols = rows;
+        //boolean isBig = cols > 64; //DSPs will run out so halve the speed
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
         int loopLength = useFloat ? 15 : 9; //based on multiplexer initialization (1) + fixed point multiplication (5) + a right shift multiplexer (1), for float multiplexer initialization (1) + addition/subtraction (13) + addition/subtraction multiplexer (1)
         KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
@@ -202,7 +203,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         //if (dual && isSim)
         //  ei.setStream("res2", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
         
-        if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
+        /*if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
             "InputMtxChain20 -> InputMtxFanout20, InputMtxChain21 -> InputMtxFanout21, " +
             "InputMtxFanout30 -> InputMtxChain30, InputMtxFanout31 -> InputMtxChain31, InputMtxFanout32 -> InputMtxChain32, " +
             "colSumsChain021 -> colSumsFanout021, " +
@@ -223,7 +224,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 "colSumsChain741 -> colSumsFanout741, colSumsChain742 -> colSumsFanout742, " +
                 "colSumsChain752 -> colSumsFanout752, " +
                 "colProdChain61 -> colProdFanout61, " +
-                "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72") : ""));
+                "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72") : ""));*/
 
         return ei;
     }
