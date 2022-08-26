@@ -1381,7 +1381,7 @@ public class Utility {
     public static class PassThroughKernelLite extends KernelLite {
         public PassThroughKernelLite(ManagerKernelBase owner, String name, int vecsize, int bits) {
             super(owner, name);
-            getKernelConfig().setUseGlobalClockBuffer(false);
+            getKernelConfig().optimization.setUseGlobalClockBuffer(false);
             if (vecsize == 1) {
                 DFEType packetType = dfeUInt(bits);
                 PushInput<DFEVar> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
