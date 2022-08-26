@@ -1386,7 +1386,6 @@ public class Utility {
                 DFEType packetType = dfeUInt(bits);
                 PushInput<DFEVar> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
                 //PullInput<DFEVar> inputPacket = io.pullInput("input", packetType, io.almostEmptyLatencyTo("input")); //almostEmptyLatency=1
-                inputPacket.stall <== constant.var(false); //inputPacket.read <== constant.var(true);
                 PushOutput<DFEVar> output =
                 io.pushOutput("output", packetType, inputPacket.getStallLatency() + stream.ioDistance("input", "output"));
                 //io.pushOutput("output", packetType, inputPacket.getAlmostEmptyLatency() + stream.ioDistance("input", "output"));
@@ -1396,12 +1395,12 @@ public class Utility {
                 //io.scalarOutput("stall", output.stall.getType()) <== output.stall;
 		        output.valid <== inputPacket.valid; //inputPacket.empty;
 		        output.data <== inputPacket.data;
+                inputPacket.stall <== output.stall; //inputPacket.read <== constant.var(true);
                 
             } else {
                 DFEVectorType<DFEVar> packetType = new DFEVectorType<DFEVar>(dfeUInt(bits), vecsize);
                 PushInput<DFEVector<DFEVar>> inputPacket = io.pushInput("input", packetType, io.stallLatencyTo("input"));
                 //PullInput<DFEVector<DFEVar>> inputPacket = io.pullInput("input", packetType, io.almostEmptyLatencyTo("input")); //almostEmptyLatency=1
-		        inputPacket.stall <== constant.var(false); //inputPacket.read <== constant.var(true);
                 PushOutput<DFEVector<DFEVar>> output =
                 io.pushOutput("output", packetType, inputPacket.getStallLatency() + stream.ioDistance("input", "output"));
                 //io.pushOutput("output", packetType, inputPacket.getAlmostEmptyLatency() + stream.ioDistance("input", "output"));
@@ -1411,6 +1410,7 @@ public class Utility {
                 //io.scalarOutput("stall", output.stall.getType()) <== output.stall;
 		        output.valid <== inputPacket.valid; //inputPacket.empty;
 		        output.data <== inputPacket.data;
+                inputPacket.stall <== output.stall; //inputPacket.read <== constant.var(true);
             }
             
         }
