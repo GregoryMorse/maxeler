@@ -39,7 +39,6 @@ public class SumUpPermDFEKernel extends Kernel {
         totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
         int intBits = MathUtils.ceilLog2(Utility.getPartialSumIntBits(cols));
         DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(totalprec, -totalprec+intBits, SignMode.TWOSCOMPLEMENT);
-        System.out.println(dataTypeFix + " " + dataTypeFix128);
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         
         // tick count
