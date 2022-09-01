@@ -10,31 +10,72 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 
 public class SumUpPermDFEKernel extends Kernel {
-
-    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, boolean useFloat) {
+    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, int cols, boolean dual, boolean isBig, boolean useFloat) {
         super(parameters);
-
-        //import math; [max(sum((2*(k+1)-n)**n * math.comb(n-1, k) for k in range(1, n, 2)), sum((2*(k+1)-n)**n * math.comb(n-1, k) for k in range(0, n, 2)))/n**n for n in range(41)]
+        
         //largest partial sum for a 40x40 normalized matrix of all ones is 27 so 6 integer bits needed worst case
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
+        Utility.MagicBinCoeff.MagicInfo mi = Utility.MagicBinCoeff.get_bincoeff_magic(cols);
+        int bincoeffbits = mi.largestBinCoeffBits;
+        int tol = MathUtils.ceilLog2(cols); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+        
+        int errorTol = tol * (isBig ? cols / 2 : cols);
+        int totalprec = 64 + errorTol / 2;
+        while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
+               Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+        totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
+        DFEType dataTypeFix = useFloat ? dfeFloat(15, 64) : dfeFixOffset(totalprec, -totalprec+2, SignMode.TWOSCOMPLEMENT);
 
+        DFEComplexType cplxFixType = new DFEComplexType(dataTypeFix);
+        
+        errorTol = tol * cols;
+        totalprec = 64 + errorTol / 2;
+        if (totalprec > 242) totalprec = 242; //254 max to avoid tri-add needing triple chunking
+        while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
+               Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+        totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
+        int intBits = MathUtils.ceilLog2(Utility.getPartialSumIntBits(cols));
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(totalprec, -totalprec+intBits, SignMode.TWOSCOMPLEMENT);
+        System.out.println(dataTypeFix + " " + dataTypeFix128);
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
-
+        
         // tick count
         //DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
         DFEVar ticksmax = io.scalarInput("changeCount", dfeUInt(64));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
 
+        DFEVar isLocal = null, parity = null, curMplicity = null;
+        if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
         DFEVar lastTick = optimization.pipeline(tickCount === ticksmax - 1);
         DFEComplex colProdVals[] = new DFEComplex[n];
-        for (int i = 0; i < n; i++)
-            colProdVals[i] = io.input("colProd" + i, cplxFix128Type);
-
-        int sumsleft = n;
+        for (int i = 0; i < n; i++) {
+            if (i == 0) {
+                DFEVar rawBits = io.input("colProd" + i, dfeRawBits(cplxFixType.getTotalBits() + 1 + bincoeffbits));
+                colProdVals[i] = rawBits.slice(0, cplxFixType.getTotalBits()).reinterpret(cplxFixType);
+                curMplicity = rawBits.slice(cplxFixType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
+                parity = rawBits.slice(cplxFixType.getTotalBits() + bincoeffbits, 1).reinterpret(dfeBool());                                
+            } else {
+                colProdVals[i] = io.input("colProd" + i, cplxFixType);
+            }
+            if (isBig && (i & 1) == 0) continue;
+            else if (isBig) {
+                colProdVals[i] = Utility.doMult(colProdVals[i-1], colProdVals[i], totalprec, false, useFloat, this);
+            }
+            if (useFloat) {
+                DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
+                //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
+                colProdVals[i] = DFEComplexType.newInstance(this, Utility.doFloatMult(colProdVals[i].getReal(), mplicityFloat, this), Utility.doFloatMult(colProdVals[i].getImaginary(), mplicityFloat, this));
+            } else {
+                colProdVals[i] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colProdVals[i].getReal(), curMplicity, totalprec, intBits, this), Utility.mulKaratsubaRectangularExact(colProdVals[i].getImaginary(), curMplicity, totalprec, intBits, this));
+            }
+            DFEVar sign = dual ? isLocal ^ parity : (((i & 1) != 0) ^ parity);
+            colProdVals[i] = sign ? -colProdVals[i] : colProdVals[i]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
+            if (isBig) colProdVals[i/2] = colProdVals[i];
+        }
+        int sumsleft = isBig ? n / 2 : n;
         while (sumsleft > 1) { //sums processed in binary tree
             for (int i = 0; i < sumsleft / 2; i++) {
                 colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this).cast(dataTypeFix128),
@@ -89,9 +130,10 @@ public class SumUpPermDFEKernel extends Kernel {
             //sum <== cursum + colProdVals[0];
             //optimization.popNoPipelining();
             io.output("res", constant.zero(dfeUInt(6*8+1)).cat(sum.getImaginary().reinterpret(dfeUInt(15+64))).cat(constant.zero(dfeUInt(6*8+1))).cat(sum.getReal().reinterpret(dfeUInt(15+64))).cast(dfeUInt(256)), dfeUInt(256), lastTick);
-        } else {
-            DFEType finalTypeFix128 = dfeFixOffset(192, -186, SignMode.TWOSCOMPLEMENT); //CPU stream width should be multiple of 128, so extra 32 bits supplied
-            DFEComplexType finalCplxFix128Type = new DFEComplexType(finalTypeFix128);
+        } else {            
+            DFEType finalTypeFix128 = dfeFixOffset(256, -250, SignMode.TWOSCOMPLEMENT); //CPU stream width should be multiple of 128, so extra bits supplied
+            DFEComplexType finalCplxFix128Type = new DFEComplexType(finalTypeFix128);        
+        
             DFEVar initTick = optimization.pipeline(tickCount < 3),
                     firstTick = Utility.repeatPipeline(tickCount === 0, 3, this),
                     secondTick = Utility.repeatPipeline(tickCount < 2, 3, this);
