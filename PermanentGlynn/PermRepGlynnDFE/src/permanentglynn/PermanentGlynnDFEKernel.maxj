@@ -14,33 +14,32 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
-//import com.maxeler.maxcompiler.v2.utils.MathUtils;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 
 
 
 public class PermanentGlynnDFEKernel extends Kernel {
 
-    public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int kernNum, boolean useFloat, boolean colMux) {
+    public PermanentGlynnDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int maxtickbits, int initKerns, int initKernMulti, int kernNum, boolean useFloat, boolean colMux) {
         super(parameters);
 
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
+        //DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
 
-        DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
+        //DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
 
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols / initKerns);
         int limit = cols;
         DFEComplex[] colSumFix = new DFEComplex[cols];
         int[] errorTol = new int[cols];
-        int bincoeffbits = cols == 40 ? 38 : 45;
-        int tol = 6; //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
-	
+        Utility.MagicBinCoeff.MagicInfo mi = Utility.MagicBinCoeff.get_bincoeff_magic(cols * initKernMulti);
+        int bincoeffbits = mi.largestBinCoeffBits;
+        int tol = MathUtils.ceilLog2(cols * initKernMulti); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+	    DFEVar curMplicity = null, parity = null;
         // tick count
         DFEVar isCalc = null;
-        DFEVar isLocal = null, parity = null, curMplicity = null;
-        if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
         if (colMux) {
             DFEVar ticksBeforeCols = io.scalarInput("changeCount", dfeUInt(64));
             DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(6));
@@ -75,10 +74,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
             DFEVectorType<DFEComplex> colType = new DFEVectorType<DFEComplex>(cplxFix64Type, cols);
             DFEVector<DFEComplex> colSumPreFix = colType.newInstance(this);
             //DFEComplex[] colSumPreFix = new DFEComplex[cols];
-            
+
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-                if (j == 0) {
+                if (kernNum % 4 == 0 && j == 0) {
                     DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + bincoeffbits), isCalc);
                     colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
                     curMplicity = rawBits.slice(colSumType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
@@ -112,9 +111,10 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 }*/
             }
         } else {
+
             for (int j = 0; j < initKerns; j++) {
                 DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
-                if (j == 0) {
+                if (kernNum % 4 == 0 && j == 0) {
                     DFEVar rawBits = io.input("colSums" + j, dfeRawBits(colSumType.getTotalBits() + 1 + bincoeffbits));
                     colmnSumVector = rawBits.slice(0, colSumType.getTotalBits()).reinterpret(colSumType);
                     curMplicity = rawBits.slice(colSumType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
@@ -195,26 +195,18 @@ public class PermanentGlynnDFEKernel extends Kernel {
             //if (extraprec > 63) extraprec = 63;
 
         }
-        parity = Utility.repeatPipeline(parity, 81+(useFloat ? 61+1 : 0)+(dual ? 0 : 1), this);        
-        curMplicity = Utility.repeatPipeline(curMplicity, 71+(cols==48 ? 1 : 0)+(useFloat ? 54+1 : 0), this);
-        //DFEComplex save = colSumFix[0];
-        if (useFloat) {
-            DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
-            //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
-            colSumFix[0] = DFEComplexType.newInstance(this, Utility.doFloatMult(colSumFix[0].getReal(), mplicityFloat, this), Utility.doFloatMult(colSumFix[0].getImaginary(), mplicityFloat, this));
-        } else {
-            colSumFix[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colSumFix[0].getReal(), curMplicity, 160, 6, this), Utility.mulKaratsubaRectangularExact(colSumFix[0].getImaginary(), curMplicity, 160, 6, this));
-        }
-        //if (!dual) debug.simPrintf("%KObj% %KObj% %d\n", save, colSumFix[0], curMplicity); 
-        //optimization.popDSPFactor();
-        //optimization.popDSPFactor();
-        DFEVar sign = dual ? isLocal ^ parity : (((kernNum & 1) != 0) ^ parity);
-        DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
-
+        System.out.println(colSumFix[0].getType());
+        DFEComplexType cplxFix128Type = colSumFix[0].getType();
         if (colMux) {
             for (int i = 0; i < 18; i++) isCalc = optimization.pipeline(isCalc);
-            io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type, isCalc);
-        } else io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type);
+            if (kernNum % 4 == 0) {
+                io.output("colProd", parity.cat(curMplicity).cat(colSumFix[0].cast(cplxFix128Type).reinterpret(dfeRawBits(cplxFix128Type.getTotalBits()))), dfeRawBits(cplxFix128Type.getTotalBits() + 1 + bincoeffbits), isCalc);
+            } else
+                io.output("colProd", colSumFix[0].cast(cplxFix128Type), cplxFix128Type, isCalc);
+        } else if (kernNum % 4 == 0) {
+            io.output("colProd", parity.cat(curMplicity).cat(colSumFix[0].cast(cplxFix128Type).reinterpret(dfeRawBits(cplxFix128Type.getTotalBits()))), dfeRawBits(cplxFix128Type.getTotalBits() + 1 + bincoeffbits));
+        } else
+            io.output("colProd", colSumFix[0].cast(cplxFix128Type), cplxFix128Type);
         //optimization.popFanoutLimit();
     }
 
