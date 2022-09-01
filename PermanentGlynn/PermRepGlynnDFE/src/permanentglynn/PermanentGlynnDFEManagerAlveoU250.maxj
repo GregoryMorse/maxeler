@@ -173,7 +173,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                             pw.println("route_design -nets [get_nets $preRoutes] -auto_delay");
                             pw.println("set_param route.enableGlobalHoldIter 1");
                         } else if (lines.get(i).startsWith("route_design -directive")) {
-                            lines.set(i, lines.get(i) + " -ultrathreads");
+                            lines.set(i, lines.get(i).replace(" Explore", " AggressiveExplore") + " -ultrathreads");
                         } else if (lines.get(i).equals("if {[get_property SLACK [get_timing_paths -setup]] >= 0 && [get_property SLACK [get_timing_paths -hold]] < 0} {")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
                             pw.println("\tphys_opt_design -tns_cleanup -slr_crossing_opt");
