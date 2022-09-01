@@ -195,7 +195,6 @@ public class PermanentGlynnDFEKernel extends Kernel {
             //if (extraprec > 63) extraprec = 63;
 
         }
-        System.out.println(colSumFix[0].getType());
         DFEComplexType cplxFix128Type = colSumFix[0].getType();
         if (colMux) {
             for (int i = 0; i < 18; i++) isCalc = optimization.pipeline(isCalc);
