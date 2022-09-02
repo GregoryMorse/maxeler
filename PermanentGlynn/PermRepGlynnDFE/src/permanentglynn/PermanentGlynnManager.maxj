@@ -140,7 +140,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
     }
 
 
-    static EngineInterface interfaceDefault(boolean dual, boolean isSim, boolean useFloat) {
+    static EngineInterface interfaceDefault(boolean dual, boolean isSim, boolean useFloat, int dim) {
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
@@ -217,23 +217,25 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
             "InputMtxChain20 -> InputMtxFanout20, InputMtxChain21 -> InputMtxFanout21, " +
             "InputMtxFanout30 -> InputMtxChain30, InputMtxFanout31 -> InputMtxChain31, InputMtxFanout32 -> InputMtxChain32, " +
+            (dim > 64 ? "" : 
             "colSumsChain021 -> colSumsFanout021, " +
             "colSumsChain031 -> colSumsFanout031, colSumsChain032 -> colSumsFanout032, " +
             "colSumsChain132 -> colSumsFanout132, " +
             "colSumsChain201 -> colSumsFanout201, " +
             "colSumsChain301 -> colSumsFanout301, colSumsChain302 -> colSumsFanout302, " +
-            "colSumsChain312 -> colSumsFanout312, " +
+            "colSumsChain312 -> colSumsFanout312, ") +
             "colProdChain21 -> colProdFanout21, " +
             "colProdChain31 -> colProdFanout31, colProdChain32 -> colProdFanout32" + (dual && isSim ? (
                 ", InputMtxChain50 -> InputMtxFanout50, " + 
                 "InputMtxChain60 -> InputMtxFanout60, InputMtxChain61 -> InputMtxFanout61, " +
                 "InputMtxFanout70 -> InputMtxChain70, InputMtxFanout71 -> InputMtxChain71, InputMtxFanout72 -> InputMtxChain72, " +
+                (dim > 64 ? "" : 
                 "colSumsChain461 -> colSumsFanout461, " +
                 "colSumsChain471 -> colSumsFanout471, colSumsChain472 -> colSumsFanout472, " +
                 "colSumsChain572 -> colSumsFanout572, " +
                 "colSumsChain641 -> colSumsFanout641, " +
                 "colSumsChain741 -> colSumsFanout741, colSumsChain742 -> colSumsFanout742, " +
-                "colSumsChain752 -> colSumsFanout752, " +
+                "colSumsChain752 -> colSumsFanout752, ") +
                 "colProdChain61 -> colProdFanout61, " +
                 "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72") : ""));
 
