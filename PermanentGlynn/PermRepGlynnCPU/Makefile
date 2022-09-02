@@ -22,13 +22,13 @@ ifeq ($(strip $(SIM)),true)
       endif                
   else
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermRepGlynnDualSIM.so
+          TARGET := libPermRepGlynnDualSIM$(BIG).so
           COMPVAR := -DMAXELER_SIM -DDUAL
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM$(BIG).max))
       else
-          TARGET := libPermRepGlynnSIM.so
+          TARGET := libPermRepGlynnSIM$(BIG).so
           COMPVAR := -DMAXELER_SIM
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM$(BIG).max))
       endif                
   endif
 else
@@ -45,13 +45,13 @@ else
       endif
   else
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermRepGlynnDualDFE.so
+          TARGET := libPermRepGlynnDualDFE$(BIG).so
           COMPVAR := -DDUAL
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE$(BIG).max))
       else
-          TARGET := libPermRepGlynnDFE.so
+          TARGET := libPermRepGlynnDFE$(BIG).so
           COMPVAR :=
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE$(BIG).max))
       endif
   endif
 endif
