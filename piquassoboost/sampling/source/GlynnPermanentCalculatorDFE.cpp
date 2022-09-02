@@ -26,7 +26,10 @@
 #define DFE_REP_LIB_SIMFDUAL "libPermRepGlynnDualSIMF.so"
 #define DFE_REP_LIBF "libPermRepGlynnDFEF.so"
 #define DFE_REP_LIBFDUAL "libPermRepGlynnDualDFEF.so"
-
+#define DFE_REP_LIB_SIM_BIG "libPermRepGlynnSIMBIG.so"
+#define DFE_REP_LIB_SIMDUAL_BIG "libPermRepGlynnDualSIMBIG.so"
+#define DFE_REP_LIB_BIG "libPermRepGlynnDFEBIG.so"
+#define DFE_REP_LIBDUAL_BIG "libPermRepGlynnDualDFEBIG.so"
 
 typedef void(*CALCPERMGLYNNDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const uint64_t, pic::Complex16*);
 typedef int(*INITPERMGLYNNDFE)(int, size_t*, size_t*);
@@ -94,8 +97,8 @@ int init_dfe_lib(int choice, int dual, int big) {
         simLib = dual ? DFE_LIB_SIMFDUAL : DFE_LIB_SIMF;
         lib = dual ? DFE_LIBFDUAL : DFE_LIBF;
     } else if (choice == DFE_REP) {
-        simLib = dual ? DFE_REP_LIB_SIMDUAL : DFE_REP_LIB_SIM;
-        lib = dual ? DFE_REP_LIBDUAL : DFE_REP_LIB;
+        simLib = big ? (dual ? DFE_REP_LIB_SIMDUAL_BIG : DFE_REP_LIB_SIM_BIG) : (dual ? DFE_REP_LIB_SIMDUAL : DFE_REP_LIB_SIM);
+        lib = big ? (dual ? DFE_REP_LIBDUAL_BIG : DFE_REP_LIB_BIG) : (dual ? DFE_REP_LIBDUAL : DFE_REP_LIB);
     } else if (choice == DFE_REP_FLOAT) {
         simLib = dual ? DFE_REP_LIB_SIMFDUAL : DFE_REP_LIB_SIMF;
         lib = dual ? DFE_REP_LIBFDUAL : DFE_REP_LIBF;
