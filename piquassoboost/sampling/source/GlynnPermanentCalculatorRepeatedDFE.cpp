@@ -72,8 +72,8 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
 {
     lock_lib();
     int useFloat = 0;
-    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
-    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);    
+    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual, false);
+    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual, false);    
     size_t photons = 0;
     uint64_t t1 = 1, t2 = 1;
     for (size_t i = 0; i < input_state.size(); i++) {
@@ -141,6 +141,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
 
     // calulate the maximal sum of the columns to normalize the matrix
     matrix_base<Complex32> colSumMax( photons, 2);
+    matrix_base<double> colMax(matrix_init.cols, 1);
     memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
     //sum up vectors in first/upper-left and fourth/lower-right quadrants
     for (size_t i=0; i<row_indices.size(); i++) {
@@ -152,6 +153,7 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
                 int slopeUpLeft = realPos == (matrix_init[offset].imag() > 0);
                 if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_init[offset];
                 else colSumMax[2*jdx+slopeUpLeft] -= matrix_init[offset];
+                colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_init[offset]));
             }
         }
     }
@@ -174,6 +176,9 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
     matrix_base<long double> renormalize_data(1, photons);
     for (size_t jdx=0; jdx<photons; jdx++ ) {
         renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+        //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+        //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+        if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2; 
         //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
     
@@ -453,8 +458,6 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     PicState_int64& output_state, Complex16& perm, int useDual, int useFloat)
 {
     lock_lib();
-    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
-    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     uint64_t t1 = 1, t2 = 1;   
     for (size_t i = 0; i < input_state.size(); i++) {
@@ -462,6 +465,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         t1 *= (input_state[i]+1);
         if (i < output_state.size()) t2 *= (output_state[i]+1);
     }
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual, photons > 48);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual, false);
     if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
       BBFGPermanentCalculatorRepeated gpc;
       perm = gpc.calculate(matrix_init, input_state, output_state, true, false);
@@ -481,6 +486,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     if (!useFloat) {
         // calulate the maximal sum of the columns to normalize the matrix
         matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+        matrix_base<double> colMax(matrix_mtx.cols, 1);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
         //sum up vectors in first/upper-left and fourth/lower-right quadrants
         for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
@@ -491,6 +497,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
                     int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
                     if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
                     else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                    colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_mtx[offset]));
                 }
             }
         }
@@ -511,6 +518,9 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
             renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+            //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+            //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+            if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;
             //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
         }
     }
@@ -531,6 +541,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     const size_t cols = colMux ? matrix_mtx.cols : photons;
     const size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
+    unsigned int mplicityBits = dfe_mtx_size > 64 ? 7 : 6; //ceil log2 (dfe_mtx_size)
     const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
     int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
@@ -552,10 +563,10 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
       }
       for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
       for (size_t idx = 0; idx < initDirections.size(); idx++) {
-          mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
+          mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & ((1<<mplicityBits)-1)) << mplicityBits) | ((initDirections[idx] & 0x80) << (mplicityBits+mplicityBits-7)); //maximum of 37*20*7=5180 bits
       } 
       for (size_t idx = 0; idx < mplicity.size(); idx++) {
-          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
+          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (mplicityBits+mplicityBits+1); //maximum of 38*20=760 bits
       }
     }
 
@@ -578,12 +589,12 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
 {
     if (output_states.size() == 0) return;
     lock_lib();
-    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
-    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     for (size_t i = 0; i < output_states[0].size(); i++) {
         photons += output_states[0][i];
     }
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual, photons > 48);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual, false);
     if (!calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
         BBFGPermanentCalculatorRepeated gpc;
         for (size_t i = 0; i < output_states.size(); i++) {
@@ -609,6 +620,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         if (!useFloat) {
             // calulate the maximal sum of the columns to normalize the matrix
             matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+            matrix_base<double> colMax(matrix_mtx.cols, 1);
             memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
             //sum up vectors in first/upper-left and fourth/lower-right quadrants
             for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
@@ -619,6 +631,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                         int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
                         if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
                         else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                        colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_mtx[offset]));
                     }
                 }
             }
@@ -639,6 +652,9 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
             // calculate the renormalization coefficients
             for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
                 renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+                //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+                //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+                if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;                 
                 //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
             }
         }
@@ -651,6 +667,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t max_fpga_cols = max_dim / numinits;
         size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[colMux ? numinits : actualinits];
+        unsigned int mplicityBits = dfe_mtx_size > 64 ? 7 : 6; //ceil log2 (dfe_mtx_size) 
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
         int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
@@ -672,10 +689,10 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
           }
           for (size_t jdx = lastcol; jdx < max_fpga_cols; jdx++) mtxfix[i][jdx].real = useFloat ? fOne : fixpow; 
           for (size_t idx = 0; idx < initDirections.size(); idx++) {
-              mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & 0x3f) << 6) | ((initDirections[idx] & 0x80) << (6+6-7)); //maximum of 37*20*7=5180 bits
+              mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & ((1<<mplicityBits)-1)) << mplicityBits) | ((initDirections[idx] & 0x80) << (mplicityBits+mplicityBits-7)); //maximum of 37*20*7=5180 bits
           } 
           for (size_t idx = 0; idx < mplicity.size(); idx++) {
-              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (6+6+1); //maximum of 38*20=760 bits
+              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (mplicityBits+mplicityBits+1); //maximum of 38*20=760 bits
           }  
         }        
         
@@ -751,12 +768,12 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
 {
     if (input_states.size() == 0) return;
     lock_lib();
-    if (!useFloat) init_dfe_lib(DFE_REP, useDual);
-    else init_dfe_lib(DFE_REP_FLOAT, useDual);    
     size_t photons = 0;
     for (size_t i = 0; i < input_states[0].size(); i++) {
         photons += input_states[0][i];
     }
+    if (!useFloat) init_dfe_lib(DFE_REP, useDual, photons > 48);
+    else init_dfe_lib(DFE_REP_FLOAT, useDual, false);
     if (1 || !calcPermanentGlynnRepDFE || photons < 1+dfe_basekernpow2) { //compute with other method
         //BBFGPermanentCalculatorRepeated gpc;
         for (size_t i = 0; i < input_states.size(); i++) {
@@ -789,6 +806,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
     
             // calulate the maximal sum of the columns to normalize the matrix
             matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+            matrix_base<double> colMax(matrix_mtx.cols, 1);
             memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
             //sum up vectors in first/upper-left and fourth/lower-right quadrants
             for (size_t idx = 0; idx < matrix_mtx.rows; idx++) {
@@ -799,6 +817,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
                         int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
                         if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
                         else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                        colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_mtx[offset]));
                     }
                 }
             }
@@ -820,6 +839,9 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
             matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
             for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
                 renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+                //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+                //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+                if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;                 
                 //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
             }
         
