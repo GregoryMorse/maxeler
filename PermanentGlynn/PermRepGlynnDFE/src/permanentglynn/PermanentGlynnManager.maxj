@@ -51,10 +51,11 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
         int initKerns = 4;
         int initKernMulti = isBig ? 2 : 1;
+        basekernpow2 -= isBig ? 1 : 0;
        
         for (int i = 0; i < initKerns * (dual && isSim ? 2 : 1); i++) {
             Utility.selectSLR(i % 4, (XilinxAlveoU250Manager)this);
-            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0) - (isBig ? 1 : 0), initKerns, i % initKerns, dim, useFloat, loopLength));
+            initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat, loopLength));
             Utility.unselectSLR((XilinxAlveoU250Manager)this);
             initColSumKernels[i].setClock(mc[i % 4]);
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
@@ -103,7 +104,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         }
         int singlekerns = numkernels * numarrays / 2;
         Utility.selectSLR(0, (XilinxAlveoU250Manager)this);
-        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, 64/*dim - basekernpow2*/, cols, dual, isBig, useFloat));
+        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, rows - basekernpow2, cols, dual, isBig, useFloat));
         Utility.unselectSLR((XilinxAlveoU250Manager)this);
         SumUpPermKernel.setClock(mc[0]);
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
@@ -118,7 +119,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         cpuOutput <== toCPU;
         if (dual && isSim) {
             Utility.selectSLR(0, (XilinxAlveoU250Manager)this);
-            KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, 64/*dim - basekernpow2*/, cols, dual, isBig, useFloat));
+            KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, rows - basekernpow2, cols, dual, isBig, useFloat));
             Utility.unselectSLR((XilinxAlveoU250Manager)this);
             SumUpPermKernel2.setClock(mc[0]);
             for (int i = singlekerns; i < numkernels; i++) {
