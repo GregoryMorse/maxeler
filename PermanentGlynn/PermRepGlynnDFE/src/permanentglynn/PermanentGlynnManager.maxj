@@ -214,7 +214,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         //if (dual && isSim)
         //  ei.setStream("res2", CPUTypes.VOID, 32); // 128 bit fixed point precision representation of the resulted permanent, void is 1 byte * 2 * 128-bits=32 bytes
         
-        /*if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
+        if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
             "InputMtxChain20 -> InputMtxFanout20, InputMtxChain21 -> InputMtxFanout21, " +
             "InputMtxFanout30 -> InputMtxChain30, InputMtxFanout31 -> InputMtxChain31, InputMtxFanout32 -> InputMtxChain32, " +
             "colSumsChain021 -> colSumsFanout021, " +
@@ -235,7 +235,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 "colSumsChain741 -> colSumsFanout741, colSumsChain742 -> colSumsFanout742, " +
                 "colSumsChain752 -> colSumsFanout752, " +
                 "colProdChain61 -> colProdFanout61, " +
-                "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72") : ""));*/
+                "colProdChain71 -> colProdFanout71, colProdChain72 -> colProdFanout72") : ""));
 
         return ei;
     }
