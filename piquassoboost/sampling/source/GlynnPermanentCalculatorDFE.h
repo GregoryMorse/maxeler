@@ -36,7 +36,7 @@ void GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDu
 
 void inc_dfe_lib_count();
 void dec_dfe_lib_count();
-int init_dfe_lib(int choice, int dual);
+int init_dfe_lib(int choice, int dual, int big);
 void lock_lib();
 void unlock_lib();
 extern "C" size_t dfe_mtx_size;
