@@ -18,7 +18,7 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
 public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, ManagerRouting {
-    boolean placeFanouts = false;
+    boolean placeFanouts = true;
     final boolean colMux = false; //column multiplexing is very resource expensive and causes heavy congestion
     //must be multiple of kernel count
     default void setup(PermanentGlynnDFEManagerAlveoU250 parent, boolean dual, boolean isSim, boolean useFloat, int freq, int dim) {
