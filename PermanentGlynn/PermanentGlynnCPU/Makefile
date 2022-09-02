@@ -7,53 +7,58 @@ DEBUG_DIR := "$(DIST_DIR)/debug"
 USE_SLIC=1
 include $(MAXCOMPILERDIR)/lib/Makefile.include
 
+
 ifeq ($(strip $(SIM)),true)
   ##### Target executable or shared-object name. ####
   ifeq ($(strip $(USE_FLOAT)),true)
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermanentGlynnDualSIMF.so
+          TARGET := libPermRepGlynnDualSIMF.so
           COMPVAR := -DMAXELER_SIM -DDUAL -DUSE_FLOAT
           MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIMF.max))
       else
-          TARGET := libPermanentGlynnSIMF.so
+          TARGET := libPermRepGlynnSIMF.so
           COMPVAR := -DMAXELER_SIM -DUSE_FLOAT
           MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIMF.max))
       endif                
   else
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermanentGlynnDualSIM.so
+          TARGET := libPermRepGlynnDualSIM$(BIG).so
           COMPVAR := -DMAXELER_SIM -DDUAL
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualSIM$(BIG).max))
       else
-          TARGET := libPermanentGlynnSIM.so
+          TARGET := libPermRepGlynnSIM$(BIG).so
           COMPVAR := -DMAXELER_SIM
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleSIM$(BIG).max))
       endif                
   endif
 else
   ##### Target executable or shared-object name. ####
   ifeq ($(strip $(USE_FLOAT)),true)
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermanentGlynnDualDFEF.so
+          TARGET := libPermRepGlynnDualDFEF.so
           COMPVAR := -DDUAL -DUSE_FLOAT
           MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFEF.max))
       else
-          TARGET := libPermanentGlynnDFEF.so
+          TARGET := libPermRepGlynnDFEF.so
           COMPVAR := -DUSE_FLOAT
           MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFEF.max))
       endif
   else
       ifeq ($(strip $(DUAL)),true)
-          TARGET := libPermanentGlynnDualDFE.so
+          TARGET := libPermRepGlynnDualDFE$(BIG).so
           COMPVAR := -DDUAL
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*dualDFE$(BIG).max))
       else
-          TARGET := libPermanentGlynnDFE.so
+          TARGET := libPermRepGlynnDFE$(BIG).so
           COMPVAR :=
-          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE.max))
+          MAXFILES := $(foreach D,$(MAXFILE_DIRS),$(wildcard $(D)/*singleDFE$(BIG).max))
       endif
   endif
 endif
+ifeq ($(strip $(BIG)),BIG)
+    COMPVAR := $(COMPVAR) -DIS_BIG
+endif
+
 
 ##### Simulator configuration #####
 SIM_NAME := $(USER)_$(basename $(TARGET))_sim
@@ -189,7 +194,7 @@ run_sim: start_sim
 	@ MAXELEROSDIR="$(MAXCOMPILERDIR)/lib/maxeleros-sim" \
 		LD_PRELOAD="$(MAXCOMPILERDIR)/lib/maxeleros-sim/lib/libmaxeleros.so:$(LD_PRELOAD)" \
 		SLIC_CONF="$(SLIC_CONF);use_simulation=$(SIM_NAME)" \
-		env LD_LIBRARY_PATH=./dist/release/lib:$LD_LIBRARY_PATH python "../../piquassoboost/permanent_benchmark.py"
+		env LD_LIBRARY_PATH=./../PermanentGlynnCPU/dist/release/lib:./dist/release/lib:$LD_LIBRARY_PATH python "../../piquassoboost/boson_sampling_benchmark.py"
 	@ echo
 	@ echo "$(BIN_DIR)/$(TARGET) Terminated successfully."
 	@ echo
