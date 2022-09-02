@@ -53,6 +53,7 @@ extern "C" size_t dfe_loop_length;
 void* handle = NULL;
 int isLastDual = 0;
 int isLastFloat = 0;
+int isLastBig = 0;
 std::atomic_size_t refcount(0);
 std::atomic_size_t read_count(0); //readers-writer problem semaphore
 std::recursive_mutex libmutex; //writing mutex
@@ -75,11 +76,13 @@ void unload_dfe_lib()
     }
 }
 
-int init_dfe_lib(int choice, int dual) {
+int init_dfe_lib(int choice, int dual, int big) {
     const std::lock_guard<std::recursive_mutex> lock(libmutex);
     int useGroup = 0;
     if ((choice == DFE_MAIN || choice == DFE_FLOAT) && initialize_DFE && dual == isLastDual && isLastFloat == (choice == DFE_FLOAT)) return initialize_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2);
-    if ((choice == DFE_REP || choice == DFE_REP_FLOAT) && initializeRep_DFE && dual == isLastDual && isLastFloat == (choice == DFE_REP_FLOAT)) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2, &dfe_loop_length);
+    if ((choice == DFE_REP || choice == DFE_REP_FLOAT) && initializeRep_DFE && big == isLastBig && dual == isLastDual && isLastFloat == (choice == DFE_REP_FLOAT)) return initializeRep_DFE(useGroup, &dfe_mtx_size, &dfe_basekernpow2, &dfe_loop_length);
+    
+    isLastBig = big;
     isLastDual = dual;
     isLastFloat = choice == DFE_FLOAT || choice == DFE_REP_FLOAT; 
     unload_dfe_lib();
@@ -172,8 +175,8 @@ void
 GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Complex16>& perm, int useDual, int useFloat)
 {
     lock_lib();
-    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
-    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
+    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual, false);
+    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual, false);
     if (matrices.size() == 0) return;
     if (!calcPermanentGlynnDFE ||
         matrices.begin()->rows < 1+dfe_basekernpow2 || matrices.begin()->cols == 0 || matrices.begin()->rows >= matrices.begin()->cols + 2) { //compute with other method
@@ -190,7 +193,8 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
             matrix& matrix_mtx = matrices[i];
             if (!useFloat) {
                 // calulate the maximal sum of the columns to normalize the matrix
-                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 4);
+                matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+                matrix_base<double> colMax(matrix_mtx.cols, 1);
                 memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
 
                 //sum up vectors in first/upper-left and fourth/lower-right quadrants
@@ -201,6 +205,7 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                         int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
                         if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
                         else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                        colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_mtx[offset]));
                     }
             
                 }
@@ -219,6 +224,9 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                 // calculate the renormalization coefficients
                 for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
                     renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+                    //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+                    //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+                    if (colMax[jdx] / (renormalize_data[i*renormalize_data.stride+jdx] * renormalize_data[i*renormalize_data.stride+jdx]) >= 0.25) renormalize_data[i*renormalize_data.stride+jdx] *= 2;                     
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -278,8 +286,8 @@ void
 GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, int useFloat)
 {
     lock_lib();
-    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual);
-    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual);
+    if (!useFloat) init_dfe_lib(DFE_MAIN, useDual, false);
+    else if (useFloat) init_dfe_lib(DFE_FLOAT, useDual, false);
 
     if (!calcPermanentGlynnDFE ||
         matrix_mtx.rows < 1+dfe_basekernpow2 || matrix_mtx.cols == 0 || matrix_mtx.rows >= matrix_mtx.cols + 2) { //compute with other method
@@ -292,6 +300,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
     if (!useFloat) {
         // calulate the maximal sum of the columns to normalize the matrix
         matrix_base<Complex32> colSumMax( matrix_mtx.cols, 2);
+        matrix_base<double> colMax(matrix_mtx.cols, 1);
         memset( colSumMax.get_data(), 0.0, colSumMax.size()*sizeof(Complex32) );
         //sum up vectors in first/upper-left and fourth/lower-right quadrants
         for (size_t idx=0; idx<matrix_mtx.rows; idx++) {            
@@ -301,6 +310,7 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
                 int slopeUpLeft = realPos == (matrix_mtx[offset].imag() > 0);
                 if (realPos) colSumMax[2*jdx+slopeUpLeft] += matrix_mtx[offset];
                 else colSumMax[2*jdx+slopeUpLeft] -= matrix_mtx[offset];
+                colMax[jdx] = std::max(colMax[jdx], std::norm(matrix_mtx[offset]));
             }    
         }
         //now try to add/subtract neighbor quadrant values to the prior sum vector to see if it increase the absolute value 
@@ -318,6 +328,9 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
         // calculate the renormalization coefficients
         for (size_t jdx=0; jdx<matrix_mtx.cols; jdx++ ) {
             renormalize_data[jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
+            //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
+            //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
+            if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2; 
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
