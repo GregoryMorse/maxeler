@@ -43,7 +43,7 @@ public class SumUpPermDFEKernel extends Kernel {
         
         // tick count
         //DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
-        DFEVar ticksmax = io.scalarInput("changeCount", dfeUInt(64));
+        DFEVar ticksmax = io.scalarInput("changeCount", dfeUInt(64)).cast(dfeUInt(maxtickbits));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
 
         DFEVar isLocal = null, parity = null, curMplicity = null;
