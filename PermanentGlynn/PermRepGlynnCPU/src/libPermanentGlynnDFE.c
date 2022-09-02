@@ -258,17 +258,17 @@ long double dfeFloatToLD(__int128 res)
 typedef __int128 Fix192;
 #else
 typedef struct { //little-endian, must be 64-bit aligned
-    uint64_t lowBits;
+    __uint128_t lowBits;
     __int128 highBits;
-} __attribute__((packed)) Fix192;
+} __attribute__((packed)) Fix256;
 
-int fix192to128(Fix192* fix)
+int fix256to128(Fix256* fix)
 {
     long long check = fix->highBits >> 64;
     int nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
     if ((check == 0 && !nextBit) || (check == -1 && nextBit)) { //run of 65 0s or 65 1s to handle positive/negative
         fix->highBits <<= 64;
-        fix->highBits |= fix->lowBits;
+        fix->highBits |= fix->lowBits >> 64;
         return 1;
     } else return 0;
 }
@@ -298,10 +298,10 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     //printf("%lld, %d\n", numOfPartialPerms, rows);
 
 	// variable to store the result
-    size_t resbytes = sizeof(Fix192) * 2 * totalPerms; //*(changecount+1);
-    Fix192* res = (Fix192*)malloc(resbytes);
+    size_t resbytes = sizeof(Fix256) * 2 * totalPerms; //*(changecount+1);
+    Fix256* res = (Fix256*)malloc(resbytes);
 #ifdef DUAL
-    Fix192* res2 = (Fix192*)malloc(resbytes);
+    Fix256* res2 = (Fix256*)malloc(resbytes);
 #endif
 
     union {
@@ -391,8 +391,13 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 	printf("Start permanent calulation on DFE\n");
 #endif
 
-    max_config_set_int64(MAX_CONFIG_PCIE_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*100000ULL)));
-    max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*100000ULL)));
+#ifdef MAXELER_SIM
+    max_config_set_int64(MAX_CONFIG_PCIE_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*1000ULL)));
+    max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*1000ULL)));
+#else
+    max_config_set_int64(MAX_CONFIG_PCIE_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*1000000ULL)));
+    max_config_set_int64(MAX_CONFIG_ACTION_TIMEOUT, totalPerms*(30+(changecount+1)/(FREQ*1000000ULL)));
+#endif
 
 #if defined(DUAL) && !defined(MAXELER_SIM)
     //runArrayFunc(array, arractions);
@@ -432,7 +437,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 63)));
     res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 63)));
 #endif
-    int adjust1 = fix192to128(&res[i*2]), adjust2 = fix192to128(&res[i*2+1]); //start with (192, -186) adjust=0 then (128, -122) else (128, -186)
+    int adjust1 = fix256to128(&res[i*2]), adjust2 = fix256to128(&res[i*2+1]); //start with (256, -250) adjust=0 then (128, -122) else (128, -186)
         long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
                     imag = ldexpl((long double)res[i*2+1].highBits, (adjust2 ? -186 : -122) - (mulsum + numOfPartialPerms-1));
         // renormalize the result according to the normalization of the input matrix
