@@ -8,7 +8,7 @@
 #include "common_functionalities.h"
 
 typedef void(*CALCPERMGLYNNREPDFE)(const pic::ComplexFix16**, const long double*, const uint64_t, const uint64_t, const unsigned char*,
-  const uint8_t*, const uint8_t*, const uint8_t, const uint8_t, const uint64_t*, const uint64_t, const uint8_t, const int, const uint64_t, pic::Complex16*);
+  const uint8_t*, const uint8_t*, const uint8_t, const uint8_t, const uint64_t, const uint8_t, const int, const uint64_t, pic::Complex16*);
 typedef int(*INITPERMGLYNNREPDFE)(int, size_t*, size_t*);
 typedef void(*FREEPERMGLYNNREPDFE)(void);
 
@@ -337,7 +337,7 @@ void counter_to_gcode(std::vector<uint64_t>& gcode, const std::vector<uint64_t>&
         //parity ^= (parity ? inp[j] - 1 - counterChain[j] : counterChain[j]) & 1; //ultimately mathematically equivalent...  
     }
 }
-uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mplicity, std::vector<uint8_t>& initDirections, int& initParities, uint8_t loopLength)
+uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<__uint128_t>& mplicity, std::vector<uint8_t>& initDirections, int& initParities, uint8_t loopLength)
 {
     uint64_t total = 1;
     for (size_t i = 0; i < inp.size(); i++) { total *= inp[i]; }
@@ -351,12 +351,12 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
         std::vector<uint64_t> loc, gcode;
         location_to_counter(loc, inp, cursum);
         counter_to_gcode(gcode, loc, inp);
-        uint64_t bincoeff = 1;
-        //uint64_t k_base = 0;
+        __uint128_t bincoeff = 1;
+        //__uint128_t k_base = 0;
         for (size_t j = 0; j < gcode.size(); j++) {
             bool curdir =  gcode[j] < inp[j];
             uint64_t curval = curdir ? inp[j]-1-gcode[j] : gcode[j]-inp[j];
-            bincoeff *= binomialCoeffInt64(inp[j]-1, curval);
+            bincoeff *= binomialCoeffInt128(inp[j]-1, curval);
             //add the initial parity as the high bit of the byte - because counter_to_gcode computes it backwards, it would create unnecessary logic in the kernel when we have 2 free bits wasted regardless for the 6-bit counters
             if (i < total || j != gcode.size()-1 || inp[j] != 2) 
                 initDirections[j*loopLength+i] = loc[j] | (curdir ? 0x80 : 0);
@@ -374,7 +374,7 @@ uint64_t divide_gray_code(std::vector<uint64_t>& inp, std::vector<uint64_t>& mpl
     return total;
 }
 
-matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<uint64_t> & mplicity, std::vector<uint8_t>& initDirections, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int& initParities, int transpose, int loopLength)
+matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state, int useDual, std::vector<uint8_t> & rowchange_indices, std::vector<__uint128_t> & mplicity, std::vector<uint8_t>& initDirections, uint8_t & onerows, uint64_t & changecount, uint8_t & mulsum, int& initParities, int transpose, int loopLength)
 {
   std::vector<uint8_t> mrows;
   std::vector<uint8_t> row_indices;
@@ -459,11 +459,13 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
 {
     lock_lib();
     size_t photons = 0;
-    uint64_t t1 = 1, t2 = 1;   
+    __uint128_t t1 = 1, t2 = 1;   
     for (size_t i = 0; i < input_state.size(); i++) {
         photons += input_state[i];
         t1 *= (input_state[i]+1);
-        if (i < output_state.size()) t2 *= (output_state[i]+1);
+    }
+    for (size_t i = 0; i < output_state.size(); i++) {
+        t2 *= (output_state[i]+1);
     }
     if (!useFloat) init_dfe_lib(DFE_REP, useDual, photons > 48);
     else init_dfe_lib(DFE_REP_FLOAT, useDual, false);
@@ -475,13 +477,12 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     }
     int transpose = t1 < t2; //transpose if needed to reduce complexity on rows direction
     std::vector<uint8_t> rowchange_indices;
-    std::vector<uint64_t> mplicity;
+    std::vector<__uint128_t> mplicity;
     std::vector<uint8_t> initDirections;
     uint8_t onerows, mulsum; uint64_t changecount;
     PicState_int64 adj_input_state = transpose ? input_state.copy() : output_state.copy();
     int initParities;
     matrix matrix_mtx = input_to_bincoeff_indices(matrix_init, adj_input_state, useDual, rowchange_indices, mplicity, initDirections, onerows, changecount, mulsum, initParities, transpose, dfe_loop_length); 
-    
     matrix_base<long double> renormalize_data(1, matrix_mtx.cols);
     if (!useFloat) {
         // calulate the maximal sum of the columns to normalize the matrix
@@ -577,7 +578,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     
     if (colMux) for (size_t i = (colIndices.size() % 16 == 0) ? 0 : (16 - colIndices.size() % 16); i != 0; i--) colIndices.push_back(0); //round up to nearest 16 bytes to allow streaming
     calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, cols, colIndices.data(),
-      rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, 1, &perm);
+      rowchange_indices.data(), initDirections.data(), photons, onerows, changecount, mulsum, initParities, 1, &perm);
 
     unlock_lib();
     return;
@@ -609,7 +610,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
     }
     for (size_t outp = 0; outp < output_states.size(); outp++) {
         std::vector<uint8_t> rowchange_indices;
-        std::vector<uint64_t> mplicity;
+        std::vector<__uint128_t> mplicity;
         std::vector<uint8_t> initDirections;
         uint8_t onerows, mulsum; uint64_t changecount;
         PicState_int64 adj_input_state = output_states[outp].copy();
@@ -756,7 +757,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         for (size_t i = 0; i < numinits; i++) mtx_fix_data[i] = colMux ? mtxfix[i].get_data() : mtxmuxed[i].get_data();
     
         calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), rows, colMux ? matrix_mtx.cols : photons, colIndices.data(),
-          rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, input_states[outp].size(), perm[outp].data());
+          rowchange_indices.data(), initDirections.data(), photons, onerows, changecount, mulsum, initParities, input_states[outp].size(), perm[outp].data());
     }
     unlock_lib();
 }
@@ -793,11 +794,11 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
         std::vector<uint64_t> allChangeCounts; allChangeCounts.reserve(output_states[inp].size());
         std::vector<int> allInitParities; allInitParities.reserve(output_states[inp].size());
         std::vector<uint8_t> allRowchange_indices;
-        std::vector<uint64_t> allMplicity;
+        std::vector<__uint128_t> allMplicity;
         std::vector<uint8_t> allInitDirections;
         for size_t outp = 0; outp < output_states[inp].size(); outp++) {
             std::vector<uint8_t> rowchange_indices;
-            std::vector<uint64_t> mplicity;
+            std::vector<__uint128_t> mplicity;
             std::vector<uint8_t> initDirections;
             uint8_t onerows, mulsum; uint64_t changecount;
             PicState_int64 adj_input_state = output_states[inp][outp].copy();
@@ -885,7 +886,7 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
         for (size_t i = (initDirections.size() % 16 == 0) ? 0 : (16 - initDirections.size() % 16); i != 0; i--) initDirections.push_back(0); //round up to nearest 16 bytes to allow streaming
     
         calcPermanentGlynnRepDFE( (const ComplexFix16**)mtx_fix_data, renormalize_data.get_data(), matrix_mtx.rows, matrix_mtx.cols, colIndices.data(),
-          rowchange_indices.data(), initDirections.data(), photons, onerows, mplicity.data(), changecount, mulsum, initParities, output_states[inp].size(), perm[inp].data());
+          rowchange_indices.data(), initDirections.data(), photons, onerows, changecount, mulsum, initParities, output_states[inp].size(), perm[inp].data());
         */
     }
 
