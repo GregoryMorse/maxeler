@@ -189,7 +189,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             oneRow = control.oneHotMux(needData.cat(firstTick & notNeedData).cat(notFirstTick & notNeedData), initChoices);
         }
         
-        //if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d %d\n", initCount, rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
+        //if (!dual && kernNum == 0) debug.simPrintf("%d %d %d %d %d\n", rowChangeIndex, startOfLoop, startOfRowLoop, mplicityCount, mplicityWrap);
         DFEVar initDirection = mplicityCount >= (curdir ? (rowChangeIndex - nextCounterInit) : nextCounterInit);
         DFEVar gcodeCounter = nextCounterInit.cast(dfeUInt(dimBits+1)) + (curdir ? constant.zero(dfeUInt(dimBits+1)) : inpmp.cast(dfeUInt(dimBits+1)));
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
@@ -199,12 +199,12 @@ public class InitializeColSumDFEKernel extends Kernel {
         storeRowIndex = Utility.oneHotEncode(storeRowIndex - 1, mplicityRows, 32, this).reinterpret(dfeUInt(mplicityRows));
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), mplicityRows);
         DFEVar oneHotInit = startOfRowLoop ? storeRowIndex : 0;
-        oneHotInit = optimization.pipeline(oneHotInit.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, mplicityRows/2)));
+        //oneHotInit = optimization.pipeline(oneHotInit.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, mplicityRows/2)));
         DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);        
         DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
         DFEVector < DFEVar > onerow1 = optimization.pipeline(oneRow);
         for (int i = 0; i < mplicityRows; i++) {
-            allRows[i] <== initOneHot[i] ? (i < mplicityRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
+            allRows[i] <== optimization.pipeline(initOneHot[i]) ? (i < mplicityRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
         }
         //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
         
