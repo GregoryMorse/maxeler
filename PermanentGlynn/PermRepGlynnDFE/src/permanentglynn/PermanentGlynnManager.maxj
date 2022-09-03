@@ -218,7 +218,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         if (placeFanouts) ei.route("InputMtxChain10 -> InputMtxFanout10, " +
             "InputMtxChain20 -> InputMtxFanout20, InputMtxChain21 -> InputMtxFanout21, " +
             "InputMtxFanout30 -> InputMtxChain30, InputMtxFanout31 -> InputMtxChain31, InputMtxFanout32 -> InputMtxChain32, " +
-            (dim > 64 ? "" : 
+            (dim > 64 ? "colSumsChain021 -> colSumsFanout021, " + "colSumsChain312 -> colSumsFanout312, " : 
             "colSumsChain021 -> colSumsFanout021, " +
             "colSumsChain031 -> colSumsFanout031, colSumsChain032 -> colSumsFanout032, " +
             "colSumsChain132 -> colSumsFanout132, " +
@@ -230,7 +230,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 ", InputMtxChain50 -> InputMtxFanout50, " + 
                 "InputMtxChain60 -> InputMtxFanout60, InputMtxChain61 -> InputMtxFanout61, " +
                 "InputMtxFanout70 -> InputMtxChain70, InputMtxFanout71 -> InputMtxChain71, InputMtxFanout72 -> InputMtxChain72, " +
-                (dim > 64 ? "" : 
+                (dim > 64 ? "colSumsChain461 -> colSumsFanout461, " + "colSumsChain752 -> colSumsFanout752, " : 
                 "colSumsChain461 -> colSumsFanout461, " +
                 "colSumsChain471 -> colSumsFanout471, colSumsChain472 -> colSumsFanout472, " +
                 "colSumsChain572 -> colSumsFanout572, " +
