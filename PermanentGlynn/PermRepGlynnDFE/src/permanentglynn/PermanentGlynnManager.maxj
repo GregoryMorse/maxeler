@@ -83,7 +83,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 colIndexInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
                 colIndexInput <== colIndexOutput;
             }
-            int b = (i * initKernMulti) % 4;
+            int b = isBig ? (i * initKernMulti) % 4 : 0;
             for (int j = b; j < b + initKerns / initKernMulti; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
