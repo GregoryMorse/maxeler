@@ -95,7 +95,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         oneHotInit <== (mainCount <= 1) ? 1 : (stream.offset(oneHotInit, -1) << 1);
         //if (kernNum == 0) debug.simPrintf("%d %d\n", oneHotInit, initToOneHot.cast(dfeUInt(gcodeRows)) << initCountM1);
         //oneHotInit = optimization.pipeline(oneHotInit.slice(gcodeRows/2, gcodeRows - gcodeRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, gcodeRows/2)));
-        DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);
+        DFEVector<DFEVar> initOneHot = optimization.pipeline(oneHotInit).reinterpret(initOneHotType);
         if (kernNum != 0) {
             DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
                     c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
