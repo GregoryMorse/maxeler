@@ -83,12 +83,12 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
                 colIndexInput.setAdditionalRegisters((i % 4 == 3 ? 1 : 0) * regPerX); //SLR2->SLR3 - 1 crossing
                 colIndexInput <== colIndexOutput;
             }
-            int b = ((i % 4) / (initKerns / initKernMulti)) * (initKerns / initKernMulti);
+            int b = (i * initKernMulti) % 4;
             for (int j = b; j < b + initKerns / initKernMulti; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
-                    curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2) % (initKerns / initKernMulti));
-                else curOutput = initColSumKernels[j].getOutput("colSums" + (i % (initKerns / initKernMulti)));
+                    curOutput = initColSumKernels[j + initKerns].getOutput("colSums" + (i - numkernels * numarrays / 2) / initKernMulti);
+                else curOutput = initColSumKernels[j].getOutput("colSums" + (i / initKernMulti));
                 curOutput.setAdditionalRegisters(i % 4 == j % 4 ? 0 : regPerX);
                 curOutput = Utility.slrCrossingChain("colSums", Integer.toString(dual && isSim && i >= numkernels * numarrays / 2 ? j + initKerns : j) + Integer.toString(i), curOutput, j % 4, i % 4, regPerX, placeFanouts ? parent : null, mc);
                 DFELink curInput = colSumKernels[i].getInput("colSums" + (j-b));
@@ -145,7 +145,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int numarrays = dual && !isSim ? 2 : 1;
         int basekernpow2 = dual ? 3 : 2;
         int numkernels = (1 << basekernpow2) / numarrays;
-        int loopLength = useFloat ? 15 : 9; //based on multiplexer initialization (1) + fixed point multiplication (5) + a right shift multiplexer (1), for float multiplexer initialization (1) + addition/subtraction (13) + addition/subtraction multiplexer (1)
+        int loopLength = useFloat ? 15 : (dim > 64 ? 12 : 9); //based on multiplexer initialization (1) + fixed point multiplication (5) + a right shift multiplexer (1), for float multiplexer initialization (1) + addition/subtraction (13) + addition/subtraction multiplexer (1)
         int initKerns = 4;
 
         EngineInterface ei = new EngineInterface();
