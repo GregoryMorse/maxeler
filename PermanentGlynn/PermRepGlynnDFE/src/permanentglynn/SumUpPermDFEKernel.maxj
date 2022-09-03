@@ -70,7 +70,7 @@ public class SumUpPermDFEKernel extends Kernel {
             } else {
                 colProdVals[i] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colProdVals[i].getReal(), curMplicity, totalprec, intBits, this), Utility.mulKaratsubaRectangularExact(colProdVals[i].getImaginary(), curMplicity, totalprec, intBits, this));
             }
-            DFEVar sign = dual ? isLocal ^ parity : (((i & 1) != 0) ^ parity);
+            DFEVar sign = dual ? isLocal ^ parity : ((((i/(isBig ? 2 : 1)) & 1) != 0) ^ parity);
             colProdVals[i] = sign ? -colProdVals[i] : colProdVals[i]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
             if (isBig) colProdVals[i/2] = colProdVals[i];
         }
