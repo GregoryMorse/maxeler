@@ -35,8 +35,12 @@ public class SumUpPermDFEKernel extends Kernel {
         int sumsleft = n;
         while (sumsleft > 1) { //sums processed in binary tree
             for (int i = 0; i < sumsleft / 2; i++) {
-                colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this).cast(dataTypeFix128),
-                                                        Utility.addExact(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this).cast(dataTypeFix128));
+                if (useFloat) {
+                    colProdVals[i] = colProdVals[i * 2] + colProdVals[i * 2 + 1];
+                } else {
+                    colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this).cast(dataTypeFix128),
+                                                            Utility.addExact(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this).cast(dataTypeFix128));
+                }
             }
             if ((sumsleft & 1) != 0) {
                 colProdVals[sumsleft / 2] = optimization.pipeline(colProdVals[sumsleft - 1]);
