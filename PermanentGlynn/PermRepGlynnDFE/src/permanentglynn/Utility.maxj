@@ -1876,7 +1876,7 @@ public class Utility {
                 //DFELink inp = fo.getInput("input");
                 DFELink inp = fo.getInput();
                 inp.setAdditionalRegisters(regPerX);
-                inp <== input;                
+                inp <== input;
                 //input = fo.getOutput("output");
                 input = fo.addOutput(name + "Chain" + suffix + i);
                 input.setAdditionalRegisters(regPerX);
