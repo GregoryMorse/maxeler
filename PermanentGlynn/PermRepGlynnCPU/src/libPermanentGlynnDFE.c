@@ -23,12 +23,29 @@
 #endif
 #else
 #ifndef DUAL
+#ifdef IS_BIG
+#include "PermRepGlynn_singleSIMBIG.h"
+#define MTX_SIZE PermRepGlynn_singleSIMBIG_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleSIMBIG_BASEKERNPOW2
+#define INITS PermRepGlynn_singleSIMBIG_INITKERNS
+#define LOOPLENGTH PermRepGlynn_singleSIMBIG_LOOPLENGTH
+#define FREQ PermRepGlynn_singleSIMBIG_FREQ
+#else
 #include "PermRepGlynn_singleSIM.h"
 #define MTX_SIZE PermRepGlynn_singleSIM_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_singleSIM_BASEKERNPOW2
 #define INITS PermRepGlynn_singleSIM_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleSIM_LOOPLENGTH
 #define FREQ PermRepGlynn_singleSIM_FREQ
+#endif
+#else
+#ifdef IS_BIG
+#include "PermRepGlynn_dualSIMBIG.h"
+#define MTX_SIZE PermRepGlynn_dualSIMBIG_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualSIMBIG_BASEKERNPOW2
+#define INITS PermRepGlynn_dualSIMBIG_INITKERNS
+#define LOOPLENGTH PermRepGlynn_dualSIMBIG_LOOPLENGTH
+#define FREQ PermRepGlynn_dualSIMBIG_FREQ
 #else
 #include "PermRepGlynn_dualSIM.h"
 #define MTX_SIZE PermRepGlynn_dualSIM_MTXSIZE
@@ -36,6 +53,7 @@
 #define INITS PermRepGlynn_dualSIM_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualSIM_LOOPLENGTH
 #define FREQ PermRepGlynn_dualSIM_FREQ
+#endif
 #endif
 #endif
 #else
@@ -57,12 +75,29 @@
 #endif
 #else
 #ifndef DUAL
+#ifdef IS_BIG
+#include "PermRepGlynn_singleDFEBIG.h"
+#define MTX_SIZE PermRepGlynn_singleDFEBIG_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_singleDFEBIG_BASEKERNPOW2
+#define INITS PermRepGlynn_singleDFEBIG_INITKERNS
+#define LOOPLENGTH PermRepGlynn_singleDFEBIG_LOOPLENGTH
+#define FREQ PermRepGlynn_singleDFEBIG_FREQ
+#else
 #include "PermRepGlynn_singleDFE.h"
 #define MTX_SIZE PermRepGlynn_singleDFE_MTXSIZE
 #define BASEKERNPOW2 PermRepGlynn_singleDFE_BASEKERNPOW2
 #define INITS PermRepGlynn_singleDFE_INITKERNS
 #define LOOPLENGTH PermRepGlynn_singleDFE_LOOPLENGTH
 #define FREQ PermRepGlynn_singleDFE_FREQ
+#endif
+#else
+#ifdef IS_BIG
+#include "PermRepGlynn_dualDFEBIG.h"
+#define MTX_SIZE PermRepGlynn_dualDFEBIG_MTXSIZE
+#define BASEKERNPOW2 PermRepGlynn_dualDFEBIG_BASEKERNPOW2
+#define INITS PermRepGlynn_dualDFEBIG_INITKERNS
+#define LOOPLENGTH PermRepGlynn_dualDFEBIG_LOOPLENGTH
+#define FREQ PermRepGlynn_dualDFEBIG_FREQ
 #else
 #include "PermRepGlynn_dualDFE.h"
 #define MTX_SIZE PermRepGlynn_dualDFE_MTXSIZE
@@ -70,6 +105,7 @@
 #define INITS PermRepGlynn_dualDFE_INITKERNS
 #define LOOPLENGTH PermRepGlynn_dualDFE_LOOPLENGTH
 #define FREQ PermRepGlynn_dualDFE_FREQ
+#endif
 #endif
 #endif
 #endif
@@ -130,7 +166,6 @@ int initializeRep_DFEF(int groupMode, size_t* mtx_size, size_t* basekernpow2, si
 int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2, size_t* loopLength)
 #endif
 {
-
 	if (initialized) return 1;
   max_file_t* (*initFunc)(void) = NULL;
 #ifndef DUAL
@@ -138,13 +173,21 @@ int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2, siz
 #ifdef USE_FLOAT
     initFunc = PermRepGlynn_singleSIMF_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIMF_run, freeFunc = PermRepGlynn_singleSIMF_free;
 #else
+#ifdef IS_BIG
+    initFunc = PermRepGlynn_singleSIMBIG_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIMBIG_run, freeFunc = PermRepGlynn_singleSIMBIG_free;
+#else
     initFunc = PermRepGlynn_singleSIM_init, runFunc = (RUNFUNC)PermRepGlynn_singleSIM_run, freeFunc = PermRepGlynn_singleSIM_free;
+#endif
 #endif
 #else
 #ifdef USE_FLOAT
-    initFunc = PermRepGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFEF_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFEF_run_group, freeFunc = PermRepGlynn_singleDFEF_free;
+    initFunc = PermRepGlynn_singleDFEF_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFEF_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFEF_run_group, freeFunc = PermRepGlynn_singleDFEF_free;    
+#else
+#ifdef IS_BIG
+    initFunc = PermRepGlynn_singleDFEBIG_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFEBIG_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFEBIG_run_group, freeFunc = PermRepGlynn_singleDFEBIG_free;
 #else
     initFunc = PermRepGlynn_singleDFE_init, runFunc = (RUNFUNC)PermRepGlynn_singleDFE_run, runGroupFunc = (RUNGROUPFUNC)PermRepGlynn_singleDFE_run_group, freeFunc = PermRepGlynn_singleDFE_free;
+#endif
 #endif
 #endif  
 #else
@@ -152,13 +195,21 @@ int initializeRep_DFE(int groupMode, size_t* mtx_size, size_t* basekernpow2, siz
 #ifdef USE_FLOAT
     initFunc = PermRepGlynn_dualSIMF_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIMF_run, freeFunc = PermRepGlynn_dualSIMF_free;
 #else
+#ifdef IS_BIG
+    initFunc = PermRepGlynn_dualSIMBIG_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIMBIG_run, freeFunc = PermRepGlynn_dualSIMBIG_free;
+#else
     initFunc = PermRepGlynn_dualSIM_init, runFunc = (RUNFUNC)PermRepGlynn_dualSIM_run, freeFunc = PermRepGlynn_dualSIM_free;
+#endif
 #endif
 #else
 #ifdef USE_FLOAT
     initFunc = PermRepGlynn_dualDFEF_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFEF_run_group_nonblock, freeFunc = PermRepGlynn_dualDFEF_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFEF_run_array
 #else
+#ifdef IS_BIG
+    initFunc = PermRepGlynn_dualDFEBIG_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFEBIG_run_group_nonblock, freeFunc = PermRepGlynn_dualDFEBIG_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFEBIG_run_array
+#else
     initFunc = PermRepGlynn_dualDFE_init, runFunc = (RUNGROUPFUNC)PermRepGlynn_dualDFE_run_group_nonblock, freeFunc = PermRepGlynn_dualDFE_free; //runArrayFunc = (RUNARRAYFUNC)PermRepGlynn_dualDFE_run_array
+#endif
 #endif
 #endif  
 #endif
@@ -284,10 +335,10 @@ uint64_t roundUp(uint64_t num, uint64_t nearest)
 */
 #ifdef USE_FLOAT
 void calcPermanentGlynnRepDFEF(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, const unsigned char* colIndices,
-  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
+  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
 #else
 void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* renormalize_data, const uint64_t rows, const uint64_t cols, const unsigned char* colIndices,
-  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t* mplicity, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
+  const uint8_t* rowchange_indices, const uint8_t* initDirections, const uint8_t photons, const uint8_t onerows, const uint64_t changecount, const uint8_t mulsum, const int initParities, uint64_t totalPerms, Complex16* perm)
 #endif
 {
     if (!initialized) return;
@@ -314,9 +365,17 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 #else
 #ifndef DUAL
+#ifdef IS_BIG
+      PermRepGlynn_singleSIMBIG_actions_t glynnRowsGray;
+#else
       PermRepGlynn_singleSIM_actions_t glynnRowsGray;
+#endif
+#else
+#ifdef IS_BIG
+      PermRepGlynn_dualSIMBIG_actions_t dualGlynnRowsGray;
 #else
       PermRepGlynn_dualSIM_actions_t dualGlynnRowsGray;
+#endif
 #endif
 #endif
 #else
@@ -328,9 +387,17 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
 #endif
 #else
 #ifndef DUAL
+#ifdef IS_BIG
+      PermRepGlynn_singleDFEBIG_actions_t glynnRowsGray;
+#else
       PermRepGlynn_singleDFE_actions_t glynnRowsGray;
+#endif
+#else
+#ifdef IS_BIG
+      PermRepGlynn_dualDFEBIG_actions_t dualGlynnRowsGray;
 #else
       PermRepGlynn_dualDFE_actions_t dualGlynnRowsGray;
+#endif
 #endif
 #endif
 #endif
@@ -431,11 +498,12 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].imag = ldexp(perm[i].imag, -(mulsum + numOfPartialPerms-1));
 #else
 #ifdef DUAL
-    int ha = res[i*2].lowBits >> 63, ha2 = res2[i*2].lowBits >> 63;
-    int hb = res[i*2+1].lowBits >> 63, hb2 = res2[i*2+1].lowBits >> 63;
+    int ha = res[i*2].lowBits >> 127, ha2 = res2[i*2].lowBits >> 127;
+    int hb = res[i*2+1].lowBits >> 127, hb2 = res2[i*2+1].lowBits >> 127;
+    
     res[i*2].lowBits += res2[i*2].lowBits, res[i*2+1].lowBits += res2[i*2+1].lowBits;
-    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 63)));
-    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 63)));
+    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 127)));
+    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 127)));
 #endif
     int adjust1 = fix256to128(&res[i*2]), adjust2 = fix256to128(&res[i*2+1]); //start with (256, -250) adjust=0 then (128, -122) else (128, -186)
         long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
