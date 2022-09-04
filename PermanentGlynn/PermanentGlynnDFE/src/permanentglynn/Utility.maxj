@@ -1872,7 +1872,7 @@ public class Utility {
                 KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, config, 1, input.getSourceWidth()));
                 //Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
-                //fo.setClock(mc[i]);
+                fo.setClock(mc[i]);
                 DFELink inp = fo.getInput("input");
                 //DFELink inp = fo.getInput();
                 inp.setAdditionalRegisters(regPerX);
