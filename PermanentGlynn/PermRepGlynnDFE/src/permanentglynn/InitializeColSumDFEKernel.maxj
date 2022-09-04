@@ -90,7 +90,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         int dimBits = MathUtils.ceilLog2(maxdim);
         DFEVar photonsm1 = io.scalarInput("photonsm1", dfeUInt(8)).cast(dfeUInt(dimBits));
         DFEVar rowpowadj2 = constant.var(dfeUInt(64), basekernpow2 + (dual ? 1 : 0));
-        DFEVar msizem1 = kernNum == 0 ? null : io.scalarInput("msizem1", dfeUInt(8)).cast(dfeUInt(rowBits));
+        DFEVar msizem1 = kernNum == 0 ? null : io.scalarInput("msizem1", dfeUInt(8)).cast(dfeUInt(dimBits));
         //DFEVar rowsm1 = io.scalarInput("rowsm1", dfeUInt(8)).cast(dfeUInt(rowBits));
         DFEVar isLocal = null;
         if (dual) isLocal = io.scalarInput("isLocal", dfeUInt(8)).cast(dfeBool());
