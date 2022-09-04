@@ -55,6 +55,9 @@ else
       endif
   endif
 endif
+ifeq ($(strip $(BIG)),BIG)
+    COMPVAR := $(COMPVAR) -DIS_BIG
+endif
 
 
 ##### Simulator configuration #####
