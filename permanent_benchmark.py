@@ -289,7 +289,7 @@ def verify_identities(nmax):
             o = oracle_func[i](x)
             print(x, r, res, o, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
             #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
-verify_identities(48); assert False
+verify_identities(DEPTH); assert False
 def verify_timing(nmax, batchsize=1):
   ERRBOUND = 1e-6
   largeFuncs = largePermFuncs
