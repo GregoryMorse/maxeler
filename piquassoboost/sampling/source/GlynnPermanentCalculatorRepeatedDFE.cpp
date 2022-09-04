@@ -567,7 +567,8 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
           mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & ((1<<mplicityBits)-1)) << mplicityBits) | ((initDirections[idx] & 0x80) << (mplicityBits+mplicityBits-7)); //maximum of 37*20*7=5180 bits
       } 
       for (size_t idx = 0; idx < mplicity.size(); idx++) {
-          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (mplicityBits+mplicityBits+1); //maximum of 38*20=760 bits
+          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= (mplicity[idx] << (mplicityBits+mplicityBits+1)) & 0xFFFFFFFFFFFFFFFF; //maximum of 38*20=760 bits
+          mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].imag = (mplicity[idx] << (mplicityBits+mplicityBits+1)) >> 64;
       }
     }
 
@@ -693,7 +694,8 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
               mtxfix[i][(onerows*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= ((initDirections[idx] & ((1<<mplicityBits)-1)) << mplicityBits) | ((initDirections[idx] & 0x80) << (mplicityBits+mplicityBits-7)); //maximum of 37*20*7=5180 bits
           } 
           for (size_t idx = 0; idx < mplicity.size(); idx++) {
-              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= mplicity[idx] << (mplicityBits+mplicityBits+1); //maximum of 38*20=760 bits
+              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].real |= (mplicity[idx] << (mplicityBits+mplicityBits+1)) & 0xFFFFFFFFFFFFFFFF; //maximum of 38*20=760 bits
+              mtxfix[i][((rows-1)*dfe_loop_length+idx)*mtxfix[i].stride+max_fpga_cols].imag = (mplicity[idx] << (mplicityBits+mplicityBits+1)) >> 64;
           }  
         }        
         
