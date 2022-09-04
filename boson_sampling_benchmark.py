@@ -393,6 +393,36 @@ def load_test_data():
       pickle.dump(gen_test_data, f)
   print(list(gen_test_data[unitary_group.rvs.__name__].keys()))
   return gen_test_data
+def partitions(n, I=1):
+    yield (n,)
+    for i in range(I, n//2 + 1):
+        for p in partitions(n-i, i):
+            yield (i,) + p
+def verify_identities(nmax):
+    import math, timeit
+    gen_func = [lambda n: np.ones((0,0)) if n==0 else np.full((n, n), 1/n) + np.zeros((n, n)) *1j, #minimum permanent bound
+                lambda n: np.ones((n, n)) + np.ones((n, n)) *1j, #all ones real and complex
+                lambda n: np.ones((n, n)) + np.zeros((n, n)) *1j] #all ones
+    oracle_func = [lambda n: math.factorial(n)/n**n,
+                   lambda n: (1+1j)**n*math.factorial(n),
+                   lambda n: math.factorial(n)]
+    for i in range(2, len(gen_func)):
+        for x in range(48, nmax+1):
+            n = 48 if x > 48 else x
+            mat = gen_func[i](n)
+            input_state = np.array([], dtype=np.int64) if x == 0 else np.hstack((np.array([x-n+1], dtype=np.int64), np.ones((n-1,), dtype=np.int64)))
+            for part in partitions(x):
+                if len(part) > 1: continue
+                output_state = np.array([], dtype=np.int64) if x == 0 else np.hstack((np.array(part, dtype=np.int64), np.zeros((n-len(part),), dtype=np.int64))) #np.ones((x,), dtype=np.int64)
+                res = [None]
+                def save_result():
+                    res[0] = permanent_Glynn_DFEDual(mat, input_state, output_state) 
+                r = timeit.timeit(save_result, number=1); res = res[0]
+                o = oracle_func[i](x)
+                print(x, r, res, o*1.0, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
+                #assert o if o==0 else abs(o-res)/abs(o) < 1e-10
+            #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
+verify_identities(80); assert False
 def random_realistic_input_states(photons, dim):
     indexes = set(np.random.choice(range(dim), photons, False))
     return np.array([1 if i in indexes else 0 for i in range(dim)])
