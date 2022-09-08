@@ -1268,11 +1268,14 @@ public class Utility {
     public static void doTestFloatAdd(KernelBase<?> base)
     {
         DFEType type = KernelBase.dfeFloat(15, 64);
-        DFEVar floatMaxMant = FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, "0FFFFFFFFFFFFFFFF")), base.constant.var(KernelBase.dfeInt(16), 1));
-        //for (int i = 1-66; i < 1+66; i++) {
-        //    doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, "0FFFFFFFFFFFFFFFF")), base.constant.var(KernelBase.dfeInt(16), 1+i)), false, base);
-        //    doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, "0FFFFFFFFFFFFFFFF")), base.constant.var(KernelBase.dfeInt(16), 1+i)), true, base);
-        //}
+        BigInteger allOnes = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
+        DFEVar floatMaxMant = FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, allOnes.toString(16))), base.constant.var(KernelBase.dfeInt(16), 1));
+        for (int i = 1-66; i < 1+66; i++) {
+            doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, allOnes.toString(16))), base.constant.var(KernelBase.dfeInt(16), 1+i)), false, base);
+            doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, allOnes.toString(16))), base.constant.var(KernelBase.dfeInt(16), 1+i)), true, base);
+            
+            if (i>=0) doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, allOnes.subtract(BigInteger.ONE.shiftLeft(i).subtract(BigInteger.ONE)).toString(16))), base.constant.var(KernelBase.dfeInt(16), 1+i)), true, base);
+        }
         DFEVar floatMinMant = FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), 1), base.constant.var(KernelBase.dfeInt(16), 1));
         //doFloatAdd(base.constant.zero(type), base.constant.zero(type), false, base);
         //doFloatAdd(base.constant.zero(type), base.constant.zero(type), true, base);
@@ -1319,11 +1322,18 @@ public class Utility {
         sum = base.control.oneHotMux((signParity & ~unevenSign).cat(signParity & unevenSign).cat(~signParity), sum, sub1, sub2);
         DFEVar oneHotShift = Bitops.bitreverse(Bitops.leading1Detect(sum.slice(3, bigMant+1).reinterpret(KernelBase.dfeUInt(bigMant+1)))); //sum === 0
         //rounding is only needed if the high bit is set for full rounding, or next to high bit is set (round becomes guard, sticky becomes round bit and sticky is 0)
-        DFEVar sumshifted = oneHotShift.get(0) ? sum.reinterpret(KernelBase.dfeUInt(sum.getType().getTotalBits())) : doShift(sum << 1, oneHotShift.slice(1, bigMant), bigMant, 32, true, true, base); //0 to bigMant inclusive shift amounts, since addition adds 1, while subtraction can make the bigMant bit the highest bit set, otherwise it must be zero
+        //DFEVar sumshifted = oneHotShift.get(0) ? sum.reinterpret(KernelBase.dfeUInt(sum.getType().getTotalBits())) : doShift(sum << 1, oneHotShift.slice(1, bigMant), bigMant, 32, true, true, base); //0 to bigMant inclusive shift amounts, since addition adds 1, while subtraction can make the bigMant bit the highest bit set, otherwise it must be zero
+        DFEVar sum1 = sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar sumshifted = base.control.oneHotMux((sum.slice(bigMant+1, 3) === 0).cat(oneHotShift.slice(0, 3)),
+            sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+            sum1.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+            sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+            doShift(sum.slice(2, bigMant-2), oneHotShift.slice(3, bigMant-2), bigMant-2, 32, true, true, base).cat(base.constant.zero(KernelBase.dfeBool())).reinterpret(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))); //alignment so guard/round/sticky===0, also dont need first 3 or leading 1
         DFEVar expAdjust = Bitops.onehotDecode(oneHotShift);
         //DFEVar sumshifted = sum << expAdjust;
-        sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED)); //need to handle rounding overflow by pipeline
-        DFEVar roundOverflow = sumshifted.get(bigMant).reinterpret(KernelBase.dfeBool()); sumshifted = sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)); //only when expAdjust===1....
+        //sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar roundOverflow = (oneHotShift.get(1) & sum1.get(bigMant)).reinterpret(KernelBase.dfeBool());//handle rounding overflow by pipeline only when expAdjust===1...
+        //sumshifted = sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
         DFEVar sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());
         DFEVar result = sign.cat(sum === 0 ? base.constant.zero(resExp.getType()) : (resExp+notIsZero.cast(resExp.getType())+roundOverflow.cast(resExp.getType()) - expAdjust.cast(resExp.getType()))).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
         if (isSub) 
