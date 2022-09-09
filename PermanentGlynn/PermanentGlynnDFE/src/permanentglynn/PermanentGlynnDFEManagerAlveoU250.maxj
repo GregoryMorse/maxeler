@@ -49,7 +49,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("frequency", EngineParameters.DataType.INT, 330);
-        declareParam("maxDim", EngineParameters.DataType.INT, 40);        
+        declareParam("maxDim", EngineParameters.DataType.INT, 40);
     }
     public boolean dual() {
         return getParam("dual");
@@ -69,6 +69,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
+
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/place/
     //vivado -mode tcl
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
@@ -216,6 +217,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         public VivadoImplPass getPlacePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoPlace(buildManager, vivadoImplementationStrategy);
         }
+        
         public VivadoImplPass getRoutePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoRoute(buildManager, vivadoImplementationStrategy, skipCompileSynth);
         }        
@@ -300,12 +302,13 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
         conf.setParallelism(5);
 
-        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat(), params.getMaxDim()));
-        
+        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
+
         final String implementationStrategyName = "";
+        //manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.verbose_output, true);
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
-
+                    
         manager.build();
     }
 
