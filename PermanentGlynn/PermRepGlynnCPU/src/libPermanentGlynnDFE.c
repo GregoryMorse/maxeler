@@ -306,7 +306,24 @@ long double dfeFloatToLD(__int128 res)
 #define USECOLMUX 0
 
 #ifdef USE_FLOAT
-typedef __int128 Fix192;
+typedef __int128 Fix256;
+#elif MTX_SIZE <= 48 && !defined(DUAL) && !defined(MAXELER_SIM)
+typedef struct { //little-endian, must be 64-bit aligned
+    uint64_t lowBits;
+    __int128 highBits;
+} __attribute__((packed)) Fix192;
+typedef Fix192 Fix256;
+int fix192to128(Fix192* fix)
+{
+    long long check = fix->highBits >> 64;
+    int nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
+    if ((check == 0 && !nextBit) || (check == -1 && nextBit)) { //run of 65 0s or 65 1s to handle positive/negative
+        fix->highBits <<= 64;
+        fix->highBits |= fix->lowBits;
+        return 1;
+    } else return 0;
+}
+int (*fix256to128)(Fix192*) = fix192to128;
 #else
 typedef struct { //little-endian, must be 64-bit aligned
     __uint128_t lowBits;
@@ -315,8 +332,13 @@ typedef struct { //little-endian, must be 64-bit aligned
 
 int fix256to128(Fix256* fix)
 {
+    int nextBit = ((fix->lowBits >> 64) & 0x8000000000000000ULL) != 0;
+    if ((fix->highBits == 0 && !nextBit) || (fix->highBits == -1 && nextBit)) {
+        fix->highBits = fix->lowBits;
+        return 2;
+    }
     long long check = fix->highBits >> 64;
-    int nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
+    nextBit = (fix->highBits & 0x8000000000000000ULL) != 0;
     if ((check == 0 && !nextBit) || (check == -1 && nextBit)) { //run of 65 0s or 65 1s to handle positive/negative
         fix->highBits <<= 64;
         fix->highBits |= fix->lowBits >> 64;
@@ -498,16 +520,17 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].imag = ldexp(perm[i].imag, -(mulsum + numOfPartialPerms-1));
 #else
 #ifdef DUAL
-    int ha = res[i*2].lowBits >> 127, ha2 = res2[i*2].lowBits >> 127;
-    int hb = res[i*2+1].lowBits >> 127, hb2 = res2[i*2+1].lowBits >> 127;
+    const int highBit = sizeof(res2[i*2].lowBits)*8 - 1;
+    int ha = res[i*2].lowBits >> highBit, ha2 = res2[i*2].lowBits >> highBit;
+    int hb = res[i*2+1].lowBits >> highBit, hb2 = res2[i*2+1].lowBits >> highBit;
     
     res[i*2].lowBits += res2[i*2].lowBits, res[i*2+1].lowBits += res2[i*2+1].lowBits;
-    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> 127)));
-    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> 127)));
+    res[i*2].highBits += res2[i*2].highBits + ((ha & ha2) | ((ha ^ ha2) & !(res[i*2].lowBits >> highBit)));
+    res[i*2+1].highBits += res2[i*2+1].highBits + ((hb & hb2) | ((hb ^ hb2) & !(res[i*2+1].lowBits >> highBit)));
 #endif
     int adjust1 = fix256to128(&res[i*2]), adjust2 = fix256to128(&res[i*2+1]); //start with (256, -250) adjust=0 then (128, -122) else (128, -186)
-        long double real = ldexpl((long double)res[i*2].highBits, (adjust1 ? -186 : -122) - (mulsum + numOfPartialPerms-1)),
-                    imag = ldexpl((long double)res[i*2+1].highBits, (adjust2 ? -186 : -122) - (mulsum + numOfPartialPerms-1));
+        long double real = ldexpl((long double)res[i*2].highBits, -64*adjust1 - 122 - (mulsum + numOfPartialPerms-1)),
+                    imag = ldexpl((long double)res[i*2+1].highBits, -64*adjust2 - 122 - (mulsum + numOfPartialPerms-1));
         // renormalize the result according to the normalization of the input matrix
         for (int jdx=0; jdx<photons; jdx++ ) {
             real *= renormalize_data[colIndices[i*photons+jdx]];
