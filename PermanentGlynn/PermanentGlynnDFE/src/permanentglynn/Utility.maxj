@@ -1290,7 +1290,7 @@ public class Utility {
         doFloatAdd(floatMinMant, floatMinMant, false, base);
         doFloatAdd(floatMinMant, floatMinMant, true, base);
     }
-    static boolean floatDelay = true;
+    //static boolean floatDelay = true;
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
         base.optimization.pushFanoutLimit(64+4);
@@ -1308,7 +1308,7 @@ public class Utility {
         DFEVar notIsZero = base.control.mux(isZero1.cat(isZero2), base.constant.var(KernelBase.dfeBool(), 1), base.constant.var(KernelBase.dfeBool(), 1), base.constant.var(KernelBase.dfeBool(), 1), base.constant.zero(KernelBase.dfeBool()));
         DFEVar shift2 = n1e - n2e; //shift2 = n1e >= n2e ? n1e - n2e : 0,
                //shift1 = n1e >= n2e ? 0 : n2e - n1e;
-        DFEVar resExp = n1e; //n1e >= n2e ? n1e : n2e;
+        DFEVar resExp = n1e + notIsZero.cast(n1e.getType()); //n1e >= n2e ? n1e : n2e;
         DFEVar //shift1trunc = shift1.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1))),
                shift2trunc = shift2.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1)));
         DFEVar n1mshifted = isZero1 ? base.constant.zero(n1m.getType()) : n1m, //base.control.oneHotMux((shift1 < bigMant & ~isZero1).cat(shift1 === bigMant & ~isZero1).cat(shift1 > bigMant | isZero1), base.constant.zero(n1m.getType()), n1m>>bigMant, doShift(n1m, shift1trunc, bigMant, 32, false, false, base).reinterpret(n1m.getType())), 
@@ -1340,13 +1340,13 @@ public class Utility {
         //sumshifted = sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
         //DFEVar sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());
         if (isSub) n1sign = swap ^ n1sign;
-        DFEVar result = n1sign.cat(sum === 0 ? base.constant.zero(resExp.getType()) : (resExp+notIsZero.cast(resExp.getType())+roundOverflow.cast(resExp.getType()) - expAdjust.cast(resExp.getType()))).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }
+        DFEVar result = n1sign.cat((sum === 0 ? base.constant.zero(resExp.getType()) : resExp)+roundOverflow.cast(resExp.getType()) - expAdjust.cast(resExp.getType())).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }
         if (isSub)
             base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 - n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);
         else
             base.debug.simPrintf(result !== n1 + n2, "add %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 + n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 + n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);
-        base.optimization.popFanoutLimit(64+4);
+        base.optimization.popFanoutLimit();
         //hex(int.from_bytes((np.fromstring(((0x5FFCC<<61)|0x4762E060FCDF98E5).to_bytes(length=16, byteorder='little'), dtype=np.longdouble)-np.fromstring(((0x5FFE4<<61)|0x0055CB372292309D).to_bytes(length=16, byteorder='little'), dtype=np.longdouble))[0].tobytes(), byteorder='little'))
         return result;
         //return n1 + n2;
