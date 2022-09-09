@@ -49,7 +49,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("frequency", EngineParameters.DataType.INT, 330);
-        declareParam("maxDim", EngineParameters.DataType.INT, 40);
+        declareParam("maxDim", EngineParameters.DataType.INT, 40);        
     }
     public boolean dual() {
         return getParam("dual");
@@ -69,7 +69,6 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
-
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/place/
     //vivado -mode tcl
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
@@ -174,7 +173,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                             pw.println("route_design -nets [get_nets $preRoutes] -auto_delay");
                             pw.println("set_param route.enableGlobalHoldIter 1");
                         } else if (lines.get(i).startsWith("route_design -directive")) {
-                            lines.set(i, lines.get(i) + " -ultrathreads");
+                            lines.set(i, lines.get(i).replace(" Explore", " AggressiveExplore") + " -ultrathreads");
                         } else if (lines.get(i).equals("if {[get_property SLACK [get_timing_paths -setup]] >= 0 && [get_property SLACK [get_timing_paths -hold]] < 0} {")) {
                             pw.println("if {[get_property SLACK [get_timing_paths -setup]] < 0} {");
                             pw.println("\tphys_opt_design -tns_cleanup -slr_crossing_opt");
@@ -217,7 +216,6 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         public VivadoImplPass getPlacePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoPlace(buildManager, vivadoImplementationStrategy);
         }
-        
         public VivadoImplPass getRoutePass(final BuildManager buildManager, final VivadoImplementationStrategy vivadoImplementationStrategy) {
             return new CustomVivadoRoute(buildManager, vivadoImplementationStrategy, skipCompileSynth);
         }        
@@ -279,6 +277,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
+        setDefaultStreamClockFrequency(params.getFrequency());
         setup(this, params.dual(), params.isSim(), params.useFloat(), params.getFrequency(), params.getMaxDim());
     }
 
@@ -301,15 +300,12 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
         conf.setParallelism(5);
 
-        manager.setDefaultStreamClockFrequency(params.getFrequency());
-
-        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim()));
-
+        manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat(), params.getMaxDim()));
+        
         final String implementationStrategyName = "";
-        //manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.verbose_output, true);
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
-                    
+
         manager.build();
     }
 
