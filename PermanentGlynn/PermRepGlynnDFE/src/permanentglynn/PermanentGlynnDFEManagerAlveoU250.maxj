@@ -277,6 +277,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
+        setDefaultStreamClockFrequency(params.getFrequency());
         setup(this, params.dual(), params.isSim(), params.useFloat(), params.getFrequency(), params.getMaxDim());
     }
 
@@ -298,8 +299,6 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //Inspect output timing scores and rank from best to worst
         conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
         conf.setParallelism(5);
-
-        manager.setDefaultStreamClockFrequency(params.getFrequency());
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat(), params.getMaxDim()));
         
