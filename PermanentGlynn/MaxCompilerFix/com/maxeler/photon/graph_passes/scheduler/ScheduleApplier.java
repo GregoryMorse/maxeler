@@ -14,6 +14,7 @@ import com.maxeler.photon.core.StreamOffsetEq;
 import com.maxeler.photon.core.PhotonDesignData;
 import com.maxeler.photon.core.Node;
 import com.maxeler.photon.core.GraphPassPointwise;
+import com.maxeler.maxdc.BuildManager;
 
 public class ScheduleApplier implements GraphPassPointwise
 {
@@ -69,6 +70,7 @@ public class ScheduleApplier implements GraphPassPointwise
             if (streamOffsetEq3.max() == 0 && streamOffsetEq3.min() == 0) {
                 continue;
             }
+            // BEGIN CODE ADDITION FOR FIFO -> PIPELINE REGISTERS
             if (streamOffsetEq3.max() == streamOffsetEq3.min()) {
                 Node lastNode = null;
                 StreamOffsetEq curDelta = streamOffsetEq3;
@@ -94,7 +96,8 @@ public class ScheduleApplier implements GraphPassPointwise
                         if (found) break;
                     }
                 } while (curDelta.max() != 0 && found);
-                System.out.println("Replacing FIFO(" + streamOffsetEq3.max() + " -> " + curDelta.max() + ") with pipeline registers");
+                final BuildManager buildManager = photonDesignData.getBuildManager();
+                buildManager.logInfo("Replacing FIFO(" + streamOffsetEq3.max() + " -> " + curDelta.max() + ") with pipeline registers");
                 if (curDelta.max() == 0) {
                     node.connectInput(inputDesc.getName(), lastNode.connectOutput("output"));
                 }
@@ -111,6 +114,7 @@ public class ScheduleApplier implements GraphPassPointwise
                 }
                 continue;
             }
+            // END CODE ADDITION FOR FIFO -> PIPELINE REGISTERS
             final NodeFIFO nodeFIFO = new NodeFIFO(photonDesignData, node.getGroupPath(), streamOffsetEq3);
             nodeFIFO.setConstant(false);
             nodeFIFO.setInputLatency(inputLatency2);
