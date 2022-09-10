@@ -177,9 +177,11 @@ public abstract class VivadoBuildPass implements BuildPass, BuildManagerSupplier
         if (intValue > maxThreads) {
             this.m_buildManager.logWarning(buildConfIntOption + " (" + intValue + ") cannot be greater than " + maxThreads + ". Limiting to " + maxThreads + ".");
             intValue = maxThreads;
+        // BEGIN CODE ADDITION
         } else if (intValue < maxThreads) {
-            this.m_buildManager.logWarning(buildConfIntOption + " (" + intValue + ") being adjusted to maximum of " + maxThreads + ".");
+            this.m_buildManager.logInfo(buildConfIntOption + " (" + intValue + ") being adjusted to maximum of " + maxThreads + ".");
             intValue = maxThreads;
+        // END CODE ADDITION
         }
         return intValue;
     }
