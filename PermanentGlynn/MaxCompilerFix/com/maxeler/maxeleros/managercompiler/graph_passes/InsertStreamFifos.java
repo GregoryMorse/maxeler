@@ -109,9 +109,11 @@ public class InsertStreamFifos implements WrapperGraphPassPointwise
                 final PlacementConstraint placementConstraint = ioDesc2.getParentNode().getPlacementConstraint();
                 if (placementConstraint != null && placementConstraint.equals(ioDesc.getParentNode().getPlacementConstraint())) {
                     wrapperNodeFifo.setPlacementConstraint(placementConstraint);
+                // BEGIN CODE ADDITION FOR STREAM FIFO OUTPUT PLACEMENT CORRECTION                    
                 } else if (ioDesc.getParentNode().getPlacementConstraint() != null) {
-                    System.out.println("Correcting StreamFIFO '" + s + "' placement to output"); 
+                    wrapperDesignData.getBuildManager().logInfo("Correcting StreamFIFO '" + s + "' placement to output"); 
                     wrapperNodeFifo.setPlacementConstraint(ioDesc.getParentNode().getPlacementConstraint());
+                // END CODE ADDITION FOR STREAM FIFO OUTPUT PLACEMENT CORRECTION
                 }
             }
             return wrapperNodeFifo;
