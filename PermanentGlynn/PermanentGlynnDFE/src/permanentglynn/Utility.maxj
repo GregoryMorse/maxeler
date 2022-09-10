@@ -1275,8 +1275,8 @@ public class Utility {
             }
         }
         //vars.add(base.constant.zero(KernelBase.dfeUInt(bits)));
-        //return base.control.oneHotMux(shift, vars);
-        return oneHotMux32to64(shift, vars, 16, base);
+        return base.control.oneHotMux(shift, vars);
+        //return oneHotMux32to64(shift, vars, 16, base);
     }
     public static void doTestFloatAdd(KernelBase<?> base)
     {
@@ -1318,11 +1318,11 @@ public class Utility {
         DFEVar n1sign = n1s.get(n1type.getTotalBits()-1), n2sign = n2s.get(n2type.getTotalBits()-1);        
         DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1s.slice(0, n1mant - 1)).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED)),
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2s.slice(0, n2mant - 1)).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED));
-        DFEVar n1e = n1s.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2s.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
-        DFEVar notIsZero1 = n1e !== 0, isZero2 = n2e === 0, notIsZero2 = n2e !== 0;
-        DFEVar shift2 = n1e - n2e; //shift2 = n1e >= n2e ? n1e - n2e : 0,
+        DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
+        DFEVar notIsZero1 = n1e !== 0, isZero2 = base.control.oneHotMux(notSwap.cat(swap), n1e === 0, n2e === 0), notIsZero2 = n2e !== 0;
+        DFEVar shift2 = base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e); //shift2 = n1e >= n2e ? n1e - n2e : 0,
                //shift1 = n1e >= n2e ? 0 : n2e - n1e;
-        DFEVar resExp = n1e + (notIsZero1 | notIsZero2).cast(n1e.getType()); //n1e >= n2e ? n1e : n2e;
+        DFEVar resExp = base.control.oneHotMux(notSwap.cat(swap), n2e, n1e) + (notIsZero1 | notIsZero2).cast(n1e.getType()); //n1e >= n2e ? n1e : n2e;
         DFEVar //shift1trunc = shift1.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1))),
                shift2trunc = shift2.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1)));
         shift2trunc = oneHotEncode(shift2trunc, bigMant+1, 68, base).reinterpret(KernelBase.dfeUInt(bigMant+1));
