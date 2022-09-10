@@ -1,7 +1,3 @@
-// 
-// Decompiled by Procyon v0.6.0
-// 
-
 package com.maxeler.photon.maxcompilersim.formatterBitAccurate;
 
 import java.util.Iterator;
@@ -158,7 +154,7 @@ public class FormatStatementsBitAccurate extends FormatStatement
         Expression[] array;
         for (int length = (array = statementSelect.getOptions()).length, i = 0; i < length; ++i) {
             final Expression expression = array[i];
-            this.m_cb.addLine("case " + (statementSelect.isOneHot() ? (1L << n) : n) + "l:");
+            this.m_cb.addLine("case " + (statementSelect.isOneHot() ? (n == 63 ? ((1L << n) + 1) + "l - 1" : (1L << n)) : n) + "l:");
             final String s2 = this.m_cb.indent(1);
             this.m_cb.addLine(String.valueOf(statementSelect.getVar().getName()) + " = " + expression.format(this.m_expf) + ";");
             this.m_cb.addLine("break;");
