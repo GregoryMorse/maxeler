@@ -18,11 +18,11 @@ import com.maxeler.platform.max5.manager.SynthesisStrategy;
 
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
-import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+//import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
 //import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
-//import com.maxeler.maxcompiler.v2.managers.custom.ManagerClock;
+import com.maxeler.maxcompiler.v2.managers.custom.ManagerClock;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
 
@@ -1908,7 +1908,7 @@ public class Utility {
         System.out.println("Fanout Limit Type: " + owner.optimization.peekFanoutLimitType()); //default CHAIN
         System.out.println("Rounding Mode: " + owner.optimization.getRoundingMode()); //default TONEAREVEN
     }
-    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner, int freq) //-1 for PCIE //ManagerKernel owner
+    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner, ManagerClock[] mc) //-1 for PCIE //ManagerKernel owner
     {
         if (owner != null) {
             for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
@@ -1918,7 +1918,8 @@ public class Utility {
                 //KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, config, 1, input.getSourceWidth()));
                 Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
-                fo.setClock(((ManagerKernel)owner).generateStaticClock(name + "Clock" + suffix + i, freq));
+                //fo.setClock(((ManagerKernel)owner).generateStaticClock(name + "Clock" + suffix + i, freq));
+                fo.setClock(mc[i]);
                 //DFELink inp = fo.getInput("input");
                 DFELink inp = fo.getInput();
                 inp.setAdditionalRegisters(regPerX);
