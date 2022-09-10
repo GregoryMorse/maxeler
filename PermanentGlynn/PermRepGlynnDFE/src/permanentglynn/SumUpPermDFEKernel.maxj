@@ -63,13 +63,6 @@ public class SumUpPermDFEKernel extends Kernel {
             else if (isBig) {
                 colProdVals[i] = Utility.doMult(colProdVals[i-1], colProdVals[i], totalprec, false, useFloat, this);
             }
-            if (useFloat) {
-                DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
-                //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
-                colProdVals[i] = DFEComplexType.newInstance(this, Utility.doFloatMult(colProdVals[i].getReal(), mplicityFloat, this), Utility.doFloatMult(colProdVals[i].getImaginary(), mplicityFloat, this));
-            } else {
-                colProdVals[i] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colProdVals[i].getReal(), curMplicity, totalprec, intBits, this), Utility.mulKaratsubaRectangularExact(colProdVals[i].getImaginary(), curMplicity, totalprec, intBits, this));
-            }
             DFEVar sign = dual ? isLocal ^ parity : ((((i/(isBig ? 2 : 1)) & 1) != 0) ^ parity);
             colProdVals[i] = sign ? -colProdVals[i] : colProdVals[i]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
             if (isBig) colProdVals[i/2] = colProdVals[i];
@@ -80,8 +73,8 @@ public class SumUpPermDFEKernel extends Kernel {
                 if (useFloat) {
                     colProdVals[i] = colProdVals[i * 2] + colProdVals[i * 2 + 1];
                 } else {
-                    colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this).cast(dataTypeFix128),
-                                                            Utility.addExact(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this).cast(dataTypeFix128));
+                    colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this), //.cast(dataTypeFix128),
+                                                            Utility.addExact(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this)); //.cast(dataTypeFix128));
                 }
             }
             if ((sumsleft & 1) != 0) {
@@ -89,6 +82,13 @@ public class SumUpPermDFEKernel extends Kernel {
                 sumsleft = sumsleft / 2 + 1;
             } else sumsleft /= 2;
         }
+        if (useFloat) {
+            DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
+            //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
+            colProdVals[0] = DFEComplexType.newInstance(this, Utility.doFloatMult(colProdVals[0].getReal(), mplicityFloat, this), Utility.doFloatMult(colProdVals[0].getImaginary(), mplicityFloat, this));
+        } else {
+            colProdVals[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colProdVals[0].getReal(), curMplicity, totalprec, intBits, this), Utility.mulKaratsubaRectangularExact(colProdVals[0].getImaginary(), curMplicity, totalprec, intBits, this));
+        }        
         //colProdVals[0] = tickCount.get(0) ? -colProdVals[0] : colProdVals[0]; //parity
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
