@@ -11,7 +11,8 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
-
+//import com.maxeler.maxcompiler.v2.utils.Bits;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 
 public class SumUpPermDFEKernel extends Kernel {
 
@@ -52,8 +53,12 @@ public class SumUpPermDFEKernel extends Kernel {
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
         if (useFloat) {
+            //DFEVar test = constant.var(dfeUInt(128*2), Bits.allOnes(128*2));
+            //DFEVar test = Bitops.padSignExtend((ticksmax !== 0).cat(ticksmax !== 0).reinterpret(dfeInt(2)), 254).reinterpret(dfeUInt(128*2)); 
+            //debug.simPrintf("%X %X\n", test, test.cast(dfeUInt(128*2+1)) + test.cast(dfeUInt(128*2+1)));
             DFEComplex cursum = tickCount < 15 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-14); //mux=1, large bit addition=14 so 15 total
-            sum <== cursum + colProdVals[0];
+            sum <== DFEComplexType.newInstance(this, Utility.doFloatAdd(cursum.getReal(), colProdVals[0].getReal(), false, this),
+                                                    Utility.doFloatAdd(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this));
             //the initialization case is special if less than 15 ticks of computations are performed
             //current computation already included, remaining 14 in question so set all 14 bits if more than 14 sums,
             //otherwise 2**ticks-1 sets all the bits from index [0...ticksmax-1] considering only the least 4 significant bits of ticksmax
