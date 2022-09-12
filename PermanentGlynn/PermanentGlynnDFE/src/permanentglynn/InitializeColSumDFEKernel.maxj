@@ -139,6 +139,8 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
             if (useFloat) optimization.pushNoPipelining();
             prevColmnSumVector <== optimization.pipeline(firstTick) ? constant.zero(colSumType) : stream.offset(allColSums[kern], -1);
+            //if (useFloat) allColSums[kern] <== Utility.doFloatAdd(prevColmnSumVector, (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd)), false, this);
+            //else
             allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
             if (useFloat) optimization.popNoPipelining();
         }
