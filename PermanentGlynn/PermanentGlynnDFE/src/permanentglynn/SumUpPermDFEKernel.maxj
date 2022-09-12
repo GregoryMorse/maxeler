@@ -37,6 +37,7 @@ public class SumUpPermDFEKernel extends Kernel {
         while (sumsleft > 1) { //sums processed in binary tree
             for (int i = 0; i < sumsleft / 2; i++) {
                 if (useFloat) {
+                    //colProdVals[i] = colProdVals[i * 2] + colProdVals[i * 2 + 1];
                     colProdVals[i] = DFEComplexType.newInstance(this, Utility.doFloatAdd(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this),
                                                                 Utility.doFloatAdd(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this));
                 } else {
@@ -56,31 +57,35 @@ public class SumUpPermDFEKernel extends Kernel {
             //DFEVar test = constant.var(dfeUInt(128*2), Bits.allOnes(128*2));
             //DFEVar test = Bitops.padSignExtend((ticksmax !== 0).cat(ticksmax !== 0).reinterpret(dfeInt(2)), 254).reinterpret(dfeUInt(128*2)); 
             //debug.simPrintf("%X %X\n", test, test.cast(dfeUInt(128*2+1)) + test.cast(dfeUInt(128*2+1)));
-            DFEComplex cursum = tickCount < 15 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-14); //mux=1, large bit addition=14 so 15 total
+            final int addTicks = 6;
+            DFEComplex cursum = tickCount < addTicks+1 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-addTicks); //mux=1, large bit addition=14 so 15 total
             sum <== DFEComplexType.newInstance(this, Utility.doFloatAdd(cursum.getReal(), colProdVals[0].getReal(), false, this),
                                                     Utility.doFloatAdd(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this));
+            //sum <== cursum + colProdVals[0];
             //the initialization case is special if less than 15 ticks of computations are performed
             //current computation already included, remaining 14 in question so set all 14 bits if more than 14 sums,
             //otherwise 2**ticks-1 sets all the bits from index [0...ticksmax-1] considering only the least 4 significant bits of ticksmax
-            DFEVar sumOneHot = ticksmax >= 15 ? constant.var(dfeUInt(14), (1 << 14) - 1) : ((constant.var(dfeUInt(15), 1) << (ticksmax-1).slice(0, 4).reinterpret(dfeUInt(4))) - 1).cast(dfeUInt(14));
-            DFEVector<DFEVar> sumOneHotVector = sumOneHot.reinterpret(new DFEVectorType<DFEVar>(dfeBool(), 14));
-            DFEComplex sums[] = new DFEComplex[15];
-            int delays[] = new int[15];
-            sums[0] = sum; delays[0] = 14-1;
+            DFEVar sumOneHot = ticksmax >= addTicks+1 ? constant.var(dfeUInt(addTicks), (1 << addTicks) - 1) : ((constant.var(dfeUInt(addTicks+1), 1) << (ticksmax-1).slice(0, 4).reinterpret(dfeUInt(4))) - 1).cast(dfeUInt(addTicks));
+            DFEVector<DFEVar> sumOneHotVector = sumOneHot.reinterpret(new DFEVectorType<DFEVar>(dfeBool(), addTicks));
+            DFEComplex sums[] = new DFEComplex[addTicks+1];
+            int delays[] = new int[addTicks+1];
+            sums[0] = sum; delays[0] = addTicks-1;
             //debug.simPrintf("%d %d %d %KObj% %KObj% %KObj%\n", tickCount, ticksmax, sumOneHot, sum, stream.offset(sum, -1), stream.offset(sum, -2), sumOneHotVector); 
-            for (int i = 1; i < 15; i++) {
+            for (int i = 1; i < addTicks+1; i++) {
                 sums[i] = (sumOneHotVector[i-1] ? stream.offset(sum, -i) : constant.zero(cplxFix128Type));
-                delays[i] = 14 - i;
+                delays[i] = addTicks - i;
             }
-            int limit = 15;
+            int limit = addTicks+1;
             while (limit > 1) { //binary summation tree to reduce pipeline depth
                 int limitNew = limit / 2;
                 for (int i = 0; i < limitNew; i++) {
                     int delay = Math.max(delays[i*2], delays[i*2+1]);
                     for (int j = delays[i*2]; j < delay; j++) sums[i*2] = optimization.pipeline(sums[i*2]);
                     for (int j = delays[i*2+1]; j < delay; j++) sums[i*2+1] = optimization.pipeline(sums[i*2+1]);  
-                    sums[i] = sums[i*2] + sums[i*2+1];
-                    delays[i] = delay + 14;
+                    sums[i] = DFEComplexType.newInstance(this, Utility.doFloatAdd(sums[i*2].getReal(), sums[i*2+1].getReal(), false, this),
+                                                               Utility.doFloatAdd(sums[i*2].getImaginary(), sums[i*2+1].getImaginary(), false, this));
+                    //sums[i] = sums[i*2] + sums[i*2+1];
+                    delays[i] = delay + addTicks;
                 }
                 if (2 * limitNew < limit) {
                     limitNew++;
