@@ -1226,11 +1226,12 @@ public class Utility {
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
         //base.optimization.pushEnableBitGrowth(true);
+        if (((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED) a = uToSigned(a, base);
         if (((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) b = uToSigned(b, base);
         DFEVar result = (isSub ? a-b : a+b); //NodeCondAddSub
         base.optimization.popFixOpMode(MathOps.ADD_SUB);
         //base.optimization.popEnableBitGrowth();
-        return ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        return result; //((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
     }
     public static DFEVar mulExact(DFEVar a, DFEVar b, KernelBase<?> base) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();    
