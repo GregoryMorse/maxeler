@@ -672,7 +672,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t max_fpga_cols = max_dim / numinits;
         size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[colMux ? numinits : actualinits];
-        unsigned int mplicityBits = ceilLog2(dfe_mtx_size); //ceil log2 (dfe_mtx_size) 
+        unsigned int mplicityBits = ceilLog2(dfe_mtx_size); 
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
         int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
