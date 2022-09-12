@@ -299,7 +299,7 @@ public class InitializeColSumDFEKernel extends Kernel {
                 if (!shiftToIndex.containsKey(shiftConsts[i]))
                     shiftToIndex.put(shiftConsts[i], shiftToIndex.size());
                 shiftIndices.add(constant.var(dfeUInt(4), shiftToIndex.get(shiftConsts[i]))); //0-5 and 42-47 or 50-55 is 12 shifts, 4 bits to select
-            }           
+            }
             DFEVar cur_multiplicity = dfeUInt(bincoeffbits).newInstance(this);
             DFEVar lastMultiplicity = isInit ? initBinCoeff : stream.offset(cur_multiplicity, -loopLength);
             DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 4, this), maxbits+1+6, maxbits+1+6, this), bincoeffbits+maxbits+1+6, bincoeffbits+maxbits+1+6, this); //38 bits * 49 bits is 8 latency, 45 bits * 56 bits is 9 latency
@@ -341,7 +341,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         for (int kern = 0; kern < kerns; kern++) {
             DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
             prevColmnSumVector <== optimization.pipeline(firstTick) ? constant.zero(colSumType) : stream.offset(allColSums[kern], -loopLength);
-            allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
+            if (useFloat) allColSums[kern] <== Utility.doFloatAdd(prevColmnSumVector, (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd)), false, this);
+            else allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
         }
         //for float - mux=1 + float add=13, for fixed point - mux+add is optimized to conditional add=1
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
