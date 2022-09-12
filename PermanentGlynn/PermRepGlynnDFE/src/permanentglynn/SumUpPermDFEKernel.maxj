@@ -72,8 +72,7 @@ public class SumUpPermDFEKernel extends Kernel {
             for (int i = 0; i < sumsleft / 2; i++) {
                 if (useFloat) {
                     //colProdVals[i] = colProdVals[i * 2] + colProdVals[i * 2 + 1];
-                    colProdVals[i] = DFEComplexType.newInstance(this, Utility.doFloatAdd(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this),
-                                                                Utility.doFloatAdd(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this));                    
+                    colProdVals[i] = Utility.doFloatAdd(colProdVals[i * 2], colProdVals[i * 2 + 1], false, this);
                 } else {
                     colProdVals[i] = DFEComplexType.newInstance(this, Utility.addExact(colProdVals[i * 2].getReal(), colProdVals[i * 2 + 1].getReal(), false, this), //.cast(dataTypeFix128),
                                                             Utility.addExact(colProdVals[i * 2].getImaginary(), colProdVals[i * 2 + 1].getImaginary(), false, this)); //.cast(dataTypeFix128));
@@ -97,8 +96,7 @@ public class SumUpPermDFEKernel extends Kernel {
         if (useFloat) {
             final int addTicks = 6;
             DFEComplex cursum = tickCount < addTicks+1 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-addTicks); //mux=1, large bit addition=14 so 15 total
-            sum <== DFEComplexType.newInstance(this, Utility.doFloatAdd(cursum.getReal(), colProdVals[0].getReal(), false, this),
-                                                    Utility.doFloatAdd(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this));
+            sum <== Utility.doFloatAdd(cursum, colProdVals[0], false, this);
             //sum <== cursum + colProdVals[0];
             //the initialization case is special if less than 15 ticks of computations are performed
             //current computation already included, remaining 14 in question so set all 14 bits if more than 14 sums,
@@ -121,8 +119,7 @@ public class SumUpPermDFEKernel extends Kernel {
                     int delay = Math.max(delays[i*2], delays[i*2+1]);
                     for (int j = delays[i*2]; j < delay; j++) sums[i*2] = optimization.pipeline(sums[i*2]);
                     for (int j = delays[i*2+1]; j < delay; j++) sums[i*2+1] = optimization.pipeline(sums[i*2+1]);
-                    sums[i] = DFEComplexType.newInstance(this, Utility.doFloatAdd(sums[i*2].getReal(), sums[i*2+1].getReal(), false, this),
-                                                               Utility.doFloatAdd(sums[i*2].getImaginary(), sums[i*2+1].getImaginary(), false, this));
+                    sums[i] = Utility.doFloatAdd(sums[i*2], sums[i*2+1], false, this);
                     //sums[i] = sums[i*2] + sums[i*2+1];
                     delays[i] = delay + addTicks;
                 }
