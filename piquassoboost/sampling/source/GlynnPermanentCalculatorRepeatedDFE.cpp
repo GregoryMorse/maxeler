@@ -449,7 +449,10 @@ matrix input_to_bincoeff_indices(matrix& matrix_mtx, PicState_int64& input_state
 }
 
 bool colMux = false;
-
+unsigned int ceilLog2(long long v)
+{
+    return ((sizeof(unsigned long long) * 8 - 1) - __builtin_clzll(v)) + (!!(v & (v - 1)));;
+}
 /**
 @brief Wrapper function to call the calculate the Permanent on a DFE
 */
@@ -542,7 +545,7 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
     const size_t cols = colMux ? matrix_mtx.cols : photons;
     const size_t actualinits = (cols + max_fpga_cols-1) / max_fpga_cols;
     matrix_base<ComplexFix16> mtxfix[numinits] = {};
-    unsigned int mplicityBits = dfe_mtx_size > 64 ? 7 : 6; //ceil log2 (dfe_mtx_size)
+    unsigned int mplicityBits = ceilLog2(dfe_mtx_size);
     const long double fixpow = 1ULL << 62;
     const double fOne = doubleToLLRaw(1.0);
     int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
@@ -669,7 +672,7 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
         const size_t max_fpga_cols = max_dim / numinits;
         size_t actualinits = (matrix_mtx.cols + max_fpga_cols-1) / max_fpga_cols;
         matrix_base<ComplexFix16> mtxfix[colMux ? numinits : actualinits];
-        unsigned int mplicityBits = dfe_mtx_size > 64 ? 7 : 6; //ceil log2 (dfe_mtx_size) 
+        unsigned int mplicityBits = ceilLog2(dfe_mtx_size); //ceil log2 (dfe_mtx_size) 
         const long double fixpow = 1ULL << 62;
         const double fOne = doubleToLLRaw(1.0);
         int adjLoopLength = changecount+1 < (unsigned)dfe_loop_length && rowchange_indices[rows - 1] == 1 ? changecount+1 : dfe_loop_length;
