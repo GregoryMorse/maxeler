@@ -302,7 +302,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             }
             DFEVar cur_multiplicity = dfeUInt(bincoeffbits).newInstance(this);
             DFEVar lastMultiplicity = isInit ? initBinCoeff : stream.offset(cur_multiplicity, -loopLength);
-            DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 4, this), maxbits+1+6, maxbits+1+6, this), bincoeffbits+maxbits+1+6, bincoeffbits+maxbits+1+6, this); //38 bits * 49 bits is 8 latency, 45 bits * 56 bits is 9 latency
+            DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 4, this), maxbits+1+dimBits, maxbits+1+dimBits, this), bincoeffbits+maxbits+1+dimBits, bincoeffbits+maxbits+1+dimBits, this); //38 bits * 49 bits is 8 latency, 45 bits * 56 bits is 9 latency
             DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(bincoeffbits), shiftToIndex.size());
             DFEVar shiftIndex = Utility.mux32to64(denom, shiftIndices, 4, this);
             DFEVector<DFEVar> magicDivisionShifts = divisionShiftType.newInstance(this);
