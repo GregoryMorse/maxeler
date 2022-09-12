@@ -1953,7 +1953,7 @@ public class Utility {
                 //Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
                 //fo.setClock(owner.generateStaticClock(name + "Clock" + suffix + i, freq));
-                fo.setClock(mc[i]);
+                if (mc[i] != null) fo.setClock(mc[i]);
                 DFELink inp = fo.getInput("input");
                 //DFELink inp = fo.getInput();
                 inp.setAdditionalRegisters(regPerX);
