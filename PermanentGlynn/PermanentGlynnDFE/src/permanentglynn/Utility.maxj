@@ -1316,6 +1316,19 @@ public class Utility {
         return (negVar.slice(bits/2, bits-bits/2) | var.slice(bits/2, bits-bits/2)).cat(negVar.slice(0, bits/2) | var.slice(0, bits/2));
     }
     //static boolean floatDelay = true;
+    public static DFEVector<DFEComplex> doFloatAdd(DFEVector<DFEComplex> vec1, DFEVector<DFEComplex> vec2, boolean isSub, KernelBase<?> base)
+    {
+        DFEVector<DFEComplex> res = vec1.getType().newInstance(base);
+        for (int i = 0; i < vec1.getSize(); i++) {
+            res[i] <== doFloatAdd(vec1[i], vec2[i], isSub, base);
+        }
+        return res;
+    }
+    public static DFEComplex doFloatAdd(DFEComplex n1, DFEComplex n2, boolean isSub, KernelBase<?> base)
+    {
+        return DFEComplexType.newInstance(base, doFloatAdd(n1.getReal(), n2.getReal(), false, base),
+            doFloatAdd(n1.getImaginary(), n2.getImaginary(), false, base));
+    }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
         DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
