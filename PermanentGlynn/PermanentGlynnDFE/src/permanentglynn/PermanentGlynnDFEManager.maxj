@@ -44,7 +44,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int rows = dim;
         int cols = rows;
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
-        ManagerClock mcs[] = new ManagerClock[] {generateStaticClock("StreamClock0", freq), generateStaticClock("StreamClock1", freq), generateStaticClock("StreamClock2", freq), generateStaticClock("StreamClock3", freq)};
+        ManagerClock mcs[] = new ManagerClock[] {generateStaticClock("StreamClock0", freq), generateStaticClock("StreamClock1", freq), generateStaticClock("StreamClock2", freq)};
         KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
         int initKerns = 4;
