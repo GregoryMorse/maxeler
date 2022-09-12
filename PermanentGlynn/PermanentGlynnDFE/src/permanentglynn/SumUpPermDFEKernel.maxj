@@ -65,7 +65,8 @@ public class SumUpPermDFEKernel extends Kernel {
             //the initialization case is special if less than 15 ticks of computations are performed
             //current computation already included, remaining 14 in question so set all 14 bits if more than 14 sums,
             //otherwise 2**ticks-1 sets all the bits from index [0...ticksmax-1] considering only the least 4 significant bits of ticksmax
-            DFEVar sumOneHot = ticksmax >= addTicks+1 ? constant.var(dfeUInt(addTicks), (1 << addTicks) - 1) : ((constant.var(dfeUInt(addTicks+1), 1) << (ticksmax-1).slice(0, 4).reinterpret(dfeUInt(4))) - 1).cast(dfeUInt(addTicks));
+            final int shiftTicks = MathUtils.bitsToAddress(addTicks+1);
+            DFEVar sumOneHot = ticksmax >= addTicks+1 ? constant.var(dfeUInt(addTicks), (1 << addTicks) - 1) : ((constant.var(dfeUInt(addTicks+1), 1) << (ticksmax-1).slice(0, shiftTicks).reinterpret(dfeUInt(shiftTicks))) - 1).cast(dfeUInt(addTicks));
             DFEVector<DFEVar> sumOneHotVector = sumOneHot.reinterpret(new DFEVectorType<DFEVar>(dfeBool(), addTicks));
             DFEComplex sums[] = new DFEComplex[addTicks+1];
             int delays[] = new int[addTicks+1];
