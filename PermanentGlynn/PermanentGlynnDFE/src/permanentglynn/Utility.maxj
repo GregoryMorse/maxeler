@@ -2242,7 +2242,7 @@ public class Utility {
         System.out.println("TriAddsEnabled: " + opt.getTriAddsEnabled()); //true
         System.out.println("UseAsapScheduler: " + opt.getUseAsapScheduler()); //false
         System.out.println("UseGlobalClockBuffer: " + opt.getUseGlobalClockBuffer()); //false
-        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false        
+        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false
     }
     public static void selectSLR(int slr_index, XilinxAlveoU250Manager owner) {
         XilinxAlveoU250Manager.NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
