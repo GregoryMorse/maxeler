@@ -407,7 +407,7 @@ def verify_identities(nmax):
                    lambda n: (1+1j)**n*math.factorial(n),
                    lambda n: math.factorial(n)]
     for i in range(2, len(gen_func)):
-        for x in range(48, nmax+1):
+        for x in range(0, nmax+1):
             n = 48 if x > 48 else x
             mat = gen_func[i](n)
             input_state = np.array([], dtype=np.int64) if x == 0 else np.hstack((np.array([x-n+1], dtype=np.int64), np.ones((n-1,), dtype=np.int64)))
@@ -416,13 +416,13 @@ def verify_identities(nmax):
                 output_state = np.array([], dtype=np.int64) if x == 0 else np.hstack((np.array(part, dtype=np.int64), np.zeros((n-len(part),), dtype=np.int64))) #np.ones((x,), dtype=np.int64)
                 res = [None]
                 def save_result():
-                    res[0] = permanent_Glynn_DFEDual(mat, input_state, output_state) 
+                    res[0] = permanent_Glynn_DFE(mat, input_state, output_state) 
                 r = timeit.timeit(save_result, number=1); res = res[0]
                 o = oracle_func[i](x)
                 print(x, r, res, o*1.0, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
                 #assert o if o==0 else abs(o-res)/abs(o) < 1e-10
             #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
-verify_identities(80); assert False
+#verify_identities(48); assert False
 def random_realistic_input_states(photons, dim):
     indexes = set(np.random.choice(range(dim), photons, False))
     return np.array([1 if i in indexes else 0 for i in range(dim)])
@@ -435,7 +435,7 @@ def stability(nmax, photons, times=1000):
             else: input_state = np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(photons, [1/dim]*dim)
             output_state = np.array([], dtype=np.int64) if dim == 0 else np.random.multinomial(photons, [1/dim]*dim)
             assert sum(input_state) == sum(output_state)
-            print(input_state, output_state)        
+            print(input_state, output_state)
             permanent_Glynn_MultiDFE(arr, input_state, output_state)
             permanent_Glynn_MultiDFE(arr, output_state, input_state)
 def other_stability(nmax, photons, times=1):
@@ -573,7 +573,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
           idxdict[val[0]] = i
           lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size ($n$)")  
-        ax1.set_yscale('log', base=10)
+        ax1.set_yscale('log')
         ax1.set_ylabel(ylbl)
         ax1.legend()
         ax1.legend(loc="upper left")
