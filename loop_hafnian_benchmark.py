@@ -225,7 +225,7 @@ def verify_timing(nmax, batchsize=1, loop=True, repeated=False):
           idxdict[val[0]] = i
           lines.append(ax1.plot([i for i in xaxis if (i & 1) == 0], val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size ($n$)")  
-        ax1.set_yscale('log', base=10)
+        ax1.set_yscale('log')
         ax1.set_ylabel(ylbl)
         ax1.legend(loc="upper left")
         if (vals, fname, ylbl) == timeinfo: pass      
