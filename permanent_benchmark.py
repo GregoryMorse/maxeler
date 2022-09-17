@@ -419,12 +419,13 @@ def verify_timing(nmax, batchsize=1):
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.set_title("Permanent of $n\\times n$ Matrix" + ("" if batchsize==1 else (" Batch=$n$"))) #str(batchsize)
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
-        import tikzplotlib #pip install tikzplotlib
+        fig.savefig(os.path.join(saveFolder, fname + ".pgf"), format="pgf")
+        #import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
-        for line in lines:
-            for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
-        ax1.legend()
-        tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
+        #for line in lines:
+        #    for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
+        #ax1.legend()
+        #tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
 # (a b) (c d) (e f) (g h) = (a+c+e+g)(b+d+f+h)-(a+c+e-g)(b+d+f-h)+(a+c-e-g)(b+d-f-h)-(a-c-e-g)(b-d-f-h)+(a-c-e+g)(b-d-f+h)-(a-c+e+g)(b-d+f+h)+(a-c+e-g)(b-d+f-h)-(a+c-e+g)(b+d-f+h)==0 according to WolframAlpha
 #nXm where m in [2..n-2] always is 0 due to cancellation of terms, however floating/fixed point cannot be relied upon in such cases
