@@ -595,12 +595,13 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.set_title(("Repeated Permanent of $n\\times n$ Matrix" if shots is None else "Boson Sampling of Interferometer Matrix") + " Photons=" + str(photons) + ("" if shots is None else (" Shots=" + str(shots))) + ("" if batchsize==1 else (" Batch=$n$")))
         fig.savefig(os.path.join(saveFolder, fname + ".svg"), format="svg")
-        import tikzplotlib #pip install tikzplotlib
+        fig.savefig(os.path.join(saveFolder, fname + ".pgf"), format="pgf")
+        #import tikzplotlib #pip install tikzplotlib
         #python3 -c "import tikzplotlib; print(tikzplotlib.Flavors.latex.preamble())"
-        for line in lines:
-            for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
-        ax1.legend()
-        tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
+        #for line in lines:
+        #    for z in line: z.set_label(z.get_label().replace("_", "\\_")) #fix bug with underscore in tikzplotlib legend label escaping
+        #ax1.legend()
+        #tikzplotlib.save(os.path.join(saveFolder, fname + ".tex"))
         plt.close(fig)
 #other_stability(40, 30)
 #stability(40, 30)
