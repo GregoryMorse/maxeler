@@ -560,6 +560,7 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
     import math
     from matplotlib.lines import Line2D
     plt.rcParams['text.usetex'] = True
+    plt.rcParams['pgf.texsystem'] = 'pdflatex'
     from matplotlib.ticker import MaxNLocator
     verinfo = None if not shots is None else ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "repglynnpermacc" + verifysuffix, "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "repglynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
