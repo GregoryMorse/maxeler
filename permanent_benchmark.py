@@ -284,7 +284,7 @@ def verify_identities(nmax):
             mat = gen_func[i](x)
             res = [None]
             def save_result():
-                res[0] = permanent_Glynn_DFEDual(mat) 
+                res[0] = permanent_Glynn_DFEF(mat) 
             r = timeit.timeit(save_result, number=1); res = res[0]
             o = oracle_func[i](x)
             print(x, r, res, o, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
@@ -398,7 +398,7 @@ def verify_timing(nmax, batchsize=1):
           idxdict[val[0]] = i
           lines.append(ax1.plot(xaxis, val[1], label=paperNames[val[0]], marker=markers[i], linestyle=' '))
         ax1.set_xlabel("Size ($n$)")  
-        ax1.set_yscale('log', base=10)
+        ax1.set_yscale('log')
         ax1.set_ylabel(ylbl)
         ax1.legend(loc="upper left")
         if (vals, fname, ylbl) == timeinfo:
