@@ -385,6 +385,7 @@ def verify_timing(nmax, batchsize=1):
     from matplotlib.lines import Line2D
     import math
     plt.rcParams['text.usetex'] = True
+    plt.rcParams['pgf.texsystem'] = 'pdflatex'
     from matplotlib.ticker import MaxNLocator
     verinfo = ([(f, [abs(res[key][largeFuncs[0].__name__][i] - res[key][f.__name__][i]) / abs(res[key][largeFuncs[0].__name__][i]) for i in xaxis]) for f in largeFuncs[1:]], "glynnpermacc", "Accuracy relative to " + paperNames[largeFuncs[0]] + " ($\\log_{10}$)")
     timeinfo = ([(f, [results[key][f.__name__][i] for i in xaxis]) for f in largeFuncs], "glynnpermtime" + suffix, "Time ($\\log_{10}$ s)")
