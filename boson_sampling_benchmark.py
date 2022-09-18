@@ -398,6 +398,24 @@ def partitions(n, I=1):
     for i in range(I, n//2 + 1):
         for p in partitions(n-i, i):
             yield (i,) + p
+def average_partition(n, m): #n==m then tot is https://oeis.org/A178887 A178887		Total of n-colorings of parts of all integer partitions of n
+    import math
+    tot = 0
+    timecplxty = 0
+    for part in partitions(n):
+        if len(part) > m: continue
+        repeats = math.factorial(len(part)) * math.comb(m, len(part))
+        tot += repeats
+        timecplxty += repeats * multiprod((x+1 for x in part))
+    avg = timecplxty / tot
+    nearest, nearcplxty = None, None
+    for part in partitions(n):
+        if len(part) > m: continue
+        check = multiprod((x+1 for x in part))
+        if nearcplxty is None or abs(check-avg) <= abs(nearcplxty-avg):
+            if check == nearcplxty: nearest.append(part)
+            else: nearest, nearcplxty = [part], check
+    return tot, timecplxty, avg, nearest, nearcplxty
 def verify_identities(nmax):
     import math, timeit
     gen_func = [lambda n: np.ones((0,0)) if n==0 else np.full((n, n), 1/n) + np.zeros((n, n)) *1j, #minimum permanent bound
