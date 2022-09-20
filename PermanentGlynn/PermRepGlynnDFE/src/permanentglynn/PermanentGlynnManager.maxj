@@ -44,7 +44,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         boolean isBig = cols > 64; //DSPs will run out so halve the speed
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
         int loopLength = isBig ? 12 : 9; //based on multiplexer initialization (1) + fixed point multiplication (5) + a right shift multiplexer (1), for float multiplexer initialization (1) + addition/subtraction (13) + addition/subtraction multiplexer (1)
-        if (useFloat) loopLength = Math.max(16, loopLength);
+        if (useFloat) loopLength = Math.max(16+1, loopLength);
         ManagerClock mcs[] = new ManagerClock[] {isBig ? null : generateStaticClock("StreamClock0", freq), isBig ? null : generateStaticClock("StreamClock1", freq), isBig ? null : generateStaticClock("StreamClock2", freq)};
         KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
