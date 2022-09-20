@@ -8,6 +8,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
@@ -123,10 +124,13 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVar > useRow = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 16, this);
         DFEVector < DFEComplex > rowToAdd;
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
-            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
-            DFEVector<DFEVar> exponent = useRow.slice(53-1, 11);
+            int expBits = ((DFEFloat)dataTypeFix64).getExponentBits();
+            int mantBits = ((DFEFloat)dataTypeFix64).getMantissaBits();
+            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(expBits), 2 * cols);
+            DFEVector<DFEVar> exponent = useRow.slice(mantBits-1, expBits);
             DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
-            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(cplxRowType).cast(colSumType);
+            rowToAdd = (useRow.slice(expBits+mantBits-1, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<expBits)-1)).cast(expType)).cat(useRow.slice(0, mantBits-1))).reinterpret(cplxRowType).cast(colSumType);
+            //rowToAdd = (useRow.reinterpret(cplxRowType)*2).cast(colSumType);
         } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
         List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
         selRow.add(oneRow.cast(oneRowFixType).reinterpret(colSumType));
