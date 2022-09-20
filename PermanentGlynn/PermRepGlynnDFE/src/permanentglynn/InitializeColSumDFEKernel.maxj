@@ -328,11 +328,13 @@ public class InitializeColSumDFEKernel extends Kernel {
 
         DFEVector < DFEComplex > rowToAdd;
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
-            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(11), 2 * cols);
-            DFEVector<DFEVar> exponent = useRow.slice(53-1, 11);
+            int expBits = ((DFEFloat)dataTypeFix64).getExponentBits();
+            int mantBits = ((DFEFloat)dataTypeFix64).getMantissaBits();
+            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(expBits), 2 * cols);
+            DFEVector<DFEVar> exponent = useRow.slice(mantBits-1, expBits);
             DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
-            rowToAdd = (useRow.slice(63, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<11)-1)).cast(expType)).cat(useRow.slice(0, 53-1))).reinterpret(cplxRowType).cast(colSumType);
-            //rowToAdd = useRow.reinterpret(cplxRowType).cast(colSumType) + useRow.reinterpret(cplxRowType).cast(colSumType); //* constant.var(dataTypeFixCommonAdd, 2.0);
+            rowToAdd = (useRow.slice(expBits+mantBits-1, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<expBits)-1)).cast(expType)).cat(useRow.slice(0, mantBits-1))).reinterpret(cplxRowType).cast(colSumType);
+            //rowToAdd = (useRow.reinterpret(cplxRowType)*2).cast(colSumType);
         } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
         //rowToAdd = isInit ? Utility.repeatPipeline(oneRow, 3 + (useFloat ? 3 : 0), this).cast(oneRowFixType).reinterpret(colSumType) : rowToAdd;
         List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
