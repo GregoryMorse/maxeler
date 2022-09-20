@@ -385,8 +385,11 @@ union {
     perm[i].real += dfeFloatToLD(res2[i*2]);
     perm[i].imag += dfeFloatToLD(res2[i*2+1]);
 #endif
-    perm[i].real /= numOfPartialPerms;
-    perm[i].imag /= numOfPartialPerms;
+    int exp;
+    perm[i].real = frexp(perm[i].real, &exp);
+    perm[i].real = ldexp(perm[i].real, exp-(numOfPartialPerms-1));
+    perm[i].imag = frexp(perm[i].imag, &exp);
+    perm[i].imag = ldexp(perm[i].imag, exp-(numOfPartialPerms-1));
 #else
 #ifdef DUAL
     int ha = res[i*2].lowBits >> 63, ha2 = res2[i*2].lowBits >> 63;
