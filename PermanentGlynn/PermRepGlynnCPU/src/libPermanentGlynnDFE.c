@@ -307,7 +307,7 @@ long double dfeFloatToLD(__int128 res)
 
 #ifdef USE_FLOAT
 typedef __int128 Fix256;
-#elif MTX_SIZE <= 48 && !defined(DUAL) && !defined(MAXELER_SIM)
+#elif MTX_SIZE <= 40 || MTX_SIZE == 48 && !defined(DUAL) && !defined(MAXELER_SIM)
 typedef struct { //little-endian, must be 64-bit aligned
     uint64_t lowBits;
     __int128 highBits;
