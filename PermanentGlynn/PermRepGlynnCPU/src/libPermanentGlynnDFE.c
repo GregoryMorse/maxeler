@@ -516,8 +516,11 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
     perm[i].real = dfeFloatToLD(res[i*2]);
     perm[i].imag = dfeFloatToLD(res[i*2+1]);
 #endif
-    perm[i].real = ldexp(perm[i].real, -(mulsum + numOfPartialPerms-1));
-    perm[i].imag = ldexp(perm[i].imag, -(mulsum + numOfPartialPerms-1));
+    int exp;
+    perm[i].real = frexp(perm[i].real, &exp);
+    perm[i].real = ldexp(perm[i].real, exp-(mulsum + numOfPartialPerms-1));
+    perm[i].imag = frexp(perm[i].imag, &exp);
+    perm[i].imag = ldexp(perm[i].imag, exp-(mulsum  +numOfPartialPerms-1));
 #else
 #ifdef DUAL
     const int highBit = sizeof(res2[i*2].lowBits)*8 - 1;
