@@ -44,7 +44,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         int rows = dim;
         int cols = rows;
         int regPerX = 2 + (freq >= 240 ? 1 : 0) + (freq >= 280 ? 1 : 0);
-        ManagerClock mcs[] = new ManagerClock[] {generateStaticClock("StreamClock0", freq), generateStaticClock("StreamClock1", freq), generateStaticClock("StreamClock2", freq)};
+        ManagerClock mcs[] = new ManagerClock[] {generateStaticClock("StreamClock0", freq), generateStaticClock("StreamClock1", freq), generateStaticClock("StreamClock2", freq), generateStaticClock("StreamClock3", freq)};
         KernelBlock[] initColSumKernels = new KernelBlock[numkernels];
         KernelBlock[] colSumKernels = new KernelBlock[numkernels];
         int initKerns = 4;
@@ -52,7 +52,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             Utility.selectSLR(i % 4, parent);
             initColSumKernels[i] = addKernel(new InitializeColSumDFEKernel(makeKernelParameters("InitializeColSumDFEKernel_" + i), rows, cols / initKerns, dual, basekernpow2 - (dual ? 1 : 0), initKerns, i % initKerns, dim, useFloat));
             Utility.unselectSLR(parent);
-            initColSumKernels[i].setClock(generateStaticClock("InitializeColSumClock" + i, freq));
+            initColSumKernels[i].setClock(mcs[i % 4]);
             DFELink mtx = addStreamFromCPU("InputMtx" + i);
             mtx.setAdditionalRegisters(regPerX);
             mtx = Utility.slrCrossingChain("InputMtx", Integer.toString(i), mtx, -1, i % 4, regPerX, placeFanouts ? parent : null, mcs);
@@ -64,7 +64,7 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
             Utility.selectSLR(i % 4, parent);
             colSumKernels[i] = addKernel(new PermanentGlynnDFEKernel(makeKernelParameters("PermanentGlynnDFEKernel_" + i), rows, cols, dual, dim - basekernpow2, initKerns, i, useFloat));
             Utility.unselectSLR(parent);
-            colSumKernels[i].setClock(generateStaticClock("PermanentGlynnClock" + i, freq));
+            colSumKernels[i].setClock(mcs[i % 4]);
             for (int j = 0; j < initKerns; j++) {
                 DFELink curOutput;
                 if (dual && isSim && i >= numkernels * numarrays / 2)
@@ -85,9 +85,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         }
         int singlekerns = numkernels * numarrays / 2;
         Utility.selectSLR(0, parent);
-        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, dim - basekernpow2, useFloat));
+        KernelBlock SumUpPermKernel = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel"), dual && isSim ? singlekerns : numkernels, dim - basekernpow2, cols, useFloat));
         Utility.unselectSLR(parent);
-        SumUpPermKernel.setClock(generateStaticClock("SumUpPermClock0", freq));
+        SumUpPermKernel.setClock(mcs[0]);
         for (int i = 0; i < (dual && isSim ? singlekerns : numkernels); i++) {
             DFELink colProdInput = SumUpPermKernel.getInput("colProd" + i);
             colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
@@ -100,9 +100,9 @@ public interface PermanentGlynnDFEManager extends ManagerPCIe, ManagerKernel, Ma
         cpuOutput <== toCPU;
         if (dual && isSim) {
             Utility.selectSLR(0, parent);
-            KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, dim - basekernpow2, useFloat));
+            KernelBlock SumUpPermKernel2 = addKernel(new SumUpPermDFEKernel(makeKernelParameters("SumUpPermDFEKernel2"), singlekerns, dim - basekernpow2, cols, useFloat));
             Utility.unselectSLR(parent);
-            SumUpPermKernel2.setClock(generateStaticClock("SumUpPerm2Clock0", freq));
+            SumUpPermKernel2.setClock(mcs[0]);
             for (int i = singlekerns; i < numkernels; i++) {
                 DFELink colProdInput = SumUpPermKernel2.getInput("colProd" + (i - singlekerns));
                 colProdInput.setAdditionalRegisters(i % 4 == 0 ? 0 : regPerX);
