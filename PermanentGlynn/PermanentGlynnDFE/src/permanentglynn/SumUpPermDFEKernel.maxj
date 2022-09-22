@@ -16,13 +16,20 @@ import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
 public class SumUpPermDFEKernel extends Kernel {
 
-    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, boolean useFloat) {
+    public SumUpPermDFEKernel(final KernelParameters parameters, int n, int maxtickbits, int cols, boolean useFloat) {
         super(parameters);
 
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
-
+        int tol = MathUtils.ceilLog2(cols); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+              
+        int errorTol = tol * cols;
+        int totalprec = 64 + errorTol / 2;
+        while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
+               Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+        totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
+        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(totalprec, -totalprec+2, SignMode.TWOSCOMPLEMENT);
+        
         DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
-
+        
         // tick count
         DFEVar ticksmax = constant.var(dfeUInt(maxtickbits), 1) << io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(MathUtils.bitsToRepresentUnsigned(maxtickbits)));
         DFEVar tickCount = control.count.simpleCounter(maxtickbits, ticksmax);
@@ -56,7 +63,7 @@ public class SumUpPermDFEKernel extends Kernel {
             //DFEVar test = constant.var(dfeUInt(128*2), Bits.allOnes(128*2));
             //DFEVar test = Bitops.padSignExtend((ticksmax !== 0).cat(ticksmax !== 0).reinterpret(dfeInt(2)), 254).reinterpret(dfeUInt(128*2)); 
             //debug.simPrintf("%X %X\n", test, test.cast(dfeUInt(128*2+1)) + test.cast(dfeUInt(128*2+1)));
-            final int addTicks = 6;
+            final int addTicks = 16;
             DFEComplex cursum = tickCount < addTicks+1 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-addTicks); //mux=1, large bit addition=14 so 15 total
             sum <== Utility.doFloatAdd(cursum, colProdVals[0], false, this);
             //sum <== cursum + colProdVals[0];
@@ -80,7 +87,7 @@ public class SumUpPermDFEKernel extends Kernel {
                 for (int i = 0; i < limitNew; i++) {
                     int delay = Math.max(delays[i*2], delays[i*2+1]);
                     for (int j = delays[i*2]; j < delay; j++) sums[i*2] = optimization.pipeline(sums[i*2]);
-                    for (int j = delays[i*2+1]; j < delay; j++) sums[i*2+1] = optimization.pipeline(sums[i*2+1]);  
+                    for (int j = delays[i*2+1]; j < delay; j++) sums[i*2+1] = optimization.pipeline(sums[i*2+1]);
                     sums[i] = Utility.doFloatAdd(sums[i*2], sums[i*2+1], false, this);
                     //sums[i] = sums[i*2] + sums[i*2+1];
                     delays[i] = delay + addTicks;
