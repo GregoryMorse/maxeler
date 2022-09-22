@@ -23,9 +23,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
         super(parameters);
 
         DFEType dataTypeFix64 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
+        //DFEType dataTypeFix128 = useFloat ? dfeFloat(15, 64) : dfeFixOffset(160, -154, SignMode.TWOSCOMPLEMENT);
 
-        DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
+        //DFEComplexType cplxFix128Type = new DFEComplexType(dataTypeFix128);
         DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
 
         DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols / initKerns);
@@ -43,7 +43,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
 
         //DFEComplex[] colSumVerify = new DFEComplex[cols];
         int[] errorTol = new int[cols];
-        int tol = 6; //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+        int tol = MathUtils.ceilLog2(cols); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
 
         for (int j = 0; j < initKerns; j++) {
             DFEVector < DFEComplex > colmnSumVector = colSumType.newInstance(this);
@@ -51,9 +51,9 @@ public class PermanentGlynnDFEKernel extends Kernel {
             //debug.simPrintf("%KObj%\n", colmnSumVector);
 
             for (int idx = 0; idx < cols / initKerns; idx++) {
-                colSumFix[j * (cols / initKerns) + idx] = useFloat ? colmnSumVector[idx].cast(cplxFix128Type) : colmnSumVector[idx];
+                colSumFix[j * (cols / initKerns) + idx] = colmnSumVector[idx];
                 errorTol[j * (cols / initKerns) + idx] = tol;
-                //colSumVerify[j * (cols / initKerns) + idx] = colSumFix[j * (cols / initKerns) + idx].cast(cplxFix128Type);
+                //colSumVerify[j * (cols / initKerns) + idx] = colSumFix[j * (cols / initKerns) + idx];
             }
         }
         //Put the default fixed-point type mode is bitSizeLargest and offsetLargestMsb
@@ -133,7 +133,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
         
 
-
+        DFEComplexType cplxFix128Type = colSumFix[0].getType();
         io.output("colProd", colProdVal.cast(cplxFix128Type), cplxFix128Type);
     }
 
