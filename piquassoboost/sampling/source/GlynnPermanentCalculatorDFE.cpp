@@ -229,7 +229,10 @@ GlynnPermanentCalculatorBatch_DFE(std::vector<matrix>& matrices, std::vector<Com
                     renormalize_data[i*renormalize_data.stride+jdx] = std::abs(std::norm(colSumMax[2*jdx]) > std::norm(colSumMax[2*jdx+1]) ? colSumMax[2*jdx] : colSumMax[2*jdx+1]);
                     //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
                     //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
-                    if (colMax[jdx] / (renormalize_data[i*renormalize_data.stride+jdx] * renormalize_data[i*renormalize_data.stride+jdx]) >= 0.25) renormalize_data[i*renormalize_data.stride+jdx] *= 2;                     
+                    if (colMax[jdx] / (renormalize_data[i*renormalize_data.stride+jdx] * renormalize_data[i*renormalize_data.stride+jdx]) >= 0.25) renormalize_data[i*renormalize_data.stride+jdx] *= 2;
+                    int exp;
+                    long double ndata = std::frexp(renormalize_data[i*renormalize_data.stride+jdx], &exp);
+                    renormalize_data[i*renormalize_data.stride+jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
                     //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
                 }
             }
@@ -334,6 +337,9 @@ GlynnPermanentCalculator_DFE(matrix& matrix_mtx, Complex16& perm, int useDual, i
             //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
             //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
             if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2; 
+            int exp;
+            long double ndata = std::frexp(renormalize_data[jdx], &exp);
+            renormalize_data[jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
             //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
         }
     }
