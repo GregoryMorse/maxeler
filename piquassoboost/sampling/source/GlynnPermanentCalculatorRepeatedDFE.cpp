@@ -179,6 +179,9 @@ GlynnPermanentCalculatorRepeatedMulti_DFE(matrix& matrix_init, PicState_int64& i
         //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
         //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
         if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2; 
+        int exp;
+        long double ndata = std::frexp(renormalize_data[jdx], &exp);
+        renormalize_data[jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
         //printf("%d %.21Lf\n", jdx, renormalize_data[jdx]);
     }
     
@@ -525,6 +528,9 @@ GlynnPermanentCalculatorRepeated_DFE(matrix& matrix_init, PicState_int64& input_
             //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
             //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
             if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;
+            int exp;
+            long double ndata = std::frexp(renormalize_data[jdx], &exp);
+            renormalize_data[jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
             //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
         }
     }
@@ -660,6 +666,9 @@ GlynnPermanentCalculatorRepeatedInputBatch_DFE(matrix& matrix_init, std::vector<
                 //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
                 //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
                 if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;                 
+                int exp;
+                long double ndata = std::frexp(renormalize_data[jdx], &exp);
+                renormalize_data[jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
                 //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
             }
         }
@@ -848,6 +857,9 @@ GlynnPermanentCalculatorRepeatedOutputBatch_DFE(matrix& matrix_init, std::vector
                 //here we prevent extremal values from causing the outer sum to overflow the worst case of which is an identity matrix
                 //sqrt(a^2+b^2) >= 0.5 === a^2+b^2 >= 0.25 or with normalization c, (a/c)^2+(b/c)^2 > 0.25 or (a^2+b^2)/c^2 >= 0.25  
                 if (colMax[jdx] / (renormalize_data[jdx] * renormalize_data[jdx]) >= 0.25) renormalize_data[jdx] *= 2;                 
+                int exp;
+                long double ndata = std::frexp(renormalize_data[jdx], &exp);
+                renormalize_data[jdx] = std::ldexp(0.5, exp + (ndata != 0.5));
                 //printf("%d %.21Lf %f\n", jdx, renormalize_data[jdx]);
             }
         
