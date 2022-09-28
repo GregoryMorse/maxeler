@@ -439,6 +439,7 @@ void calcPermanentGlynnRepDFE(const ComplexFix16** mtx_data, const long double* 
       actions.glynnRowsGray.instream_InputMtx1 = (__int64_t*)mtx_data[1]; actions.glynnRowsGray.instream_size_InputMtx1 = cols > COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
       actions.glynnRowsGray.instream_InputMtx2 = (__int64_t*)mtx_data[2]; actions.glynnRowsGray.instream_size_InputMtx2 = cols > 2*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
       actions.glynnRowsGray.instream_InputMtx3 = (__int64_t*)mtx_data[3]; actions.glynnRowsGray.instream_size_InputMtx3 = cols > 3*COLDIV ? sizeof(ComplexFix16)*(COLDIV+1)*((rows-1)*LOOPLENGTH+adjLoopLength)*totalPerms : 0;
+      //printf("%d %d %d %d %d %d %d %d\n", LOOPLENGTH, MTX_SIZE, adjLoopLength, rows, cols, photons, changecount, resbytes); 
       //max_actions_t* mat = PermRepGlynn_singleSIM_convert(mavMaxFile, &actions.glynnRowsGray);
       //int loopLength = max_get_offset_auto_loop_size(mat, "InitializeColSumDFEKernel_0", "loopLength");
       //printf("Loop Length: %d\n", loopLength);
