@@ -303,6 +303,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat(), params.getMaxDim()));
         
         final String implementationStrategyName = "";
+        //manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.verbose_output, true);
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
 
