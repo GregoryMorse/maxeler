@@ -374,8 +374,10 @@ public class Utility {
         DFEVar s = base.optimization.pipeline(a.slice(guardBit, aType.getTotalBits() - guardBit).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - guardBit, 0, aType.getSignMode())));
         DFEVar c = lowCast.get(1).reinterpret(KernelBase.dfeBool());
         List<List<DFEVar>> chunks = getBitChunks128(s, c, false, true);
-        return addExact(s, c, false, base).cat(repeatPipeline(lowCast.get(0), 1 + (chunks != null ? chunks.size() - 1 : 0), base))
+        DFEVar result = addExact(s, c, false, base).cat(repeatPipeline(lowCast.get(0), 1 + (chunks != null ? chunks.size() - 1 : 0), base))
             .reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - guardBit + 1 + 1, -targetType.getFractionBits(), aType.getSignMode())).cast(targetType);
+        //base.debug.simPrintf(result !== a.cast(targetType), "%f %f %f\n", a, a.cast(targetType), result);
+        return result;
     }
     public static DFEVar mulKaratsubaRectangularExact(DFEVar a, DFEVar b, int bits, int intBits, KernelBase<?> base)
     {
@@ -388,7 +390,8 @@ public class Utility {
             .reinterpret(KernelBase.dfeFixOffset(getMulOutpBits(aType, bType), -(aType.getFractionBits() + bType.getFractionBits()), ((DFEFix)result.getType()).getSignMode()));
         result = bigCast(result, KernelBase.dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()), base);
         //result = result.cast(KernelBase.dfeFixOffset(bits, -bits+intBits, ((DFEFix)result.getType()).getSignMode()));
-        //debug.simPrintf(result !== mulExact(a, b, bits, intBits, base), "%d %X %X %X %X\n", aType.getTotalBits(), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), mulExact(a, b, bits, intBits, base).reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), a.reinterpretbase.(KernelBase.dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())), b.reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode()))); //mulKaratsubaExact(a, b, bits, intBits).reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())),
+        //DFEVar verify = mulExact(a, b, bits, intBits, base);
+        //base.debug.simPrintf(result !== verify, "%d %X %X %X %X\n", aType.getTotalBits(), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), verify.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), a.reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits(), 0, aType.getSignMode())), b.reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits(), 0, bType.getSignMode()))); //mulKaratsubaExact(a, b, bits, intBits).reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())),
         return result;
     }
     public static DFEVar signedMulKaratsubaRectangular(DFEVar a, DFEVar b, int tileMode, Integer[] totalDelay, KernelBase<?> base)
@@ -981,22 +984,29 @@ public class Utility {
         DFEFix bcType = isCSub ? getAddExactType(bType, cType, isCSub) : getAddExactType(cType, bType, isBSub);
         DFEFix acType = getAddExactType(aType, cType, isCSub);
         DFEFix abType = getAddExactType(aType, bType, isBSub);
-        if ((!isBSub || !isCSub) && -aType.getFractionBits() > bcType.getIntegerBits()) {
+        if (bType.getSignMode() == SignMode.UNSIGNED && cType.getSignMode() == SignMode.UNSIGNED && !isBSub && !isCSub && -aType.getFractionBits() > bcType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(b, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(bcType.getTotalBits()+aType.getTotalBits()-aType.getFractionBits() - bcType.getIntegerBits(), -bcType.getFractionBits(), resultType.getSignMode());
-            return repeatPipeline(a, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bcType.getIntegerBits()))).cat(addExact(b, c, isCSub, base)).reinterpret(resultType);
-        } else if (!isBSub && -bType.getFractionBits() > acType.getIntegerBits()) {
+            DFEVar result = repeatPipeline(a, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bcType.getIntegerBits()))).cat(addExact(b, c, isCSub, base)).reinterpret(resultType);
+            return result;
+        } else if (aType.getSignMode() == SignMode.UNSIGNED && cType.getSignMode() == SignMode.UNSIGNED && !isCSub && -bType.getFractionBits() > acType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(acType.getTotalBits()+bType.getTotalBits()-bType.getFractionBits() - acType.getIntegerBits(), -acType.getFractionBits(), resultType.getSignMode());
-            return repeatPipeline(b, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - acType.getIntegerBits()))).cat(addExact(a, c, isCSub, base)).reinterpret(resultType);
-        } else if (!isCSub && -cType.getFractionBits() > abType.getIntegerBits()) {
+            DFEVar result = (isBSub ? -b : repeatPipeline(b, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - acType.getIntegerBits()))).cat(addExact(a, c, isCSub, base)).reinterpret(resultType);
+            return result;
+        } else if (aType.getSignMode() == SignMode.UNSIGNED && bType.getSignMode() == SignMode.UNSIGNED && !isBSub && -cType.getFractionBits() > abType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isBSub, true);
             resultType = KernelBase.dfeFixOffset(abType.getTotalBits()+cType.getTotalBits()-cType.getFractionBits() - abType.getIntegerBits(), -abType.getFractionBits(), resultType.getSignMode());
-            return repeatPipeline(c, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-cType.getFractionBits() - abType.getIntegerBits()))).cat(addExact(a, b, isBSub, base)).reinterpret(resultType);
+            DFEVar result = (isCSub ? -c : repeatPipeline(c, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-cType.getFractionBits() - abType.getIntegerBits()))).cat(addExact(a, b, isBSub, base)).reinterpret(resultType);
+            return result;
         }
         //first we splice off any trailing bits
         if (aType.getFractionBits() > bcType.getFractionBits()) { //isBSub isCSub in above calculation not relevant to fraction bits so we reuse...
             int bitDiff = aType.getFractionBits() - bcType.getFractionBits();
+            if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && aType.getTotalBits() <= bitDiff+1) { //remembering that the smallest twos complement number is 2 bits
+                aType = KernelBase.dfeFixOffset(aType.getTotalBits()+bitDiff-aType.getTotalBits()+2, -aType.getFractionBits(), aType.getSignMode());
+                a = a.cast(aType);
+            }
             DFEVar asplice = bitDiff > aType.getTotalBits() ? base.constant.zero(KernelBase.dfeUInt(bitDiff - aType.getTotalBits())).cat(a) : a.slice(0, bitDiff);
             List<List<DFEVar>> chunks;
             DFEVar result;
@@ -1019,21 +1029,26 @@ public class Utility {
                 chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
                 result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             }
-            return result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);            
+            result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            return result;            
         } else if (!isBSub && bType.getFractionBits() > acType.getFractionBits()) {
             int bitDiff = bType.getFractionBits() - acType.getFractionBits();
+            if (bitDiff > bType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar bsplice = b.slice(0, bitDiff);
             b = b.slice(bitDiff, bType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() - bitDiff, -(bType.getFractionBits() - bitDiff), bType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
-            return result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);            
+            result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            return result;            
         } else if (!isCSub && cType.getFractionBits() > abType.getFractionBits()) {
             int bitDiff = cType.getFractionBits() - abType.getFractionBits();
+            if (bitDiff > cType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar csplice = c.slice(0, bitDiff);
             c = c.slice(bitDiff, cType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(cType.getTotalBits() - bitDiff, -(cType.getFractionBits() - bitDiff), cType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
-            return result.cat(repeatPipeline(csplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);            
+            result = result.cat(repeatPipeline(csplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+	    return result;
         }
         return doTriAddExact(a, b, c, isBSub, isCSub, base);
     }
@@ -1165,26 +1180,35 @@ public class Utility {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
         DFEFix resultType = getAddExactType(aType, bType, isSub);
         //first non-overlapping variables are handled
-        if (-aType.getFractionBits() > bType.getIntegerBits() && !isSub) {
-            return a.cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bType.getIntegerBits()))).cat(b).reinterpret(resultType);
-        } else if (-bType.getFractionBits() > aType.getIntegerBits() && !isSub) {
-            return b.cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - aType.getIntegerBits()))).cat(a).reinterpret(resultType);
+        if (-aType.getFractionBits() > bType.getIntegerBits() && !isSub && bType.getSignMode() == SignMode.UNSIGNED) {
+            DFEVar result = a.cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bType.getIntegerBits()))).cat(b).reinterpret(resultType);
+            return result;
+        } else if (-bType.getFractionBits() > aType.getIntegerBits() && !isSub && aType.getSignMode() == SignMode.UNSIGNED) {
+            DFEVar result = b.cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - aType.getIntegerBits()))).cat(a).reinterpret(resultType);
+            return result;
         }
         //first we splice off any trailing bits
         int bitDiff = aType.getFractionBits() - bType.getFractionBits();
         if (bitDiff > 0) {
-            DFEVar asplice = a.slice(0, bitDiff);
+            if (aType.getTotalBits() <= bitDiff) throw new IllegalArgumentException();
+            DFEVar asplice = a.slice(0, bitDiff);            
             a = a.slice(bitDiff, aType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - bitDiff, -(aType.getFractionBits() - bitDiff), aType.getSignMode()));
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
-            return result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            return result;
         } else if (bitDiff < 0 && !isSub) {
+            if (bType.getTotalBits() <= -bitDiff) throw new IllegalArgumentException();
             DFEVar bsplice = b.slice(0, -bitDiff);
             b = b.slice(-bitDiff, bType.getTotalBits() + bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() + bitDiff, -(bType.getFractionBits() + bitDiff), bType.getSignMode()));
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
-            return result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
-        } else return doAddExact(a, b, isSub, base);
+            result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            return result;
+        } else {
+            DFEVar result = doAddExact(a, b, isSub, base);
+            return result;
+        }
     }
     public static DFEFix getAddExactType(DFEFix aType, DFEFix bType, boolean isSub) {
         int fracBits = Math.max(aType.getFractionBits(), bType.getFractionBits());
@@ -1229,7 +1253,7 @@ public class Utility {
         //base.optimization.pushEnableBitGrowth(true);
         if (((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED) a = uToSigned(a, base);
         if (((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) b = uToSigned(b, base);
-        DFEVar result = (isSub ? a-b : a+b); //NodeCondAddSub
+        DFEVar result = (isSub ? base.optimization.pipeline(a-b) : base.optimization.pipeline(a+b)); //NodeCondAddSub
         base.optimization.popFixOpMode(MathOps.ADD_SUB);
         //base.optimization.popEnableBitGrowth();
         return result; //((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
@@ -1280,7 +1304,7 @@ public class Utility {
     {
         value = base.optimization.pipeline(value);
         //LUT6 allows 4:1 MUX, LUT6_2 allows 2-bit 2:1 MUX
-        base.optimization.pushNoPipelining();
+        //base.optimization.pushNoPipelining();
         int tot = shift.getType().getTotalBits();
         for (int i = 0; i < tot; i+=2) {
             if (i == tot-1) {
@@ -1290,7 +1314,7 @@ public class Utility {
                     isLeft ? value << (1<<(i+1)) : value >> (1<<(i+1)), isLeft ? value << ((1<<i)+(1<<(i+1))) : value >> ((1<<i)+(1<<(i+1)))); //2+4=LUT6
             }
         }
-        base.optimization.popNoPipelining();
+        //base.optimization.popNoPipelining();
         return value;
     }
     public static void doTestFloatAdd(KernelBase<?> base)
@@ -1322,9 +1346,9 @@ public class Utility {
     {
         //trailing1detect(x) = -x & x = (~x+1) & x
         //trailing1mask(x) = -x | x = (~x+1) | x
-        base.optimization.pushNoPipelining();
+        //base.optimization.pushNoPipelining();
         DFEVar negVar = (~var+1);
-        base.optimization.popNoPipelining();
+        //base.optimization.popNoPipelining();
         int bits = var.getType().getTotalBits();
         //return negVar | var;
         return (negVar.slice(bits/2, bits-bits/2) | var.slice(bits/2, bits-bits/2)).cat(negVar.slice(0, bits/2) | var.slice(0, bits/2));
@@ -1345,49 +1369,49 @@ public class Utility {
     }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
-        DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
+        return isSub ? n1 - n2 : n1 + n2;
+        /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
         int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
         int bigMant = Math.max(n1mant, n2mant);
-        DFEVar swap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) < n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1)),
-            notSwap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) >= n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
+        DFEVar swap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) < n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
+            //notSwap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) >= n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
         DFEVar n1s = swap ? base.optimization.pipeline(n2.slice(0, n1mant - 1)) : base.optimization.pipeline(n1.slice(0, n1mant - 1));
-        base.optimization.pushNoPipelining();
+        //base.optimization.pushNoPipelining();
         DFEVar n2s = swap ? base.optimization.pipeline(n1.slice(0, n1mant - 1)) : base.optimization.pipeline(n2.slice(0, n1mant - 1));
-        base.optimization.popNoPipelining();
+        //base.optimization.popNoPipelining();
         //DFEVar n1s = swap ? n2 : n1, n2s = swap ? n1 : n2;
         DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);        
         DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1s).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED)),
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2s).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
         DFEVar notIsZero1 = n1e !== 0, isZero2 = swap ? (n1e === 0) : (n2e === 0), notIsZero2 = n2e !== 0;
-        DFEVar shift2 = base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e); //shift2 = n1e >= n2e ? n1e - n2e : 0,
+        //r = (v + mask) ^ mask;
+        DFEVar shift2 = swap ? n2e - n1e : n1e - n2e; //shift2 = n1e >= n2e ? n1e - n2e : 0,
                //shift1 = n1e >= n2e ? 0 : n2e - n1e;
         DFEVar resExp = (swap ? base.optimization.pipeline(n2e) : base.optimization.pipeline(n1e)) + (notIsZero1 | notIsZero2).cast(n1e.getType()); //n1e >= n2e ? n1e : n2e;
         DFEVar //shift1trunc = shift1.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1))),
                eqCase = shift2 === bigMant;
-        n2e = n2e.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant)));
-        n1e = n1e.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant)));
-        DFEVar shifts[] = new DFEVar[] { base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e), base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e) };
+        DFEVar shift2redux = shift2.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant)));
+        DFEVar shifts[] = new DFEVar[] { base.optimization.pipeline(shift2redux), base.optimization.pipeline(shift2redux) };
         DFEVector<DFEVar> enc = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bigMant).newInstance(base);
         for (int i = 0; i < bigMant; i++) {
             enc[i] <== shifts[i / 32] === i;
-        }                              
+        }
         DFEVar shift2trunc = enc.reinterpret(KernelBase.dfeUInt(bigMant));
         DFEVar n2msel = (shift2 < bigMant).cat(eqCase);
         DFEVar eqCaseVal = base.optimization.pipeline(n2m>>bigMant), 
-            shiftCaseVal = barrelShifter(n2m, base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e), false, base);
+            shiftCaseVal = barrelShifter(n2m, shift2redux, false, base);
             //doShift(n2m, shift2trunc.slice(0, bigMant), bigMant, 8, false, true, base).reinterpret(n1m.getType())
         //DFEVar n2msel = (shift2 < bigMant).cat(eqCase).cat(shift2 > bigMant);
         DFEVar n1mshifted = n1m; //base.control.oneHotMux((shift1 < bigMant & ~isZero1).cat(shift1 === bigMant & ~isZero1).cat(shift1 > bigMant | isZero1), base.constant.zero(n1m.getType()), n1m>>bigMant, doShift(n1m, shift1trunc, bigMant, 32, false, false, base).reinterpret(n1m.getType())),
-               //n2mshifted = base.control.mux(eqCase.cat(shift2 > bigMant), barrelShifter(n2m, base.control.oneHotMux(notSwap.cat(swap), n2e - n1e, n1e - n2e), false, base), base.optimization.pipeline(n2m>>bigMant), base.constant.zero(n2m.getType()), base.constant.zero(n2m.getType()));
+               //n2mshifted = base.control.mux(eqCase.cat(shift2 > bigMant), barrelShifter(n2m, shift2redux, false, base), base.optimization.pipeline(n2m>>bigMant), base.constant.zero(n2m.getType()), base.constant.zero(n2m.getType()));
         DFEVar stickymask = trailing1mask(n2m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)), base);
-        base.optimization.pushNoPipelining();
+        //base.optimization.pushNoPipelining();
         DFEVar n2mshifted = base.control.mux(n2msel, //base.control.oneHotMux(n2msel,
-                   base.constant.zero(n2m.getType()), eqCaseVal,
-                   shiftCaseVal);
+                   base.constant.zero(n2m.getType()), eqCaseVal, shiftCaseVal);
         DFEVar sticky2 = (isZero2.cat(eqCase.cat(shift2trunc).slice(3, bigMant-2)).reinterpret(KernelBase.dfeUInt(bigMant-1)) & base.constant.zero(KernelBase.dfeBool()).cat(stickymask).reinterpret(KernelBase.dfeUInt(bigMant-1))) !== 0;
-        base.optimization.popNoPipelining();
+        //base.optimization.popNoPipelining();
         DFEVar sticky1 = base.constant.zero(KernelBase.dfeBool()); //oneHotEncode(shift1trunc, bigMant+1, 32, base).reinterpret(KernelBase.dfeUInt(bigMant+1)).slice(3, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)) >= Bitops.trailing1Detect(n1m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2))).reinterpret(KernelBase.dfeUInt(bigMant-2)),
                //sticky2 = base.control.oneHotMux(
                //    isZero2.cat(eqCase.cat(shift2trunc).slice(3, bigMant-2)).reinterpret(KernelBase.dfeUInt(bigMant-1)),
@@ -1424,14 +1448,13 @@ public class Utility {
         //DFEVar sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());         
         n1sign = repeatPipeline(swap ? (isSub ? ~n2sign : base.optimization.pipeline(n2sign)) : base.optimization.pipeline(n1sign), 4, base);
         DFEVar result = n1sign.cat((sumIsZero ? base.constant.zero(resExp.getType()) : base.optimization.pipeline(resExp))+roundOverflow.cast(resExp.getType()) - expAdjust.cast(resExp.getType())).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }
+        //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }*/
         /*if (isSub)
             base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 - n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);
         else
             base.debug.simPrintf(result !== n1 + n2, "add %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 + n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 + n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);*/
         //hex(int.from_bytes((np.fromstring(((0x5FFCC<<61)|0x4762E060FCDF98E5).to_bytes(length=16, byteorder='little'), dtype=np.longdouble)-np.fromstring(((0x5FFE4<<61)|0x0055CB372292309D).to_bytes(length=16, byteorder='little'), dtype=np.longdouble))[0].tobytes(), byteorder='little'))
-        return result;
-        //return n1 + n2;
+        //return result;
     }
     public static DFEVar doFloatMult(DFEVar n1, DFEVar n2, KernelBase<?> base) //default long double multiplication latency is 22, we achieve 7 and less DSPs
     {
@@ -2212,7 +2235,7 @@ public class Utility {
         //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
-        int bufg = 4+16+4+1; //base on number of streams, rather than default of 12
+        int bufg = 12; //base on number of streams, rather than default of 12
         int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
@@ -2242,7 +2265,7 @@ public class Utility {
         System.out.println("TriAddsEnabled: " + opt.getTriAddsEnabled()); //true
         System.out.println("UseAsapScheduler: " + opt.getUseAsapScheduler()); //false
         System.out.println("UseGlobalClockBuffer: " + opt.getUseGlobalClockBuffer()); //false
-        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false        
+        System.out.println("UseGlobalClockLinesRst: " + opt.getUseGlobalClockLinesRst()); //false
     }
     public static void selectSLR(int slr_index, XilinxAlveoU250Manager owner) {
         XilinxAlveoU250Manager.NamedRegion[] availableRegions = XilinxAlveoU250Manager.NamedRegion.values();
