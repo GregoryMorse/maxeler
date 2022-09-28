@@ -55,7 +55,7 @@ public class SumUpPermDFEKernel extends Kernel {
                 DFEVar rawBits = io.input("colProd" + i, dfeRawBits(cplxFixType.getTotalBits() + 1 + bincoeffbits));
                 colProdVals[i] = rawBits.slice(0, cplxFixType.getTotalBits()).reinterpret(cplxFixType);
                 curMplicity = rawBits.slice(cplxFixType.getTotalBits(), bincoeffbits).reinterpret(dfeUInt(bincoeffbits));
-                parity = rawBits.slice(cplxFixType.getTotalBits() + bincoeffbits, 1).reinterpret(dfeBool());                                
+                parity = rawBits.slice(cplxFixType.getTotalBits() + bincoeffbits, 1).reinterpret(dfeBool());
             } else {
                 colProdVals[i] = io.input("colProd" + i, cplxFixType);
             }
@@ -67,6 +67,7 @@ public class SumUpPermDFEKernel extends Kernel {
             colProdVals[i] = sign ? -colProdVals[i] : colProdVals[i]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
             if (isBig) colProdVals[i/2] = colProdVals[i];
         }
+        //debug.simPrintf("%d %X %X %d\n", curMplicity, colProdVals[0].getReal().reinterpret(dfeUInt(colProdVals[0].getReal().getType().getTotalBits())), colProdVals[1].getReal().reinterpret(dfeUInt(colProdVals[1].getReal().getType().getTotalBits())), parity);
         int sumsleft = isBig ? n / 2 : n;
         while (sumsleft > 1) { //sums processed in binary tree
             for (int i = 0; i < sumsleft / 2; i++) {
@@ -83,18 +84,28 @@ public class SumUpPermDFEKernel extends Kernel {
                 sumsleft = sumsleft / 2 + 1;
             } else sumsleft /= 2;
         }
+        //debug.simPrintf("%X %X\n", curMplicity, colProdVals[0].getReal().reinterpret(dfeUInt(colProdVals[0].getReal().getType().getTotalBits())));
         if (useFloat) {
             DFEVar mplicityFloat = curMplicity.cast(dataTypeFix128);
             //colSumFix[0] = colSumFix[0] * mplicityFloat; //mixed point floating point ops not supported
             colProdVals[0] = DFEComplexType.newInstance(this, Utility.doFloatMult(colProdVals[0].getReal(), mplicityFloat, this), Utility.doFloatMult(colProdVals[0].getImaginary(), mplicityFloat, this));
         } else {
             colProdVals[0] = DFEComplexType.newInstance(this, Utility.mulKaratsubaRectangularExact(colProdVals[0].getReal(), curMplicity, totalprec, intBits, this), Utility.mulKaratsubaRectangularExact(colProdVals[0].getImaginary(), curMplicity, totalprec, intBits, this));
-        }        
+        }
+        //N=49; sum([((-1)**(n+1)*((1+1+2*n-(N-2))/N)**N+(-1)**(n)*((2*n-(N-2))/N)**N)*math.comb(N-2, n) for n in range(0, N-1)])/2**(N-1)
+        //N=49; sum([((-1)**(n+1)*((1+1+2*n-(N-2)))**N+(-1)**(n)*((2*n-(N-2)))**N)*math.comb(N-2, n) for n in range(0, N-1)])/(2**(N-1)*N**N)
+        //N=49; sum([((-1)**(n+1)*((1+1+2*n-(N-2))*round((1/N)*2**62))**N+(-1)**n*((2*n-(N-2))*round((1/N)*2**62))**N)*math.comb(N-2, n) for n in range(0, N-1)])/2**(N-1+62*N)
+        //def roundNearestEven(n, d): #round only when for positive numbers guard, round, sticky are 11X or 1X1, or odd 1100
+        //    q, r = divmod(n, d)
+        //    return q + (q & 1) * (2 * r == d) + (2 * r > d)
+        //N=49; sum([((-1)**(n+1)*roundNearestEven((1+1+2*n-(N-2))*2**62, N)**N+(-1)**(n)*roundNearestEven((2*n-(N-2))*2**62,N)**N)*math.comb(N-2, n) for n in range(0, N-1)])/2**(N-1+62*N)
+        //hex(int.from_bytes(struct.pack('d', 1/N),byteorder='little'))
+        //debug.simPrintf("%X\n", colProdVals[0].getReal().reinterpret(dfeUInt(colProdVals[0].getReal().getType().getTotalBits())));
         //colProdVals[0] = tickCount.get(0) ? -colProdVals[0] : colProdVals[0]; //parity
         // sum up permanents
         DFEComplex sum = cplxFix128Type.newInstance(this);
         if (useFloat) {
-            final int addTicks = 6;
+            final int addTicks = 16;
             DFEComplex cursum = tickCount < addTicks+1 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1-addTicks); //mux=1, large bit addition=14 so 15 total
             sum <== Utility.doFloatAdd(cursum, colProdVals[0], false, this);
             //sum <== cursum + colProdVals[0];
@@ -150,6 +161,9 @@ public class SumUpPermDFEKernel extends Kernel {
                                            Utility.addExact(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this).cast(dataTypeFix128));
             sum = DFEComplexType.newInstance(this, Utility.triAddExact(sum.getReal(), firstTick ? constant.zero(dataTypeFix128) : stream.offset(sum.getReal(), -1), secondTick ? constant.zero(dataTypeFix128) : optimization.pipeline(stream.offset(sum.getReal(), -2)), false, false, this).cast(dataTypeFix128),
                                            Utility.triAddExact(sum.getImaginary(), firstTick ? constant.zero(dataTypeFix128) : stream.offset(sum.getImaginary(), -1), secondTick ? constant.zero(dataTypeFix128) : optimization.pipeline(stream.offset(sum.getImaginary(), -2)), false, false, this).cast(dataTypeFix128));
+            //DFEComplex cursum = tickCount === 0 ? constant.zero(cplxFix128Type) : stream.offset(sum, -1); 
+            //sum <== cursum + colProdVals[0];
+            //debug.simPrintf(lastTick, "%X\n", sum.getReal().reinterpret(dfeUInt(sum.getReal().getType().getTotalBits()))); 
             io.output("res", sum.cast(finalCplxFix128Type), finalCplxFix128Type, Utility.repeatPipeline(lastTick, 5, this));
         }
 
