@@ -179,10 +179,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
                        Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
                 totalprec-=3; //save 2 extra bits for inner and outer addition in 3M formula
-                if (totalprec < 80) totalprec = 80;
+                if (totalprec < 77+3) totalprec = 77+3;
+                if (initKernMulti > 1 && totalprec < 92+3) totalprec = 92+3;
                 //if (kernNum == 0) debug.simPrintf("%X %X ", colSumFix[2 * idx].reinterpret(dfeUInt(colSumFix[2 * idx].getType().getTotalBits())), colSumFix[2 * idx + 1].reinterpret(dfeUInt(colSumFix[2 * idx + 1].getType().getTotalBits())));
                 colSumFix[idx] = Utility.doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
-                if (kernNum == 0 && idx == 0) System.out.println(colSumFix[idx].getType());  
+                //if (kernNum == 0 && idx == 0) System.out.println(colSumFix[idx].getType());  
             }
             //if (kernNum == 0) debug.simPrintf("\n");
             //if (limit <= 5) optimization.popDSPFactor();
