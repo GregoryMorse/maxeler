@@ -978,6 +978,19 @@ public class Utility {
         }
         return chunks;
     }
+    public static void verifyTriAddExact(DFEVar verify, DFEVar a, DFEVar b, DFEVar c, boolean isBSub, boolean isCSub, KernelBase<?> base) {
+        DFEFix resultType = getTriAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), (DFEFix) c.getType(), isBSub, isCSub);
+        base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
+            Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
+        //base.optimization.pushEnableBitGrowth(true);
+        DFEVar result;
+        if (isBSub) result = isCSub ? (a - b - c) : (a - b + c);
+        else result = isCSub ? (a + b - c) : (a + b + c);
+        base.optimization.popFixOpMode(MathOps.ADD_SUB);
+        //base.optimization.popEnableBitGrowth();
+        result = (isBSub || isCSub) && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        base.debug.simPrintf(verify.cast(result.getType()) !== result, "%X %X " + isBSub + " " + isCSub + "\n", verify.reinterpret(KernelBase.dfeUInt(verify.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())));
+    }    
     public static DFEVar triAddExact(DFEVar a, DFEVar b, DFEVar c, boolean isBSub, boolean isCSub, KernelBase<?> base) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType(), cType = (DFEFix) c.getType();
         DFEFix resultType = getTriAddExactType(aType, bType, cType, isBSub, isCSub);        
@@ -988,21 +1001,25 @@ public class Utility {
             List<List<DFEVar>> chunks = getBitChunks128(b, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(bcType.getTotalBits()+aType.getTotalBits()-aType.getFractionBits() - bcType.getIntegerBits(), -bcType.getFractionBits(), resultType.getSignMode());
             DFEVar result = repeatPipeline(a, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bcType.getIntegerBits()))).cat(addExact(b, c, isCSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         } else if (aType.getSignMode() == SignMode.UNSIGNED && cType.getSignMode() == SignMode.UNSIGNED && !isCSub && -bType.getFractionBits() > acType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(acType.getTotalBits()+bType.getTotalBits()-bType.getFractionBits() - acType.getIntegerBits(), -acType.getFractionBits(), resultType.getSignMode());
             DFEVar result = (isBSub ? -b : repeatPipeline(b, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - acType.getIntegerBits()))).cat(addExact(a, c, isCSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         } else if (aType.getSignMode() == SignMode.UNSIGNED && bType.getSignMode() == SignMode.UNSIGNED && !isBSub && -cType.getFractionBits() > abType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isBSub, true);
             resultType = KernelBase.dfeFixOffset(abType.getTotalBits()+cType.getTotalBits()-cType.getFractionBits() - abType.getIntegerBits(), -abType.getFractionBits(), resultType.getSignMode());
             DFEVar result = (isCSub ? -c : repeatPipeline(c, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-cType.getFractionBits() - abType.getIntegerBits()))).cat(addExact(a, b, isBSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         }
         //first we splice off any trailing bits
         if (aType.getFractionBits() > bcType.getFractionBits()) { //isBSub isCSub in above calculation not relevant to fraction bits so we reuse...
             int bitDiff = aType.getFractionBits() - bcType.getFractionBits();
+            //DFEVar aOrig = a;
             if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && aType.getTotalBits() <= bitDiff+1) { //remembering that the smallest twos complement number is 2 bits
                 aType = KernelBase.dfeFixOffset(aType.getTotalBits()+bitDiff-aType.getTotalBits()+2, -aType.getFractionBits(), aType.getSignMode());
                 a = a.cast(aType);
@@ -1030,27 +1047,34 @@ public class Utility {
                 result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             }
             result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, aOrig, b, c, isBSub, isCSub, base);
             return result;            
         } else if (!isBSub && bType.getFractionBits() > acType.getFractionBits()) {
             int bitDiff = bType.getFractionBits() - acType.getFractionBits();
+            //DFEVar bOrig = b;
             if (bitDiff > bType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar bsplice = b.slice(0, bitDiff);
             b = b.slice(bitDiff, bType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() - bitDiff, -(bType.getFractionBits() - bitDiff), bType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, bOrig, c, isBSub, isCSub, base);
             return result;            
         } else if (!isCSub && cType.getFractionBits() > abType.getFractionBits()) {
             int bitDiff = cType.getFractionBits() - abType.getFractionBits();
+            //DFEVar cOrig = c;
             if (bitDiff > cType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar csplice = c.slice(0, bitDiff);
             c = c.slice(bitDiff, cType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(cType.getTotalBits() - bitDiff, -(cType.getFractionBits() - bitDiff), cType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             result = result.cat(repeatPipeline(csplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
-	    return result;
+            //if (chunks != null) verifyTriAddExact(result, a, b, cOrig, isBSub, isCSub, base);
+	        return result;
+        } else {
+            DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
+            return result;
         }
-        return doTriAddExact(a, b, c, isBSub, isCSub, base);
     }
     public static DFEFix getTriAddExactType(DFEFix aType, DFEFix bType, DFEFix cType, boolean isBSub, boolean isCSub) {
         int fracBits = Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits());
@@ -1094,7 +1118,9 @@ public class Utility {
                 chunks.get(i-1).get(0) == null && chunks.get(i-1).get(1) != null && chunks.get(i-1).get(2) != null && isBSub && isCSub) result = -result;
             //DFEVar realResult = doTriAddExact(a, b, c, isBSub, isCSub, base, false);
             //base.debug.simPrintf(result.cast(resultType) !== realResult, "%d %d %X %X %X %X %X\n", isBSub ? 1 : 0, isCSub ? 1 : 0, a.reinterpret(KernelBase.dfeUInt(a.getType().getTotalBits())), b.reinterpret(KernelBase.dfeUInt(b.getType().getTotalBits())), c.reinterpret(KernelBase.dfeUInt(c.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), realResult.reinterpret(KernelBase.dfeUInt(realResult.getType().getTotalBits())));
-            return result.cast(resultType); //an extra bit can grow in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both 
+            result = result.cast(resultType); //an extra bit can grow in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both
+            //verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
+            return result; 
         }
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
@@ -1176,6 +1202,17 @@ public class Utility {
         }
         return chunks;
     }
+    public static void verifyAddExact(DFEVar verify, DFEVar a, DFEVar b, boolean isSub, KernelBase<?> base) {
+        DFEFix resultType = getAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), isSub);
+        base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
+            Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
+        //base.optimization.pushEnableBitGrowth(true);
+        DFEVar result = isSub ? (a - b) : (a + b);
+        base.optimization.popFixOpMode(MathOps.ADD_SUB);
+        //base.optimization.popEnableBitGrowth();
+        result = isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        base.debug.simPrintf(verify.cast(result.getType()) !== result, "%X %X " + isSub + "\n", verify.reinterpret(KernelBase.dfeUInt(verify.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())));
+    }
     public static DFEVar addExact(DFEVar a, DFEVar b, boolean isSub, KernelBase<?> base) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
         DFEFix resultType = getAddExactType(aType, bType, isSub);
@@ -1191,19 +1228,23 @@ public class Utility {
         int bitDiff = aType.getFractionBits() - bType.getFractionBits();
         if (bitDiff > 0) {
             if (aType.getTotalBits() <= bitDiff) throw new IllegalArgumentException();
-            DFEVar asplice = a.slice(0, bitDiff);            
+            DFEVar asplice = a.slice(0, bitDiff);
+            //DFEVar aOrig = a;
             a = a.slice(bitDiff, aType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - bitDiff, -(aType.getFractionBits() - bitDiff), aType.getSignMode()));
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
             result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyAddExact(result, aOrig, b, isSub, base);
             return result;
         } else if (bitDiff < 0 && !isSub) {
             if (bType.getTotalBits() <= -bitDiff) throw new IllegalArgumentException();
             DFEVar bsplice = b.slice(0, -bitDiff);
-            b = b.slice(-bitDiff, bType.getTotalBits() + bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() + bitDiff, -(bType.getFractionBits() + bitDiff), bType.getSignMode()));
+            //DFEVar bOrig = b;
+            b = b.slice(-bitDiff, bType.getTotalBits() + bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() + bitDiff, -(bType.getFractionBits() + bitDiff), bType.getSignMode()));            
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
             result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyAddExact(result, a, bOrig, isSub, base);
             return result;
         } else {
             DFEVar result = doAddExact(a, b, isSub, base);
@@ -1236,7 +1277,9 @@ public class Utility {
             DFEVar result = results.get(0);
             int i;
             for (i = 1; i < results.size(); i++) result = addExact(repeatPipeline(results.get(i), i-1, base), result, false, base);
-            return result.cast(resultType); //an extra bit will occur in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both 
+            result = result.cast(resultType); //an extra bit will occur in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both
+            //verifyAddExact(result, a, b, isSub, base);
+            return result; 
         }
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
