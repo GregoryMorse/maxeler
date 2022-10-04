@@ -1,5 +1,7 @@
 package permanentglynn;
 
+//import java.math.BigInteger;
+
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
@@ -21,8 +23,10 @@ public class SumUpPermDFEKernel extends Kernel {
         Utility.MagicBinCoeff.MagicInfo mi = Utility.MagicBinCoeff.get_bincoeff_magic(cols);
         int bincoeffbits = mi.largestBinCoeffBits;
         int tol = MathUtils.ceilLog2(cols); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
-        
+        //int initKernMulti = isBig ? 2 : 1;
+        //int minPrec = 64+1+BigInteger.valueOf(cols * initKernMulti).pow(cols * initKernMulti).divide(Utility.factorial(BigInteger.valueOf(cols * initKernMulti))).bitLength();        
         int errorTol = tol * (isBig ? cols / 2 : cols);
+        //int totalprec = minPrec;
         int totalprec = 64 + errorTol / 2;
         while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
                Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
@@ -33,7 +37,7 @@ public class SumUpPermDFEKernel extends Kernel {
         
         errorTol = tol * cols;
         totalprec = 64 + errorTol / 2;
-        if (totalprec > 242) totalprec = 242; //254 max to avoid tri-add needing triple chunking
+        //if (totalprec > 242) totalprec = 242; //254 max to avoid tri-add needing triple chunking
         while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
                Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
         totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
