@@ -2,6 +2,7 @@ package permanentglynn;
 
 import java.util.ArrayList;
 import java.util.List;
+//import java.math.BigInteger;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
@@ -16,7 +17,6 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
-
 
 
 public class PermanentGlynnDFEKernel extends Kernel {
@@ -37,6 +37,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         Utility.MagicBinCoeff.MagicInfo mi = Utility.MagicBinCoeff.get_bincoeff_magic(cols * initKernMulti);
         int bincoeffbits = mi.largestBinCoeffBits;
         int tol = MathUtils.ceilLog2(cols * initKernMulti); //32x32 to 64x64 is 2^-5 to 2^-6 worst case, average will be half of that, chance of 2 neighboring values both being below worst case not likely
+        //int minPrec = 64+1+BigInteger.valueOf(cols * initKernMulti).pow(cols * initKernMulti).divide(Utility.factorial(BigInteger.valueOf(cols * initKernMulti))).bitLength();
 	    DFEVar curMplicity = null, parity = null;
         // tick count
         DFEVar isCalc = null;
@@ -176,8 +177,11 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //optimization.popFixOpMode(MathOps.MUL);
                 errorTol[idx] = errorTol[2 * idx] + errorTol[2 * idx + 1];
                 int totalprec = 64 + errorTol[idx] / 2;
-                while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
-                       Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+                //int totalprec = Math.min(minPrec, colSumFix[2 * idx].getReal().getType().getTotalBits()+1 + colSumFix[2 * idx + 1].getReal().getType().getTotalBits()+1-1);
+                //if (totalprec == minPrec) {
+                    while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
+                           Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
+                //}
                 totalprec-=3; //save 2 extra bits for inner and outer addition in 3M formula
                 if (totalprec < 77+3) totalprec = 77+3;
                 if (initKernMulti > 1 && totalprec < 92+3) totalprec = 92+3;
