@@ -1077,8 +1077,8 @@ def init_matrix(tmat, chunks, dim):
         negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[0]*dim*2, dtype=np.int8), layout=get_slice4(hemi, 4, 7, 0)))
         #add1_tensor.append(g.from_data(np.array([0]*dim+[1]*dim, dtype=np.int8), layout=get_slice4(hemi, 8, 11, 0)))
         #identmat.append(g.eye(320, layout=get_slice4(hemi, 0, 3, 0)))
-        matmem.append(inst.malloc([hemi], s16rangeW if hemi==WEST else s16rangeE, [0], chunks*dim*2*2 // 16, "B_W" if hemi==WEST else "B_E").reshape(2, ))
-        matzero.append(g.zeros(shape=(16, 320), dtype=g.int8, layout="-1, H1(" + ("W" if hemi==WEST else "E") + "), S16(" + (s16rangeW if hemi==WEST else s16rangeE) + "), B1(0)"))
+        matmem.append(inst.malloc([hemi], s16rangeW if hemi==WEST else s16rangeE, [0], chunks*dim*2*2 // 16, "B_W" if hemi==WEST else "B_E").reshape(chunks*2, dim*2))
+        matzero.append(g.zeros(shape=(16, 320), dtype=g.int8, layout="-1, H1(" + ("W" if hemi==WEST else "E") + "), S16(" + ",".join(str(x) for x in (s16rangeW if hemi==WEST else s16rangeE)) + "), B1(0)"))
     #inst.free_mem_by_key("B_W"); inst.free_mem_by_key("E_W")
     tmatsplit = g.split_vectors(tmat, [chunks*dim*dim//320]*2) #split into WEST and EAST (chunks//2, dim*dim*2//320)
     with g.ResourceScope(name="imagreal", is_buffered=True, time=0) as pred:
@@ -1086,6 +1086,8 @@ def init_matrix(tmat, chunks, dim):
         for hemi in (WEST, EAST):
             imagreal.append(g.permute_inner(tmatsplit[hemi], imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0).write(name="imagreal" + ("W" if hemi==WEST else "E"), layout=get_slice1(hemi, 42, 1)))
     g.add_mem_constraints(tmatsplit, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints(matzero, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints(matzero, tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     tmatjoin = [g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[0], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[0], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320)),
                 g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[1], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[1], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320))] #(chunks//2, dim*2*dim*2//320, 320)
     with g.ResourceScope(name="shifted", is_buffered=True, time=None, predecessors=[pred]):
