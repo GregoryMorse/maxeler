@@ -37,7 +37,7 @@ public class SumUpPermDFEKernel extends Kernel {
         
         errorTol = tol * cols;
         totalprec = 64 + errorTol / 2;
-        //if (totalprec > 242) totalprec = 242; //254 max to avoid tri-add needing triple chunking
+        if (totalprec > 242) totalprec = 242; //254 max to avoid tri-add needing triple chunking
         while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
                Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
         totalprec-=3+1; //save 2 extra bits for inner and outer addition in 3M formula
