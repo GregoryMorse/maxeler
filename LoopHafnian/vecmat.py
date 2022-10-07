@@ -719,7 +719,7 @@ def test_hess_qr():
     qr_hessenberg(mat)
     qr_mgs(mat)
     assert np.allclose(compute_charpoly(mat), np.poly(mat)), (compute_charpoly(mat), np.poly(mat))
-test_hess_qr()
+#test_hess_qr()
 def power_traces(mat):
     charpoly = compute_charpoly(mat)
 #[factoriallcms(n) for n in range(1, 15)]
@@ -914,7 +914,7 @@ def renormalize_doubles(num, exp):
     return num.astype(np.float64) / (2 ** exp.astype(np.float64))
 def vector_complex_to_real(cplx):
     dim = len(cplx)//2
-    return cplx[:dim] + cplx[dim:]*1j
+    return cplx[:,:dim] + cplx[:,dim:]*1j #return cplx[:dim] + cplx[dim:]*1j
 def vector_real_to_complex(vec):
     return np.hstack((vec.real, vec.imag))
 def matrix_real_to_complex(mtx):
@@ -1096,8 +1096,8 @@ def init_matrix(tmat, chunks, dim):
             result_mt_split = flatten_unzip(g.split_vectors(tmatjoin[hemi], [dim//2]*chunks))
             result_mt_split = g.concat_vectors((*result_mt_split[1], *result_mt_split[0]), (chunks*dim//2, 320))
             result_mt = g.bitwise_and(result_mt_split.read(streams=g.SG4[2 if hemi==WEST else 5]), map_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5], time=0)
-            result_mt_split = g.split_vectors(result_mt, [chunks//2*dim//2]*2)
             negalu = g.tensor.create_alu_request([2 if hemi==WEST else 5])
+            result_mt_split = g.split_vectors(result_mt, [chunks//2*dim//2]*2)
             result_mt_split[0] = g.split_vectors(result_mt_split[0], [dim//2]*(chunks//2))
             result_mt_split[1] = g.split_vectors(g.mul(result_mt_split[1], negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [dim//2]*(chunks//2))
             result_mt = g.concat_vectors(flatten_zip(zip(result_mt_split[1], result_mt_split[0])), (chunks*dim//2, 320))
@@ -1112,10 +1112,9 @@ def init_matrix(tmat, chunks, dim):
             #result_mt2=tmatjoin[hemi].read(streams=g.SG8[2 if hemi==WEST else 3], time=500)
             #result_rev_mt = g.shift(tmatjoin[hemi], -dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0], output_streams=g.SG1[0], time=0)
             result.append(g.concat_vectors(flatten_zip(zip(g.split_vectors(result_mt, [1]*(chunks*dim//2)), g.split_vectors(result_mt2, [1]*(chunks*dim//2)))), (chunks*dim, dim*2*2)).write(name="origmat", layout="-1, S16"))
-            #result = g.concat_vectors(imagreal, (chunks*dim*dim*2//320, 320))
-    
+            #result = g.concat_vectors(imagreal, (chunks*dim*dim*2//320, 320))    
     g.resolve_storage_requests()
-    result = g.from_addresses(np.vstack((result[0].addrs.reshape(chunks//2, dim*2), result[1].addrs.reshape(chunks//2, dim*2))).reshape(-1, g.int8.size), 160, g.int8, "truncresult")
+    result = g.from_addresses(np.vstack((result[0].addrs.reshape(chunks//2, dim*2), result[1].addrs.reshape(chunks//2, dim*2))).reshape(-1, g.int8.size), dim*2*2, g.int8, "truncresult")
     return result
 def main():
     import timeit
@@ -1252,11 +1251,9 @@ def main():
         exp_inpmat, normals = normalize_doubles(vector_real_to_complex(originpmat), None, fractionbits)
         inputs[tmat.name] = num_to_bits(normals, chunks).reshape((chunks*dim*dim*2//320, 320))
         res = runner(**inputs)
-        result = bits_to_num(res[result_mt.name].reshape(chunks, dim*2, dim*2).transpose(1, 2, 0).reshape(dim*2*dim*2, chunks), 7) #.reshape(chunks*dim, 320)[:,:160]
+        result = bits_to_num(res[result_mt.name].reshape(chunks, dim*2, dim*2*2)[:,:,:dim*2].transpose(1, 2, 0).reshape(dim*2*dim*2, chunks), 7) #.reshape(chunks*dim, 320)[:,:160]
         results[0] = []
-        #results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat)).reshape(dim*2, dim))
-        results[0].append(np.vstack((vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat).reshape(dim*2,dim*2)[:,:dim]),
-                                     vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat).reshape(dim*2,dim*2)[:,dim:]))))
+        results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpmat).reshape(dim*2,dim*2)))
         """
         results[0] = []
         for i in range(parallel):
@@ -1269,7 +1266,11 @@ def main():
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
-        print(oracleres[i][0], results[i][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print(originpmat[0][0], oracleres[i][0][0], results[i][0][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print(originpmat[40][0], oracleres[i][40][0], results[i][40][0])
+        print(originpmat[0][0], oracleres[i][80][0], results[i][80][0])
+        print(originpmat[40][0], oracleres[i][120][0], results[i][120][0])
+        print([max(abs(oracleres[i][:,j].reshape(-1) - results[i][:,j].reshape(-1))) for j in range(dim)])
         print([max(abs(oracleres[i][j].reshape(-1) - results[i][j].reshape(-1))) for j in range(dim*2)])
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
         #print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
