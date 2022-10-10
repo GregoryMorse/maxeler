@@ -1068,24 +1068,6 @@ class VecMatMul(g.Component):
             #print("Cycle time: ", t+MATMULDELAY+9+10+31+19) #31 through ALU, 19 to write to S43
         g.add_mem_constraints(tvec + final_result, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         return final_result, t+MATMULDELAY+9+10+31+19
-
-class ColumnSwapVector(g.Component):
-    def __init__(self, dim, **kwargs):
-        self.permmap = []
-        for drctn in (WEST, EAST):
-            self.permmap.append(g.from_data(np.array(inst.encode_permute_map([(x&~1)+1-(x&1) for x in range(dim)])).astype(np.uint8), layout=get_slice1(drctn, 43)))
-    def build(self, tvec, inittime = 0):        
-        #g.add_mem_constraints(tmat, self.permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        final_result = []
-        for drctn in (WEST, EAST):
-            dirstr = ("W" if drctn == WEST else "E") + "_t" + str(inittime)
-            SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
-            SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
-            #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
-            with g.ResourceScope(name="colswap" + dirstr, time=inittime): #this should use the distributor, not the slow more resource intensive permutor!
-                final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), self.permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
-        g.add_mem_constraints(tvec, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles 
 def flatten_zip(z): return [item for sublist in z for item in sublist]
 def flatten_unzip(z, interleave=2): return list(zip(*zip(*([iter(z)] * interleave))))
 class UnpackComplexMatrix(g.Component):
@@ -1141,6 +1123,12 @@ class UnpackComplexMatrix(g.Component):
         g.add_mem_constraints(result, tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         result = g.concat_vectors(result, (self.chunks*self.dim*2, 320))
         return result
+class TileMatrix(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+    def build(self, tmat):
+        pass
 class DiagonalExtractor(g.Component):
     def __init__(self, chunks, dim, **kwargs):
         super().__init__(**kwargs)
@@ -1176,6 +1164,28 @@ class DiagonalExtractor(g.Component):
         g.add_mem_constraints(result, self.allones, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         result = g.concat_vectors(result, (self.chunks, self.dim*2))
         return result
+class ColumnSwapVector(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+        self.permmap = []
+        for drctn in (WEST, EAST):
+            self.permmap.append(g.from_data(np.array(inst.encode_permute_map([(x&~1)+1-(x&1) for x in range(dim*2)])).astype(np.uint8), layout=get_slice1(drctn, 42)))
+    def build(self, tvec, inittime = 0):        
+        tvecsplit = g.split_vectors(tvec, [self.chunks//2]*2)
+        final_result = []
+        for drctn in (WEST, EAST):
+            dirstr = ("W" if drctn == WEST else "E") + "_t" + str(inittime)
+            SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
+            SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
+            #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
+            with g.ResourceScope(name="colswap" + dirstr, is_buffered=True, time=inittime): #this should use the distributor, not the slow more resource intensive permutor!
+                #final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), self.permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
+                final_result.append(g.permute_inner(tvecsplit[drctn].read(streams=g.SG1), self.permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43)))
+        g.add_mem_constraints(tvecsplit, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(tvecsplit + final_result, self.permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        final_result = g.concat_vectors(final_result, (self.chunks, self.dim*2))
+        return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles        
 class LoopCorrections(g.Component):
     def __init__(self, chunks, dim, **kwargs):
         super().__init__(**kwargs)
@@ -1191,8 +1201,10 @@ class LoopCorrections(g.Component):
     def build(self, tmat):
         with g.ResourceScope(name="init", is_buffered=True, time=0) as pred:
             result_mt = UnpackComplexMatrix(self.chunks, self.dim).build(tmat)
-        with g.ResourceScope(name="next", is_buffered=True, time=None, predecessors=[pred]):
+        with g.ResourceScope(name="next", is_buffered=True, time=None, predecessors=[pred]) as pred:
             result_mt = DiagonalExtractor(self.chunks, self.dim).build(result_mt)
+        with g.ResourceScope(name="colswap", is_buffered=True, time=None, predecessors=[pred]):
+            result_mt = ColumnSwapVector(self.chunks, self.dim).build(result_mt)
         return result_mt        
 def main():
     import timeit
