@@ -1127,7 +1127,7 @@ class UnpackComplexMatrix(g.Component):
                 #dist_rev = g.distribute_8(tmat, self.map_tensor_rev, distributor_req=6, map_stream_req=g.SG1[0])
                 #result_mt = g.transpose_null(dist, transposer_req=2, stream_order=[0,1,2,3,4,5,6,7]) #.write(name="test", layout="-1, S8")
                 #160 shift is a concurrency of 1...SG1 36 delay in south direction
-                result_mt2 = g.shift(tmatjoin[hemi], self.dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0 if hemi==WEST else 12], output_streams=g.SG1[0 if hemi==WEST else 12], time=500) #.write(name="test", layout="-1, S16")
+                result_mt2 = g.shift(tmatjoin[hemi], self.dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0 if hemi==WEST else 12], output_streams=g.SG1[0 if hemi==WEST else 12], time=212) #.write(name="test", layout="-1, S16")
                 negalu = g.tensor.create_alu_request([0 if hemi==WEST else 7])
                 result_mt2_split = flatten_unzip(g.split_vectors(result_mt2, [self.dim//2]*self.chunks))
                 result_mt2_split[0] = g.split_vectors(g.mul(g.concat_vectors(result_mt2_split[0], (self.chunks//2*self.dim//2, 320)), self.negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[3 if hemi==WEST else 4]), [self.dim//2]*(self.chunks//2))
