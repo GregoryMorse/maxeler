@@ -806,7 +806,7 @@ def groqCounter(): #MXM matmul by constant, VXM comparison by constant, VXM mask
         nextcounter = counter @ np.triu(np.ones((bits, bits), dtype=np.int8), k=1) #count of trailing ones ~CTZ
         print(counter)
         counter = np.where(nextcounter >= np.arange(0, bits, dtype=np.int8), (counter+1)%2, counter)
-groqCounter()
+#groqCounter()
 def groqCounterVXM(): #VXM addition by one, VXM bitwise_and with power of 2 constants, VXM mask to clamp to 1/0 or -1/0
     import numpy as np
     bits = 5
@@ -815,7 +815,7 @@ def groqCounterVXM(): #VXM addition by one, VXM bitwise_and with power of 2 cons
         realcounter = ((counter & np.array([1<<i for i in range(bits)], dtype=np.int64)) != 0).astype(np.int64)
         print(realcounter)
         counter = counter + 1
-groqCounterVXM()
+#groqCounterVXM()
 
 def add64(tensors1, tensors2, issub=False):
     res = []
@@ -950,7 +950,11 @@ def get_slice2(drctn, start, end, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S2(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
 def get_slice1(drctn, start, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S1(" + str(start) + "), B1(" + str(bank) + ")"
-class LoopCorrection(g.Component):
+s16rangeW = list(range(25, 27+1))+list(range(29, 37+1))+list(range(39,42+1))
+s16rangeE = list(range(26, 27+1))+list(range(29,42+1))
+def get_slice16(drctn, slices, bank=0):
+    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
+class VecMatMul(g.Component):
     def __init__(self, chunks, dim, **kwargs):
         super().__init__(**kwargs)
         self.chunks, self.dim = chunks, dim
@@ -1065,106 +1069,131 @@ class LoopCorrection(g.Component):
         g.add_mem_constraints(tvec + final_result, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         return final_result, t+MATMULDELAY+9+10+31+19
 
-def colswap_vector(tvec, tmat, dim, inittime=0):
-    permmap = []
-    for drctn in (WEST, EAST):
-        permmap.append(g.from_data(np.array(inst.encode_permute_map([(x&~1)+1-(x&1) for x in range(dim)])).astype(np.uint8), layout=get_slice1(drctn, 42)))
-    g.add_mem_constraints(tmat, permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    final_result = []
-    for drctn in (WEST, EAST):
-        dirstr = ("W" if drctn == WEST else "E") + "_t" + str(inittime)
-        SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
-        SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
-        #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
-        with g.ResourceScope(name="colswap" + dirstr, time=inittime): #this should use the distributor, not the slow more resource intensive permutor!
-            final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
-    g.add_mem_constraints(tvec, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles 
+class ColumnSwapVector(g.Component):
+    def __init__(self, dim, **kwargs):
+        self.permmap = []
+        for drctn in (WEST, EAST):
+            self.permmap.append(g.from_data(np.array(inst.encode_permute_map([(x&~1)+1-(x&1) for x in range(dim)])).astype(np.uint8), layout=get_slice1(drctn, 43)))
+    def build(self, tvec, inittime = 0):        
+        #g.add_mem_constraints(tmat, self.permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        final_result = []
+        for drctn in (WEST, EAST):
+            dirstr = ("W" if drctn == WEST else "E") + "_t" + str(inittime)
+            SG1_FROM = g.SG1_E if drctn == WEST else g.SG1_W
+            SG1_TO = g.SG1_W if drctn == WEST else g.SG1_E
+            #SG2_TO = g.SG2_W if drctn == WEST else g.SG2_E
+            with g.ResourceScope(name="colswap" + dirstr, time=inittime): #this should use the distributor, not the slow more resource intensive permutor!
+                final_result.extend(g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[drctn*2:drctn*2+2]), self.permmap[drctn], drctn, [SG1_TO[0], SG1_TO[24]], SG1_FROM[0], time=0).write(name="swap" + dirstr, layout=get_slice1(drctn, 43))))
+        g.add_mem_constraints(tvec, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles 
 def flatten_zip(z): return [item for sublist in z for item in sublist]
 def flatten_unzip(z, interleave=2): return list(zip(*zip(*([iter(z)] * interleave))))
-def init_matrix(tmat, chunks, dim):
-    imagpermmap = [g.from_data(np.array(inst.encode_permute_map(list(range(dim, dim*2)) + list(range(dim)) + list(range(dim*3, dim*4)) + list(range(dim*2, dim*3)))).astype(np.uint8), layout=get_slice1(hemi, 43)) for hemi in (WEST, EAST)]
-    #map_tensor = g.from_data(np.array([i for i in range(16)]*dim*2//16 + [16]*dim*2, dtype=np.uint8))
-    #map_tensor_rev = g.from_data(np.array([16]*dim*2 + [i for i in range(16)]*dim*2//16, dtype=np.uint8))
-    map_tensor, map_tensor_rev, negate_tensor, add1_tensor = [], [], [], []
-    s16rangeW = list(range(25, 27+1))+list(range(29, 37+1))+list(range(39,42+1))
-    s16rangeE = list(range(26, 27+1))+list(range(29,42+1))     
-    matmem, matzero = [], []
-    for hemi in (WEST, EAST):
-        map_tensor.append(g.from_data(np.array([[-1]*dim*2+[0]*dim*2], dtype=np.int8), layout=get_slice4(hemi, 0, 3, 0)))
-        #map_tensor_rev.append(g.from_data(np.array([[0]*dim*2+[-1]*dim*2], dtype=np.int8)))
-        negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[0]*dim*2, dtype=np.int8), layout=get_slice4(hemi, 4, 7, 0)))
-        #add1_tensor.append(g.from_data(np.array([0]*dim+[1]*dim, dtype=np.int8), layout=get_slice4(hemi, 8, 11, 0)))        
-        matmem.append(inst.malloc([hemi], s16rangeW if hemi==WEST else s16rangeE, [0], chunks*dim*2*2 // 16, "B_W" if hemi==WEST else "B_E").reshape(chunks*2, dim*2))
-        matzero.append(g.zeros(shape=(16, 320), dtype=g.int8, layout="-1, H1(" + ("W" if hemi==WEST else "E") + "), S16(" + ",".join(str(x) for x in (s16rangeW if hemi==WEST else s16rangeE)) + "), B1(0)"))
-    #inst.free_mem_by_key("B_W"); inst.free_mem_by_key("E_W")
-    tmatsplit = g.split_vectors(tmat, [chunks*dim*dim//320]*2) #split into WEST and EAST (chunks//2, dim*dim*2//320)
-    with g.ResourceScope(name="imagreal", is_buffered=True, time=0) as pred:
-        imagreal = []
+class UnpackComplexMatrix(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+        self.imagpermmap = [g.from_data(np.array(inst.encode_permute_map(list(range(dim, dim*2)) + list(range(dim)) + list(range(dim*3, dim*4)) + list(range(dim*2, dim*3)))).astype(np.uint8), layout=get_slice1(hemi, 43)) for hemi in (WEST, EAST)]
+        #map_tensor = g.from_data(np.array([i for i in range(16)]*dim*2//16 + [16]*dim*2, dtype=np.uint8))
+        #map_tensor_rev = g.from_data(np.array([16]*dim*2 + [i for i in range(16)]*dim*2//16, dtype=np.uint8))
+        #map_tensor_rev, add1_tensor = [], []
+        self.map_tensor, self.negate_tensor = [], []
         for hemi in (WEST, EAST):
-            imagreal.append(g.permute_inner(tmatsplit[hemi], imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0).write(name="imagreal" + ("W" if hemi==WEST else "E"), layout=get_slice1(hemi, 42, 1)))
-    g.add_mem_constraints(tmatsplit, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints(matzero, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints(matzero, tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    tmatjoin = [g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[0], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[0], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320)),
-                g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[1], [dim*dim*2//320]*(chunks//2)), g.split_vectors(imagreal[1], [dim*dim*2//320]*(chunks//2)))), (chunks*dim*dim*2//320, 320))] #(chunks//2, dim*2*dim*2//320, 320)
-    with g.ResourceScope(name="shifted", is_buffered=True, time=None, predecessors=[pred]) as pred:
-        result = []
+            self.map_tensor.append(g.from_data(np.array([[-1]*dim*2+[0]*dim*2], dtype=np.int8), layout=get_slice4(hemi, 0, 3, 0)))
+            #map_tensor_rev.append(g.from_data(np.array([[0]*dim*2+[-1]*dim*2], dtype=np.int8)))
+            self.negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[0]*dim*2, dtype=np.int8), layout=get_slice4(hemi, 4, 7, 0)))
+            #add1_tensor.append(g.from_data(np.array([0]*dim+[1]*dim, dtype=np.int8), layout=get_slice4(hemi, 8, 11, 0)))        
+    def build(self, tmat):
+        tmatsplit = g.split_vectors(tmat, [self.chunks*self.dim*self.dim//320]*2) #split into WEST and EAST (self.chunks//2, dim*dim*2//320)
+        with g.ResourceScope(name="imagreal", is_buffered=True, time=0) as pred:
+            imagreal = []
+            for hemi in (WEST, EAST):
+                imagreal.append(g.permute_inner(tmatsplit[hemi], self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0).write(name="imagreal" + ("W" if hemi==WEST else "E"), layout=get_slice1(hemi, 43, 1))) #layout=get_slice16(hemi, s16rangeW if hemi==WEST else s16rangeE)))
+        #g.add_mem_constraints(tmatsplit, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(self.imagpermmap, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        tmatjoin = [g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[0], [self.dim*self.dim*2//320]*(self.chunks//2)), g.split_vectors(imagreal[0], [self.dim*self.dim*2//320]*(self.chunks//2)))), (self.chunks*self.dim*self.dim*2//320, 320)),
+                    g.concat_vectors(flatten_zip(zip(g.split_vectors(tmatsplit[1], [self.dim*self.dim*2//320]*(self.chunks//2)), g.split_vectors(imagreal[1], [self.dim*self.dim*2//320]*(self.chunks//2)))), (self.chunks*self.dim*self.dim*2//320, 320))] #(self.chunks//2, self.dim*2*self.dim*2//320, 320)
+        with g.ResourceScope(name="shifted", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            result = []
+            for hemi in (WEST, EAST):
+                result_mt_split = flatten_unzip(g.split_vectors(tmatjoin[hemi], [self.dim//2]*self.chunks))
+                result_mt_split = g.concat_vectors((*result_mt_split[1], *result_mt_split[0]), (self.chunks*self.dim//2, 320))
+                result_mt = g.bitwise_and(result_mt_split.read(streams=g.SG4[2 if hemi==WEST else 5]), self.map_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=[1 if hemi==WEST else 6], output_streams=g.SG4[2 if hemi==WEST else 5], time=0)
+                negalu = g.tensor.create_alu_request([2 if hemi==WEST else 5])
+                result_mt_split = g.split_vectors(result_mt, [self.chunks//2*self.dim//2]*2)
+                result_mt_split[0] = g.split_vectors(result_mt_split[0], [self.dim//2]*(self.chunks//2))
+                result_mt_split[1] = g.split_vectors(g.mul(result_mt_split[1], self.negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [self.dim//2]*(self.chunks//2))
+                result_mt = g.concat_vectors(flatten_zip(zip(result_mt_split[1], result_mt_split[0])), (self.chunks*self.dim//2, 320))
+                #dist = g.distribute_8(tmat, self.map_tensor, distributor_req=4, map_stream_req=g.SG1[0], time=0)
+                #dist_rev = g.distribute_8(tmat, self.map_tensor_rev, distributor_req=6, map_stream_req=g.SG1[0])
+                #result_mt = g.transpose_null(dist, transposer_req=2, stream_order=[0,1,2,3,4,5,6,7]) #.write(name="test", layout="-1, S8")
+                #160 shift is a concurrency of 1...SG1 36 delay in south direction
+                result_mt2 = g.shift(tmatjoin[hemi], self.dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0 if hemi==WEST else 12], output_streams=g.SG1[0 if hemi==WEST else 12], time=500) #.write(name="test", layout="-1, S16")
+                negalu = g.tensor.create_alu_request([0 if hemi==WEST else 7])
+                result_mt2_split = flatten_unzip(g.split_vectors(result_mt2, [self.dim//2]*self.chunks))
+                result_mt2_split[0] = g.split_vectors(g.mul(g.concat_vectors(result_mt2_split[0], (self.chunks//2*self.dim//2, 320)), self.negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[3 if hemi==WEST else 4]), [self.dim//2]*(self.chunks//2))
+                result_mt2 = g.concat_vectors(flatten_zip(zip(result_mt2_split[0], result_mt2_split[1])), (self.chunks*self.dim//2, 320))
+                #result_mt2=tmatjoin[hemi].read(streams=g.SG8[2 if hemi==WEST else 3], time=500)
+                #result_rev_mt = g.shift(tmatjoin[hemi], -self.dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0], output_streams=g.SG1[0], time=0)
+                result.append(g.concat_vectors(flatten_zip(zip(g.split_vectors(result_mt, [1]*(self.chunks*self.dim//2)), g.split_vectors(result_mt2, [1]*(self.chunks*self.dim//2)))), (self.chunks*self.dim, self.dim*2*2)).write(name="origmat" + str(hemi), layout=get_slice16(hemi, s16rangeW if hemi==WEST else s16rangeE, 1)))
+                #result = g.concat_vectors(imagreal, (self.chunks*self.dim*self.dim*2//320, 320))    
+        #g.resolve_storage_requests() #g.update_resources(pred, "shifted")
+        #result = g.from_addresses(np.vstack((result[0].addrs.reshape(self.chunks//2, self.dim*2), result[1].addrs.reshape(self.chunks//2, self.dim*2))).reshape(-1, g.int8.size), 320, g.int8, "truncresult")
+        g.add_mem_constraints(result, tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        result = g.concat_vectors(result, (self.chunks*self.dim*2, 320))
+        return result
+class DiagonalExtractor(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim      
+        self.identmat, self.allones = [], []
         for hemi in (WEST, EAST):
-            result_mt_split = flatten_unzip(g.split_vectors(tmatjoin[hemi], [dim//2]*chunks))
-            result_mt_split = g.concat_vectors((*result_mt_split[1], *result_mt_split[0]), (chunks*dim//2, 320))
-            result_mt = g.bitwise_and(result_mt_split.read(streams=g.SG4[2 if hemi==WEST else 5]), map_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5], time=0)
-            negalu = g.tensor.create_alu_request([2 if hemi==WEST else 5])
-            result_mt_split = g.split_vectors(result_mt, [chunks//2*dim//2]*2)
-            result_mt_split[0] = g.split_vectors(result_mt_split[0], [dim//2]*(chunks//2))
-            result_mt_split[1] = g.split_vectors(g.mul(result_mt_split[1], negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [dim//2]*(chunks//2))
-            result_mt = g.concat_vectors(flatten_zip(zip(result_mt_split[1], result_mt_split[0])), (chunks*dim//2, 320))
-            #dist = g.distribute_8(tmat, map_tensor, distributor_req=4, map_stream_req=g.SG1[0], time=0)
-            #dist_rev = g.distribute_8(tmat, map_tensor_rev, distributor_req=6, map_stream_req=g.SG1[0])
-            #result_mt = g.transpose_null(dist, transposer_req=2, stream_order=[0,1,2,3,4,5,6,7]) #.write(name="test", layout="-1, S8")
-            #160 shift is a concurrency of 1...SG1 36 delay in south direction
-            result_mt2 = g.shift(tmatjoin[hemi], dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0 if hemi==WEST else 12], output_streams=g.SG1[0 if hemi==WEST else 12], time=500) #.write(name="test", layout="-1, S16")
-            result_mt2_split = flatten_unzip(g.split_vectors(result_mt2, [dim//2]*chunks))
-            result_mt2_split[0] = g.split_vectors(g.mul(g.concat_vectors(result_mt2_split[0], (chunks//2*dim//2, 320)), negate_tensor[hemi].read(streams=g.SG4[1 if hemi==WEST else 4]), alus=negalu, output_streams=g.SG4[2 if hemi==WEST else 5]), [dim//2]*(chunks//2))
-            result_mt2 = g.concat_vectors(flatten_zip(zip(result_mt2_split[0], result_mt2_split[1])), (chunks*dim//2, 320))
-            #result_mt2=tmatjoin[hemi].read(streams=g.SG8[2 if hemi==WEST else 3], time=500)
-            #result_rev_mt = g.shift(tmatjoin[hemi], -dim*2, permutor_id=hemi, shift_src=[inst.NEW_SRC], dispatch_set=inst.DispatchSet.SET_0, input_streams=g.SG1[0], output_streams=g.SG1[0], time=0)
-            result.append(g.concat_vectors(flatten_zip(zip(g.split_vectors(result_mt, [1]*(chunks*dim//2)), g.split_vectors(result_mt2, [1]*(chunks*dim//2)))), (chunks*dim, dim*2*2)).write(name="origmat" + str(hemi), layout="H1(" + ("W" if hemi==WEST else "E") + "), -1, S16"))
-            #result = g.concat_vectors(imagreal, (chunks*dim*dim*2//320, 320))    
-    #g.resolve_storage_requests() #g.update_resources(pred, "shifted")
-    #result = g.from_addresses(np.vstack((result[0].addrs.reshape(chunks//2, dim*2), result[1].addrs.reshape(chunks//2, dim*2))).reshape(-1, g.int8.size), 320, g.int8, "truncresult")
-    result = g.concat_vectors(result, (chunks*dim*2, 320))
-    return result
-def extract_diag(tmat, chunks, dim):
-    tmatsplit = g.split_vectors(tmat, [chunks*dim*2*dim*2//320]*2)
-    identmat, allones = [], []
-    for hemi in (WEST, EAST):
-        identmat.append(g.from_data(np.hstack((np.tile(np.eye(dim, dtype=np.int8), (2, 1)), np.zeros((dim*2, dim*3), dtype=np.int8))), layout=get_slice4(hemi, 0, 3, 0)))
-        allones.append(g.ones((1,320), dtype=g.int8, layout=get_slice1(hemi, 43, 0)))
-    with g.ResourceScope(name="identmask", is_buffered=True, time=0) as pred:
-        result = []
-        for hemi in (WEST, EAST):
-            result_mt = g.mask(
-                g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(g.concat_vectors([identmat[hemi]] * (chunks//2), (dim*chunks, 320)), [1]*(chunks*dim)), 16)), (chunks*dim, 320)).read(streams=g.SG4[1 if hemi==WEST else 4]),
-                g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi], [1]*(chunks*dim)), 16)), (chunks*dim, 320)).read(streams=g.SG4[2 if hemi==WEST else 5], time=0),
-                alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5])
-            result_mt = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(result_mt, [1]*(chunks*dim)), chunks*dim//16)), (chunks*dim, 320))
-            result.append(result_mt.write(layout="H1(" + ("W" if hemi==WEST else "E") + "), -1, S16"))
-    with g.ResourceScope(name="extract", is_buffered=True, time=None, predecessors=[pred]) as pred:
-        for hemi in (WEST, EAST):
-            result_mt = result[hemi].read(streams=g.SG16)
-            mxm_rq = g.tensor.create_mxm_request(planes=[hemi*2+0], num_planes=1)
-            result_mt = g.split_vectors(result_mt, [dim*2] * (chunks//2))
-            for i in range(chunks//2):
-                with g.ResourceScope(name="matmulextract" + str(i), is_buffered=False, time=10+i*30):
-                    iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0)
-                    result_mt[i] = extract_int8([allones[hemi].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)])
-            result[hemi] = g.concat_vectors(result_mt, (chunks//2,dim*2)).write(name="origvec" + str(hemi), layout="H1(" + ("W" if hemi==WEST else "E") + "), -1, S1")
-    #g.resolve_storage_requests()
-    #result = g.from_addresses(np.vstack((result[0].addrs.reshape(chunks//2, 1), result[1].addrs.reshape(chunks//2, 1))).reshape(-1, g.int8.size), 320, g.int8, "vecresult")
-    result = g.concat_vectors(result, (chunks, dim*2))
-    return result
-            
+            self.identmat.append(g.from_data(np.hstack((np.tile(np.eye(dim, dtype=np.int8), (2, 1)), np.zeros((dim*2, dim*3), dtype=np.int8))), layout=get_slice4(hemi, 0, 3, 0)))
+            self.allones.append(g.ones((1,320), dtype=g.int8, layout=get_slice1(hemi, 43, 0)))
+    def build(self, tmat):
+        tmatsplit = g.split_vectors(tmat, [self.chunks*self.dim*2*self.dim*2//320]*2)
+        with g.ResourceScope(name="identmask", is_buffered=True, time=0) as pred:
+            result = []
+            for hemi in (WEST, EAST):
+                result_mt = g.mask(
+                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(g.concat_vectors([self.identmat[hemi]] * (self.chunks//2), (self.dim*self.chunks, 320)), [1]*(self.chunks*self.dim)), 16)), (self.chunks*self.dim, 320)).read(streams=g.SG4[1 if hemi==WEST else 4]),
+                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi], [1]*(self.chunks*self.dim)), 16)), (self.chunks*self.dim, 320)).read(streams=g.SG4[2 if hemi==WEST else 5], time=0),
+                    alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5])
+                result_mt = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(result_mt, [1]*(self.chunks*self.dim)), self.chunks*self.dim//16)), (self.chunks*self.dim, 320))
+                result.append(result_mt.write(layout=get_slice16(hemi, s16rangeW if hemi==WEST else s16rangeE, 0)))
+        g.add_mem_constraints(tmatsplit, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        with g.ResourceScope(name="extract", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            for hemi in (WEST, EAST):
+                result_mt = result[hemi].read(streams=g.SG16)
+                mxm_rq = g.tensor.create_mxm_request(planes=[hemi*2+0], num_planes=1)
+                result_mt = g.split_vectors(result_mt, [self.dim*2] * (self.chunks//2))
+                for i in range(self.chunks//2):
+                    with g.ResourceScope(name="matmulextract" + str(i), is_buffered=False, time=10+i*30):
+                        iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0)
+                        result_mt[i] = extract_int8([self.allones[hemi].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)])
+                result[hemi] = g.concat_vectors(result_mt, (self.chunks//2,self.dim*2)).write(name="origvec" + str(hemi), layout=get_slice1(hemi, 43, 1))
+        #g.resolve_storage_requests()
+        #result = g.from_addresses(np.vstack((result[0].addrs.reshape(self.chunks//2, 1), result[1].addrs.reshape(self.chunks//2, 1))).reshape(-1, g.int8.size), 320, g.int8, "vecresult")
+        g.add_mem_constraints(result, self.allones, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        result = g.concat_vectors(result, (self.chunks, self.dim*2))
+        return result
+class LoopCorrections(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+        #self.matmem, self.matzero = [], []
+        #for hemi in (WEST, EAST):
+            #self.matmem.append(inst.malloc([hemi], s16rangeW if hemi==WEST else s16rangeE, [0], chunks*dim*2*2 // 16, "B_W" if hemi==WEST else "B_E").reshape(chunks*2, dim*2))
+            #self.matmem.append(g.tensor.create_storage_request(layout="S16(" + ",".join(str(x) for x in (s16rangeW if hemi==WEST else s16rangeE)) + "), B1(0)"))
+            #self.matzero.append(g.zeros(shape=(16, 320), dtype=g.int8, layout="-1, H1(" + ("W" if hemi==WEST else "E") + "), S16(" + ",".join(str(x) for x in (s16rangeW if hemi==WEST else s16rangeE)) + "), B1(0)"))
+        #g.add_mem_constraints(matzero, imagreal, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #g.add_mem_constraints(matzero, tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #inst.free_mem_by_key("B_W"); inst.free_mem_by_key("E_W")
+    def build(self, tmat):
+        with g.ResourceScope(name="init", is_buffered=True, time=0) as pred:
+            result_mt = UnpackComplexMatrix(self.chunks, self.dim).build(tmat)
+        with g.ResourceScope(name="next", is_buffered=True, time=None, predecessors=[pred]):
+            result_mt = DiagonalExtractor(self.chunks, self.dim).build(result_mt)
+        return result_mt        
 def main():
     import timeit
     dim = 80 #dim X dim complex matrix
@@ -1191,8 +1220,10 @@ def main():
     #t1 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="A")
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
-    WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
-    WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
+    #WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
+    WEST8_0, WEST8_1 = list(range(25, 27+1))+list(range(29, 33+1)), list(range(34, 37+1))+list(range(39, 42+1))
+    EAST8_0, EAST8_1 = list(range(26, 27+1))+list(range(29, 34+1)), list(range(35, 42+1))
+    #WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
     """
     tzeromat = []
     for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
@@ -1210,7 +1241,14 @@ def main():
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     """
-    tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S8(" + WEST8_1 + "), B1(0)")
+    #tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S8(" + WEST8_1 + "), B1(0)")
+    tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ",
+        storage_req=g.tensor.create_storage_request(storage=g.tensor.Storage(address_tensor=np.hstack((inst.malloc(hemis=["W"], slices=s16rangeW, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_W").flatten(),
+            inst.malloc(hemis=["W"], slices=WEST8_1, banks=[0], count=1, reserve_key="INP_WEXT").flatten(),
+            inst.malloc(hemis=["E"], slices=s16rangeE, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_E").flatten(),
+            inst.malloc(hemis=["E"], slices=EAST8_1, banks=[0], count=1, reserve_key="INP_EEXT").flatten())).reshape(1, 1, chunks*dim*dim*2//320, 1))))
+    #tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S16(" + WEST16 + "), B1(0)")
+    #chunks*dim*dim*2//320==400, 400//16==25, the W will get 1 more than the E bank...
     
     #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
     #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
@@ -1220,16 +1258,13 @@ def main():
     #print_utils.infoc(
     #    "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     #)
-    #lc = LoopCorrection(chunks, dim*2*2)
-    #lc = LoopCorrection(chunks, dim*2)
+    #lc = VecMatMul(chunks, dim*2*2)
+    #lc = VecMatMul(chunks, dim*2)
     #result_mt, t = lc.build(tvec, tmat)
     #result_mt, t = lc.build(tveccombine, tmatcombine)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
     #result_mt, _ = lc.build(result_mt, tmat, t)
-    with g.ResourceScope(name="init", is_buffered=True, time=0) as pred:
-        result_mt = init_matrix(tmat, chunks, dim)
-    with g.ResourceScope(name="next", is_buffered=True, time=None, predecessors=[pred]):
-        result_mt = extract_diag(result_mt, chunks, dim)
+    result_mt = LoopCorrections(chunks, dim).build(tmat)
     g.resolve_storage_requests()
 
     print_utils.infoc("\nCompiling model ...")
