@@ -930,6 +930,7 @@ def num_to_bits(num, chunks):
     res, shp = np.repeat(num[np.newaxis,...], chunks, axis=0), [chunks] + [1] * len(num.shape)
     return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8)
 def bits_to_num(num, offset=7):
+    #assert all((num[:,-1] == 0) | (num[:,-1] == -1)) 
     return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[1]-offset, 7), axis=1) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension, fractionbits=63):
     mantissas, exponents = np.frexp(num)
@@ -1236,15 +1237,15 @@ class AdvanceGrayCode(g.Component):
     def build(self, tvec, tmat):
         pass
 class LoopCorrections(g.Component):
-    def __init__(self, chunks, dim, **kwargs):
+    def __init__(self, chunks, dim, matpow, **kwargs):
         super().__init__(**kwargs)
-        self.chunks, self.dim = chunks, dim
+        self.chunks, self.dim, self.matpow = chunks, dim, (dim//2-1) if matpow is None else matpow
     def build(self, tmat, diag, cx_diag):
         results_mt = [diag]
         VMM = VecMatMul(self.chunks, self.dim)
         pred = None
         diag_mt = diag
-        for i in range(self.dim//2-1):
+        for i in range(self.matpow):
             with g.ResourceScope(name="vecmatmul", is_buffered=True, time=0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
                 diag_mt, t = VMM.build(diag_mt, tmat)
                 results_mt.append(diag_mt)
@@ -1279,7 +1280,8 @@ def main():
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
-      
+    matpow = 1 #dim//2-1
+
     max_dim_bits = (dim*2).bit_length() #complex domain
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
     signedhighbit = bitsize * 2 - 1 + max_dim_bits
@@ -1324,20 +1326,20 @@ def main():
     for group in (0,):
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-            tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
-            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane))) 
+            tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
+            tmat.append(g.input_tensor(shape=(chunks*dim*2*2, dim*2*2), dtype=g.int8, name="B" + dirstr + str(group), layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane))) 
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     
     #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
     #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
-    parallel = len(tvec)
+    parallel = len(tvec)*2
 
     #print_utils.infoc(
     #    "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     #)
-    result_mt = LoopCorrections(chunks, dim*2).build(tmat, tvec, None)
+    result_mt = LoopCorrections(chunks, dim*2*2, matpow).build(tmat, tvec, None)
     #lc = VecMatMul(chunks, dim*2*2)
     #result_mt, t = lc.build(tvec, tmat)
     #result_mt, t = lc.build(tveccombine, tmatcombine)
@@ -1349,11 +1351,11 @@ def main():
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=result_mt, #tree_conflicts=True, inspect_raw=True
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=False, result_tensor=result_mt, #tree_conflicts=True, inspect_raw=True
     )
     json_file = g.write_visualizer_data("mm_fp")
     print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
-    g.check_stream_conflicts(json_file)
+    #g.check_stream_conflicts(json_file)
 
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
@@ -1393,7 +1395,7 @@ def main():
         oracleres[0] = []
         for i in range(parallel):
             w = originpvec[i].astype(np.clongdouble)
-            for _ in range(dim//2-1):
+            for _ in range(matpow):
                 w = w @ B[i]
             oracleres[0].append(w.astype(np.cdouble))
         #oracleres[0] = [np.vstack((originpmat.conjugate(), originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:]]
@@ -1408,22 +1410,27 @@ def main():
     def actual():
         fractionbits = 63
         inputs = {}
-        exp_inpvecs, exp_inpmats = [], []
-        for i in range(parallel):
-            exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0, fractionbits)
-            inpvec = num_to_bits(normals, chunks)
-            exp_inpmat, normals = normalize_doubles(matrix_real_to_complex(originpmat[i]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+        exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+        for i in range(parallel//2):
             #exp_inpmat, normals = np.zeros((dim*2,), dtype=np.int32), np.rint(np.ldexp(matrix_real_to_complex(originpmat[i]), fractionbits)).astype(np.int64)
-            inpmat = num_to_bits(normals, chunks)
-            inputs[tvec[i].name] = inpvec
-            inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
-            exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
+            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
+            inpvec0 = num_to_bits(normals, chunks)
+            exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+            inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
+            inpvec1 = num_to_bits(normals, chunks)
+            exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+            inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))            
+            inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+            exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
         res = runner(**inputs)
         results[0] = []
-        for i in range(parallel):
-            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
+        for i in range(parallel//2):
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
             #the results come back truncating the lower 7*(chunks-1) bits
-            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i]).reshape(1, dim*2)).reshape(dim))
+            results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], fractionbits - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2]*matpow).reshape(1, dim*2)).reshape(dim))
+            results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], fractionbits - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1]*matpow).reshape(1, dim*2)).reshape(dim))
         """
         #exp_inpmat, normals = normalize_doubles(vector_real_to_complex(originpmat), None, fractionbits)
         #inputs[tmat.name] = num_to_bits(normals, chunks).reshape((chunks*dim*dim*2//320, 320))
@@ -1440,10 +1447,9 @@ def main():
     g.reset_program_context()
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
-    print(oracleres, results)
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
-        print(oracleres[i][0], results[i][0])
+        if i == 0: print(oracleres[i], results[i])
         #print(originpmat[0][0], oracleres[i][0][0], results[i][0][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
         #print(originpmat[40][0], oracleres[i][40][0], results[i][40][0])
         #print(originpmat[0][0], oracleres[i][80][0], results[i][80][0])
@@ -1452,6 +1458,7 @@ def main():
         #print([max(abs(oracleres[i][j].reshape(-1) - results[i][j].reshape(-1))) for j in range(dim*2)])
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
         print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
+        print((np.frexp(oracleres[i].real)[1]).astype(np.int64), (np.frexp(results[i].real)[1]).astype(np.int64))
         if max_atol <= 0.001:
             print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
         else:
