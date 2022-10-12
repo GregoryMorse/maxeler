@@ -1275,7 +1275,93 @@ class LoopCorrectionsInit(g.Component):
             result_mt, resdiag_mt, rescxdiag_mt = GrayCodeInitVectorMatrix(self.chunks, self.dim).build(full_mt, diag_mt, cx_diag_mt)
         g.resolve_storage_requests()
         return result_mt[0]
+def vecMulDemo():
+    import timeit
+    dim = 80 #dim X dim complex matrix
+    bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
+    chunks = (bitsize + 7-1)//7 #ceiling division to be exact
+    matpow = 1 #dim//2-1
+    tvec, tmat = [], []
+    for group in (0,):
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
+            tmat.append(g.input_tensor(shape=(chunks*dim*2*2, dim*2*2), dtype=g.int8, name="B" + dirstr + str(group), layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane))) 
+    g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+    g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+
+    parallel = len(tvec)*2
+    result_mt = LoopCorrections(chunks, dim*2*2, matpow).build(tmat, tvec, None)
+
+    print_utils.infoc("\nCompiling model ...")
+    # Compile program to generate IOP. Also generate groqview JSON dump file and
+    # check for potential stream conflicts.
+    iop_file = g.compile(
+        base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=False, result_tensor=result_mt, #tree_conflicts=True, inspect_raw=True
+    )
+    json_file = g.write_visualizer_data("mm_fp")
+    print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
+    #g.check_stream_conflicts(json_file)    
+
+    originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
+    originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+
+    oracleres = [None]
+    def oracle():
+        B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
+        oracleres[0] = []
+        for i in range(parallel):
+            w = originpvec[i].astype(np.clongdouble)
+            for _ in range(matpow):
+                w = w @ B[i]
+            oracleres[0].append(w.astype(np.cdouble))
+    toracle = timeit.timeit(oracle, number=10)/10
+    print_utils.infoc("\nRunning on HW ...")
+    np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
+    # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
+    runner = g.create_tsp_runner(iop_file)
+    results = [None]
+    def actual():
+        fractionbits = 63
+        inputs = {}
+        exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+        for i in range(parallel//2):
+            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
+            inpvec0 = num_to_bits(normals, chunks)
+            exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+            inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
+            inpvec1 = num_to_bits(normals, chunks)
+            exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+            inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))            
+            inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+            exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
+        res = runner(**inputs)
+        results[0] = []
+        for i in range(parallel//2):
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+            #the results come back truncating the lower 7*(chunks-1) bits
+            results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], fractionbits - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2]*matpow).reshape(1, dim*2)).reshape(dim))
+            results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], fractionbits - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1]*matpow).reshape(1, dim*2)).reshape(dim))
+    tactual = timeit.timeit(actual, number=1)/1
+    g.reset_program_context()
+    print("CPU Time", toracle, "Groq Time", tactual)
+    oracleres, results = oracleres[0], results[0]
+    for i in range(parallel):
+        print_utils.infoc("\nComparing results with oracle ...")
+        if i == 0: print(oracleres[i], results[i])
+        max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
+        print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
+        print((np.frexp(oracleres[i].real)[1]).astype(np.int64), (np.frexp(results[i].real)[1]).astype(np.int64))
+        if max_atol <= 0.001:
+            print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
+        else:
+            print_utils.err(
+                f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
+            )
 def main():
+    vecMulDemo()
     import timeit
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
@@ -1320,26 +1406,15 @@ def main():
     #for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
     #    tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
     #    #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
-    """
-    """
-    tvec, tmat = [], []
-    for group in (0,):
-        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-            tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
-            tmat.append(g.input_tensor(shape=(chunks*dim*2*2, dim*2*2), dtype=g.int8, name="B" + dirstr + str(group), layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane))) 
-    g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     
     #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
     #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
-    parallel = len(tvec)*2
 
     #print_utils.infoc(
     #    "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     #)
-    result_mt = LoopCorrections(chunks, dim*2*2, matpow).build(tmat, tvec, None)
+    
     #lc = VecMatMul(chunks, dim*2*2)
     #result_mt, t = lc.build(tvec, tmat)
     #result_mt, t = lc.build(tveccombine, tmatcombine)
