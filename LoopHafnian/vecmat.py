@@ -94,9 +94,9 @@ def prod(x, y): return x * y
 def multiprod(l):
   import functools
   return functools.reduce(prod, l)
-def powerset(s): #empty set handled as special case
+def powerset(s, useEmpty=False): #empty set handled as special case
   import itertools
-  for i in range(1, len(s)+1):
+  for i in range(0 if useEmpty else 1, len(s)+1):
     yield from itertools.combinations(s, i)
 def matix(mat, ix): return [[mat[i][j] for j in ix] for i in ix]
  
@@ -292,6 +292,8 @@ def matMul(mat1, mat2):
       for k in range(n1):
         out[i][j] += mat1[i][k] * mat2[k][j]
   return out
+def transpose(mat):
+  return [[mat[i][j] for i in range(len(mat))] for j in range(len(mat[0]))]
 def directSum(mat1, mat2):
   m1, n1, m2, n2 = len(mat1), len(mat1[0]), len(mat2), len(mat2[0])
   return ([[r[i] if i < len(r) else 0 for i in range(n1+n2)] for r in mat1] +
@@ -725,17 +727,20 @@ def power_traces(mat):
     charpoly = compute_charpoly(mat)
 #[factoriallcms(n) for n in range(1, 15)]
 #https://arxiv.org/pdf/1805.12498.pdf
-def hafnian_eff(mat, isInt=False, isLoop=False):
+def hafnian_eff(mat, isInt=False, isLoop=False, isGlynn=False):
   if (len(mat) & 1) != 0: return 0
   n = len(mat) // 2
   import functools, math
   if isInt: fact = math.factorial(n); nfact = multiprod([fact] * n)
   if n == 0: return 1
   h = 0
-  for X in powerset(list(range(0, n))):
-    AZ = matix(mat, [z for y in ((2*x, 2*x+1) for x in X) for z in y])
-    colswap = functools.reduce(directSum, [[[0, 1], [1, 0]]] * len(X))
-    B = matMul(colswap, AZ) #paper says column swap but this is a row swap AZ*colswap is a column swap, does not matter as long as loop correction is opposite to it
+  colswap = functools.reduce(directSum, [[[0, 1], [1, 0]]] * (len(mat)//2))
+  AZ = matMul(colswap, mat) #paper says column swap but this is a row swap AZ*colswap is a column swap, does not matter as long as loop correction is opposite to it
+  vt = [[AZ[i][i^1]] for i in range(len(AZ))]#; vt = matMul(colswap, vt)
+  for X in powerset(list(range(1 if isGlynn else 0, n)), useEmpty=isGlynn):
+    if isGlynn: #B=np.zeros((n*2,n*2), dtype=mat.dtype); B = np.negative(mat, where=[z for y in ((x in X, x in X) for x in range(n)) for z in y], out=AZ)
+        B = [[-col if i//2 in X else col for i, col in enumerate(row)] for row in AZ]
+    else: B = matix(AZ, [z for y in ((2*x, 2*x+1) for x in X) for z in y])
     #minpoly = minimalPolynomial(B)
     #characteristicPolynomial(B)
     tr = [sum(B[i][i] for i in range(len(B)))]
@@ -747,18 +752,17 @@ def hafnian_eff(mat, isInt=False, isLoop=False):
       tr.append(sum(Bpow[i][i] for i in range(len(Bpow))))
       #tr.append(-sum((0 if j >= len(minpoly) else minpoly[j])*tr[j + len(tr)-len(minpoly)+1] for j in range(len(minpoly)-1)))
     if isLoop:
-      v = [[AZ[i][i] for i in range(len(AZ))]]; vt = [[x] for x in v[0]]
-      loopCorrections = [] #[matMul(matMul(v,  colswap), vt)[0][0]]
-      #w = [[v[0][i^1]] for i in range(len(v[0]))]
-      w = matMul(colswap, vt)
+      v = [[B[i^1][i] for i in range(len(B))]]
+      w = vt if isGlynn else [z for y in ((vt[2*x], vt[2*x+1]) for x in X) for z in y] #matMul(colswap, vt)
+      wacc = [w]
       #paper has mistake that (XB)^(k-1) where it should be (B^(k-1))X
       #v*B^(k-1)X*v^T=v*(XAz)^(k-1)X*v^T=v*Az^(k-1)*X^k*v^T
-      while len(loopCorrections) != n:
-        #Bpow = B if len(loopCorrections) == 1 else matMul(Bpow, B)
-        #loopCorrections.append(matMul(matMul(v, matMul(Bpow, colswap)), vt)[0][0])
-        loopCorrections.append(matMul(v, w)[0][0])
-        w = matMul(B, w)
-        #w = matMul(AZ, w); w = matMul(colswap, w)
+      while len(wacc) != n:
+        w = matMul(B, w) #w = transpose(matMul(transpose(w), transpose(B)))
+        wacc.append(w)
+      wacc = [[wacc[j][i][0] for j in range(len(wacc))] for i in range(len(w))]
+      loopCorrections = matMul(v, wacc)[0]
+       
       if isInt: lbda = [0] + [tr[k-1] * (fact // k) + loopCorrections[k-1] * fact for k in range(1, n+1)]
       else: lbda = [0] + [tr[k-1] / (2 * k) + loopCorrections[k-1] / 2 for k in range(1, n+1)]
     else:
@@ -774,7 +778,8 @@ def hafnian_eff(mat, isInt=False, isLoop=False):
       if len(poly) > n:
         if isInt: z += ((poly[n] * fixfact) * powfact) << (n-j)
         else: z += poly[n] / fixfact
-    h += -z if ((n - len(X)) & 1) != 0 else z
+    h += -z if ((len(X) if isGlynn else (n - len(X))) & 1) != 0 else z
+  if isGlynn: h = (h >> (n-1)) if isInt else (h / 2**(n-1))
   return (h >> n) // (fact * nfact) if isInt else h
 def run_haftest():
     haftest = (
@@ -790,14 +795,14 @@ def run_haftest():
       #assert hafnian(mat) == sol
       #import numpy as np;from thewalrus import hafnian
       #print(hafnian(np.array(mat), loop=True))
-      assert hafnian_perf_match(mat, isLoop=True) == hafnian_eff(mat, isInt=isinstance(sol, int), isLoop=True), (hafnian_perf_match(mat, isLoop=True), hafnian_eff(mat, isInt=isinstance(sol, int), isLoop=True))
       assert hafnian_perf_match(mat) == sol
       assert hafnian_ryser_time(mat) == sol
       assert hafnian_eff(mat, isInt=isinstance(sol, int)) == sol, (hafnian_eff(mat), sol)
+      assert hafnian_perf_match(mat, isLoop=True) == hafnian_eff(mat, isInt=isinstance(sol, int), isLoop=True), (hafnian_perf_match(mat, isLoop=True), hafnian_eff(mat, isInt=isinstance(sol, int), isLoop=True))
       #print(timeit.timeit(lambda: hafnian_ryser_time(mat), number=1000))
       #print(timeit.timeit(lambda: hafnian_eff(mat, isInt=True), number=1000))
       print(sol)
-#run_haftest()
+#run_haftest(); assert False
 
 def groqCounter(): #MXM matmul by constant, VXM comparison by constant, VXM mask to clamp to 1/0 or -1/0
     import numpy as np
@@ -1143,19 +1148,27 @@ class GrayCodeInitVectorMatrix(g.Component):
         self.chunks, self.dim = chunks, dim
         self.zeros = []
         for hemi in (WEST, EAST):
-            self.zeros.append(g.zeros(shape=(1,dim*2*2), dtype=g.int8, layout=get_slice4(hemi, 4, 7, 1)))
-    def build(self, tmat, tvec):
-        tmatsplit = [g.split_vectors(x, [self.chunks*self.dim*2*self.dim//320]*2) for x in tmat]
-        with g.ResourceScope(name="graycodeinitscope", is_buffered=True, time=0) as pred:
-            result = []
-            for gcode in range(2*2):
-                for tile in range(2):
-                    rows = tmatsplit[tile].read(g.SG4[2 if hemi==WEST else 5], time=0)
-                    for hemi in (WEST, EAST):
-                        f = g.sub if (gcode & 1) != 0 else g.add 
-                        f(self.zeros[hemi], rows, alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5])
-                result.append()
-        return result
+            self.zeros.append(g.zeros(shape=(4,dim*2*2), dtype=g.int8, layout=get_slice4(hemi, 4, 7, 1)))
+    def build(self, tmat, diagvec, cxdiagvec):
+        tmatsplit = g.split_vectors(tmat, [self.chunks*self.dim*2*self.dim*2*2//320]*2)
+        diagvecsplit = g.split_vectors(diagvec, [self.chunks//2]*2)
+        cxdiagvecsplit = g.split_vectors(cxdiagvec, [self.chunks//2]*2)
+        result, diagresult, cxdiagresult = [], [], []
+        pred = None
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            dirstr = ("W" if drctn == WEST else "E") + str(plane)
+            with g.ResourceScope(name="graycodeinitscope" + dirstr, is_buffered=True, time=0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
+                rowres = []
+                for hemi in (WEST, EAST):
+                    rows = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi], [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)).read(g.SG4[2 if hemi==WEST else 5], time=0)
+                    #rows = tmatsplit[hemi].read(g.SG4[2 if hemi==WEST else 5], time=0)
+                    f = g.add #g.sub if (gcode & 1) != 0 else g.add
+                    rows = f(g.concat_vectors([self.zeros[hemi]]*(self.chunks*self.dim*2//4), (self.dim*self.chunks*2, 320)).read(streams=g.SG4[3 if hemi==WEST else 4]), rows, alus=[0 if hemi==WEST else 7], output_streams=g.SG4[3 if hemi==WEST else 4])
+                    rows = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(rows, [1]*(self.chunks*self.dim*2)), self.chunks*self.dim*2//16)), (self.chunks*self.dim*2, 320))
+                    rowres.append(rows)
+                result.append(g.concat_vectors(rowres, (self.chunks*self.dim*2*2, self.dim*2*2)).write(name="initmat" + dirstr, layout=get_slice16(drctn, s16rangeW if drctn==WEST else s16rangeE, plane)))
+        g.add_mem_constraints(result, result + tmatsplit, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        return result, diagresult, cxdiagresult
 class DiagonalExtractor(g.Component):
     def __init__(self, chunks, dim, **kwargs):
         super().__init__(**kwargs)
@@ -1215,8 +1228,34 @@ class ColumnSwapVector(g.Component):
         g.add_mem_constraints(tvecsplit + final_result, self.permmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)        
         final_result = g.concat_vectors(final_result, (self.chunks, self.dim*2*2))
         #g.resolve_storage_requests()
-        return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles        
+        return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles
+class AdvanceGrayCode(g.Component):        
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+    def build(self, tvec, tmat):
+        pass
 class LoopCorrections(g.Component):
+    def __init__(self, chunks, dim, **kwargs):
+        super().__init__(**kwargs)
+        self.chunks, self.dim = chunks, dim
+    def build(self, tmat, diag, cx_diag):
+        results_mt = [diag]
+        VMM = VecMatMul(self.chunks, self.dim)
+        pred = None
+        diag_mt = diag
+        for i in range(self.dim//2-1):
+            with g.ResourceScope(name="vecmatmul", is_buffered=True, time=0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
+                diag_mt, t = VMM.build(diag_mt, tmat)
+                results_mt.append(diag_mt)
+        flat = [y for x in results_mt for y in x]
+        g.add_mem_constraints(flat, flat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
+        #    finresult_mt = VecMatMul(self.chunks, self.dim).build(cx_diag, results_mt)
+        #with g.ResourceScope(name="advgraycode", is_buffered=True, time=None, predecessors=[pred]) as pred:
+        #    tmat, cx_diag = AdvanceGrayCode(self.chunks, self.dim).build(cx_diag, tmat)
+        return results_mt[-1]
+class LoopCorrectionsInit(g.Component):
     def __init__(self, chunks, dim, **kwargs):
         super().__init__(**kwargs)
         self.chunks, self.dim = chunks, dim
@@ -1228,11 +1267,13 @@ class LoopCorrections(g.Component):
         g.add_mem_constraints([tmat], [tilemat_mt], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         full_mt = g.concat_vectors(flatten_zip(zip(g.split_vectors(mat_mt, [self.dim*2]*self.chunks), g.split_vectors(tilemat_mt, [self.dim*2]*self.chunks))), (self.chunks*self.dim*2*2, 320))
         with g.ResourceScope(name="next", is_buffered=True, time=None, predecessors=[pred]) as pred:
-            result_mt = DiagonalExtractor(self.chunks, self.dim).build(full_mt)
-        with g.ResourceScope(name="colswap", is_buffered=True, time=None, predecessors=[pred]):
-            result_mt = ColumnSwapVector(self.chunks, self.dim).build(result_mt)
+            diag_mt = DiagonalExtractor(self.chunks, self.dim).build(full_mt)
+        with g.ResourceScope(name="colswap", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            cx_diag_mt = ColumnSwapVector(self.chunks, self.dim).build(diag_mt)
+        with g.ResourceScope(name="gcodeinit", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            result_mt, resdiag_mt, rescxdiag_mt = GrayCodeInitVectorMatrix(self.chunks, self.dim).build(full_mt, diag_mt, cx_diag_mt)
         g.resolve_storage_requests()
-        return result_mt        
+        return result_mt[0]
 def main():
     import timeit
     dim = 80 #dim X dim complex matrix
@@ -1260,14 +1301,23 @@ def main():
     #t2 = g.input_tensor(shape=(1, dim), dtype=g.uint16, name="B")
     #slices (16, 20, 24, and 28 on the east, and 16, 20, 24, 28, and 38 on the west) are reserved for system use
     #WEST8_0, WEST8_1, EAST8_0, EAST8_1 = "25-27,29-33", "34-37,39-42", "26-27,29-34", "35-42"
+    """
     WEST8_0, WEST8_1 = list(range(25, 27+1))+list(range(29, 33+1)), list(range(34, 37+1))+list(range(39, 42+1))
     EAST8_0, EAST8_1 = list(range(26, 27+1))+list(range(29, 34+1)), list(range(35, 42+1))
+    #tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S8(" + WEST8_1 + "), B1(0)")
+    tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ",
+        storage_req=tensor.create_storage_request(storage=tensor.Storage(address_tensor=np.hstack((inst.malloc(hemis=["W"], slices=s16rangeW, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_W", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
+            inst.malloc(hemis=["W"], slices=WEST8_1, banks=[0], count=1, reserve_key="INP_WEXT", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
+            inst.malloc(hemis=["E"], slices=s16rangeE, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_E", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
+            inst.malloc(hemis=["E"], slices=EAST8_1, banks=[0], count=1, reserve_key="INP_EEXT", alloc_type=tensor.utypes.AllocationType.INPUT).flatten())).reshape(1, 1, chunks*dim*dim*2//320, 1))))
+    #chunks*dim*dim*2//320==400, 400//16==25, the W will get 1 more than the E bank...
+    result_mt = LoopCorrectionsInit(chunks, dim).build(tmat)
+    """ 
     #WEST16, EAST16 = "25-27,29-37,39-42", "26-27,29-42" #(10-15,17-19,21-23,25-27,29-37,39-40,42-43)
-    """
-    tzeromat = []
-    for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-        tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
-        #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
+    #tzeromat = []
+    #for drctn, group in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+    #    tzeromat.append(g.concat_vectors([g.zeros(shape=(1,dim*2), dtype=g.int8, layout="H1("  + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks*dim*2, (chunks*dim*2, dim*2)))
+    #    #tzeromat.append(g.concat_vectors([g.zeros(shape=(dim*2,dim*2), dtype=g.int8, layout="H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(0)")]*chunks, (chunks*dim*2, dim*2)))
     """
     """
     tvec, tmat = [], []
@@ -1275,36 +1325,24 @@ def main():
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
             tvec.append(g.input_tensor(shape=(chunks, dim*2), dtype=g.int8, name="A" + dirstr + str(group), layout=get_slice1(drctn, 43, plane)))
-            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S16(" + (WEST16 if drctn==WEST else EAST16) + "), B1(" + str(plane) + ")")) 
-            #tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=f"H1(" + ("W" if drctn==WEST else "E") + "), -1, S8(" + ((WEST8_1 if group==1 else WEST8_0) if drctn==WEST else (EAST8_1 if group==1 else EAST8_0)) + "), B1(" + str(plane) + ")"))
+            tmat.append(g.input_tensor(shape=(chunks*dim*2, dim*2), dtype=g.int8, name="B" + dirstr + str(group), layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane))) 
     g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    g.add_mem_constraints(tmat+tzeromat, tmat+tzeromat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-    """
-    #tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S8(" + WEST8_1 + "), B1(0)")
-    tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ",
-        storage_req=tensor.create_storage_request(storage=tensor.Storage(address_tensor=np.hstack((inst.malloc(hemis=["W"], slices=s16rangeW, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_W", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
-            inst.malloc(hemis=["W"], slices=WEST8_1, banks=[0], count=1, reserve_key="INP_WEXT", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
-            inst.malloc(hemis=["E"], slices=s16rangeE, banks=[0], count=chunks*dim*dim*2//320//2//16, reserve_key="INP_E", alloc_type=tensor.utypes.AllocationType.INPUT).flatten(),
-            inst.malloc(hemis=["E"], slices=EAST8_1, banks=[0], count=1, reserve_key="INP_EEXT", alloc_type=tensor.utypes.AllocationType.INPUT).flatten())).reshape(1, 1, chunks*dim*dim*2//320, 1))))
-    #tmat = g.input_tensor(shape=(chunks*dim*dim*2//320, 320), dtype=g.int8, name="AZ", layout=f"H2(W,E), -1, S16(" + WEST16 + "), B1(0)")
-    #chunks*dim*dim*2//320==400, 400//16==25, the W will get 1 more than the E bank...
+    g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
     
     #tveccombine = [g.concat_inner_splits([tvec[i], tvec[i+4]]) for i in range(4)]
     #tmatcombine = [g.concat_inner_splits([g.concat_vectors([tmat[i], tzeromat[i&~1]], (chunks*dim*2*2, dim*2)), g.concat_vectors([tmat[i+4], tzeromat[(i&~1)+1]], (chunks*dim*2*2, dim*2))]) for i in range(4)]
     #print(tveccombine[0].shape, tveccombine[0].physical_shape, tmatcombine[0].shape, tmatcombine[0].physical_shape)
-    parallel = 1 #len(tvec)
+    parallel = len(tvec)
 
     #print_utils.infoc(
     #    "\nBuilding FP16 matmul for input tensors " + ", ".join(["{} x {}".format(tvec[i].shape, tmat[i].shape) for i in range(parallel)])
     #)
+    result_mt = LoopCorrections(chunks, dim*2).build(tmat, tvec, None)
     #lc = VecMatMul(chunks, dim*2*2)
-    #lc = VecMatMul(chunks, dim*2)
     #result_mt, t = lc.build(tvec, tmat)
     #result_mt, t = lc.build(tveccombine, tmatcombine)
     #result_mt = colswap_vector(tvec, tmat, dim*2)
     #result_mt, _ = lc.build(result_mt, tmat, t)
-    result_mt = LoopCorrections(chunks, dim).build(tmat)
-    #for x in ("INP_W", "INP_WEXT", "INP_E", "INP_EEXT"): inst.free_mem_by_key(x)    
     
 
     print_utils.infoc("\nCompiling model ...")
@@ -1314,15 +1352,15 @@ def main():
         base_name="mm_fp", gen_vis_data=False, check_stream_conflicts=True, result_tensor=result_mt, #tree_conflicts=True, inspect_raw=True
     )
     json_file = g.write_visualizer_data("mm_fp")
-    print("Have a GroqView:\n", "    % groqview --port 8888", json_file)
+    print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
     g.check_stream_conflicts(json_file)
 
     # Generate random input data and oracle for comparision.
     #inp1 = np.random.randint(0, (1<<16)-1, size=t1.shape, dtype=np.uint16)
     #inp2 = np.random.randint(0, (1<<16)-1, size=t2.shape, dtype=np.uint16)
-    #originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
-    #originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
-    originpmat = unitary_group.rvs(dim)
+    originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]
+    originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+    #originpmat = unitary_group.rvs(dim)
     #import functools
     #originpmat = [np.array(functools.reduce(directSum, [[[0, 1], [1, 0]]] * (dim//2))) for _ in range(parallel)]
     """
@@ -1342,7 +1380,7 @@ def main():
     #originpvec[1] = np.full((dim,), -((1 << 53)-1000000)/(1<<53)+2j)
     #originpmat[1] = np.full((dim, dim), -((1 << 53)-1000000)/(1<<53)+2j)
     #originpvec[0], originpmat[0] = originpvec[1], originpmat[1]
-    #originpvec = np.ones((dim,), dtype=np.float64)
+    #originpvec[0] = np.ones((dim,), dtype=np.float64) * 5
     #originpmat = np.ones((dim, dim), dtype=np.float64)
 
     #originpvec, originpmat = np.ones(dim, dtype=np.float64), np.ones((dim, dim), dtype=np.float64)
@@ -1350,10 +1388,16 @@ def main():
     #originpmat = np.random.randint(-(1<<63), (1<<63)-1, size=(dim, dim), dtype=np.int64)
     oracleres = [None]
     def oracle():
-        #B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-        #oracleres[0] = [((originpvec[i].astype(np.clongdouble) @ B[i]) @ B[i]).astype(np.cdouble) for i in range(parallel)]
+        B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
+        #oracleres[0] = [(originpvec[i].astype(np.clongdouble) @ B[i]).astype(np.cdouble) for i in range(parallel)]
+        oracleres[0] = []
+        for i in range(parallel):
+            w = originpvec[i].astype(np.clongdouble)
+            for _ in range(dim//2-1):
+                w = w @ B[i]
+            oracleres[0].append(w.astype(np.cdouble))
         #oracleres[0] = [np.vstack((originpmat.conjugate(), originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:]]
-        oracleres[0] = [np.hstack((np.vstack((originpmat, originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:], np.vstack((originpmat, originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:]))]
+        #oracleres[0] = [np.hstack((np.vstack((originpmat, originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:], np.vstack((originpmat, originpmat.imag + originpmat.real*1j)).diagonal()[np.newaxis,:]))]
     toracle = timeit.timeit(oracle, number=10)/10
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
@@ -1364,7 +1408,6 @@ def main():
     def actual():
         fractionbits = 63
         inputs = {}
-        """
         exp_inpvecs, exp_inpmats = [], []
         for i in range(parallel):
             exp_inpvec, normals = normalize_doubles(vector_real_to_complex(originpvec[i]), 0, fractionbits)
@@ -1375,9 +1418,15 @@ def main():
             inputs[tvec[i].name] = inpvec
             inputs[tmat[i].name] = inpmat.reshape((chunks*dim*2, dim*2))
             exp_inpvecs.append(exp_inpvec); exp_inpmats.append(exp_inpmat)
+        res = runner(**inputs)
+        results[0] = []
+        for i in range(parallel):
+            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
+            #the results come back truncating the lower 7*(chunks-1) bits
+            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i]).reshape(1, dim*2)).reshape(dim))
         """
-        exp_inpmat, normals = normalize_doubles(vector_real_to_complex(originpmat), None, fractionbits)
-        inputs[tmat.name] = num_to_bits(normals, chunks).reshape((chunks*dim*dim*2//320, 320))
+        #exp_inpmat, normals = normalize_doubles(vector_real_to_complex(originpmat), None, fractionbits)
+        #inputs[tmat.name] = num_to_bits(normals, chunks).reshape((chunks*dim*dim*2//320, 320))
         res = runner(**inputs)
         #result = bits_to_num(res[result_mt.name].reshape(chunks, dim*2, dim*2*2)[:,:,:dim*2].transpose(1, 2, 0).reshape(dim*2*dim*2, chunks), 7) #.reshape(chunks*dim, 320)[:,:160]
         #results[0] = []
@@ -1387,23 +1436,19 @@ def main():
         results[0].append(np.hstack((vector_complex_to_real(renormalize_doubles(result[:dim*2], fractionbits - 7 - exp_inpmat).reshape(1,dim*2)),
                                 vector_complex_to_real(renormalize_doubles(result[dim*2:], fractionbits - 7 - exp_inpmat).reshape(1,dim*2)))))
         """
-        results[0] = []
-        for i in range(parallel):
-            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2).transpose(), 7)
-            #the results come back truncating the lower 7*(chunks-1) bits
-            results[0].append(vector_complex_to_real(renormalize_doubles(result, fractionbits - 7 - exp_inpvecs[i] - exp_inpmats[i])))
-        """
     tactual = timeit.timeit(actual, number=1)/1
+    g.reset_program_context()
     print("CPU Time", toracle, "Groq Time", tactual)
     oracleres, results = oracleres[0], results[0]
+    print(oracleres, results)
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
-        print(originpmat[0], oracleres[i][0], results[i][0])
-        print(originpmat[0][0], oracleres[i][0][0], results[i][0][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
+        print(oracleres[i][0], results[i][0])
+        #print(originpmat[0][0], oracleres[i][0][0], results[i][0][0]) #numpy uses "round to nearest even" while Groq strategy uses "round to negative infinity", last bit only should be different
         #print(originpmat[40][0], oracleres[i][40][0], results[i][40][0])
         #print(originpmat[0][0], oracleres[i][80][0], results[i][80][0])
         #print(originpmat[40][0], oracleres[i][120][0], results[i][120][0])
-        print([max(abs(oracleres[i][:,j].reshape(-1) - results[i][:,j].reshape(-1))) for j in range(dim*2)])
+        #print([max(abs(oracleres[i][:,j].reshape(-1) - results[i][:,j].reshape(-1))) for j in range(dim*2)])
         #print([max(abs(oracleres[i][j].reshape(-1) - results[i][j].reshape(-1))) for j in range(dim*2)])
         max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
         print((np.frexp(oracleres[i].real)[0]*(1<<53)).astype(np.int64), (np.frexp(results[i].real)[0]*(1<<53)).astype(np.int64))
