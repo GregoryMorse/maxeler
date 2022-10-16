@@ -968,6 +968,8 @@ s16rangeW = list(range(25, 27+1))+list(range(29, 37+1))+list(range(39,42+1))
 s16rangeE = list(range(26, 27+1))+list(range(29,42+1))
 def get_slice16(drctn, slices, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
+def alu_for_hemi(alu, drctn): return alu if drctn==WEST else 15-alu
+def sg4_for_hemi(alu, drctn, sg4): return sg4 if drctn==WEST else (sg4+2 if ((alu//4) % 2) != 0 else sg4-2) % 8 
 def dump_groq_doc():
     import os, pydoc, pkgutil, groq, importlib, functools, shutil
     try: os.mkdir("groqdoc")
@@ -1018,7 +1020,9 @@ class VecNormalize(g.Component):
                     "floatbias": g.from_data(np.array([[127-1]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="floatbias" + dirstr),
                     "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 8, 11, drctn), name="initexp" + dirstr), 
                     "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 12, 15, drctn), name="subval" + dirstr), 
-                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftexp" + dirstr) 
+                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftexp" + dirstr),
+                    #"tilemaskleft": g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="tilemaskleft" + dirstr),
+                    #"tilemaskright": g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="tilemaskright" + dirstr),
                 })                
             else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvn.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
             g.add_mem_constraints([self.consts[drctn]["signshift"]], [self.consts[drctn]["initexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1048,12 +1052,12 @@ class VecNormalize(g.Component):
             t = inittime+plane*max(self.dim//16, 10)
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
             with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=t) as pred:
-                x = curvec[0].read(streams=g.SG4[1], time=0)
+                x = curvec[0].read(streams=g.SG4[0], time=0)
                 #x = g.bitwise_xor(x, g.right_shift(x, self.consts[drctn]["signshift"])).reinterpret(g.uint32)
-                x = g.bitwise_xor(x,
-                    g.right_shift(x.vxm_identity(), self.consts[drctn]["signshift"].read(streams=g.SG4[0]), alus=[0] if drctn == WEST else [15], output_streams=g.SG4[2 if drctn == WEST else 6]),
-                    alus=[1] if drctn == WEST else [14]
-                    ).reinterpret(g.uint32)            
+                x = g.bitwise_xor(g.vxm_identity(x, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[1]),
+                    g.right_shift(x, self.consts[drctn]["signshift"].read(streams=g.SG4[2 if drctn == WEST else 6]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0]),
+                    alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn, 2)]
+                    ).reinterpret(g.uint32)
                 #x = g.reduce_max(x)
                 #bias = g.mask(x, self.consts[drctn]["floatbias"])
                 #x = g.sub(g.right_shift(g.sub(g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32), self.consts[drctn]["subval"]).reinterpret(g.uint32), self.consts[drctn]["shiftexp"]), bias)
@@ -1081,13 +1085,13 @@ class VecNormalize(g.Component):
         originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
         inputs, exp_inpvecs = {}, []
         for i in range(parallel//2):
-            fractionbits = 69-i
-            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
+            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, 63-i*2)
             inpvec0 = num_to_bits(normals, chunks)
-            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
+            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, 63-i*2-1)
             inpvec1 = num_to_bits(normals, chunks)
             inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
             exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
+        print(inputs)
         res = runner(**inputs)
         print(res)
         def actual(): pass
