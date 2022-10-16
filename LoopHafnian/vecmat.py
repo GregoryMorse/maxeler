@@ -968,6 +968,32 @@ s16rangeW = list(range(25, 27+1))+list(range(29, 37+1))+list(range(39,42+1))
 s16rangeE = list(range(26, 27+1))+list(range(29,42+1))
 def get_slice16(drctn, slices, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
+def dump_groq_doc():
+    import os, pydoc, pkgutil, groq, importlib, functools, shutil
+    try: os.mkdir("groqdoc")
+    except FileExistsError: pass
+    os.chdir("groqdoc")
+    def import_submodules(package, recursive=True):
+        if isinstance(package, str):
+            package = importlib.import_module(package)
+        results = {}
+        for loader, name, is_pkg in pkgutil.walk_packages(package.__path__):
+            full_name = package.__name__ + '.' + name
+            try:
+                results[full_name] = importlib.import_module(full_name)
+            except ModuleNotFoundError: continue
+            if recursive and is_pkg:
+                results.update(import_submodules(full_name))
+        return results    
+    for module in import_submodules(groq):
+        if not module.startswith("groq."): continue
+        attr = functools.reduce(lambda x, y: getattr(x, y), [groq] + module.split('.')[1:])
+        setattr(attr, "__all__", dir(attr))
+        pydoc.writedoc(module)
+    groq.__all__ = dir(groq)
+    pydoc.writedoc(groq)
+    os.chdir("..")
+    shutil.make_archive("groqdoc", 'zip', "groqdoc")
 def compile_unit_test(name):
     print_utils.infoc("\nCompiling model ...")
     # Compile program to generate IOP. Also generate groqview JSON dump file and
@@ -990,11 +1016,15 @@ class VecNormalize(g.Component):
                 self.consts.append({
                     "signshift": g.from_data(np.array([[32-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="signshift" + dirstr),
                     "floatbias": g.from_data(np.array([[127-1]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="floatbias" + dirstr),
-                    "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 16, 19, drctn), name="initexp" + dirstr), 
-                    "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 20, 23, drctn), name="subval" + dirstr), 
-                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 24, 27, drctn), name="shiftexp" + dirstr) 
-                })
+                    "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 8, 11, drctn), name="initexp" + dirstr), 
+                    "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 12, 15, drctn), name="subval" + dirstr), 
+                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftexp" + dirstr) 
+                })                
             else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvn.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
+            g.add_mem_constraints([self.consts[drctn]["signshift"]], [self.consts[drctn]["initexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["subval"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints([self.consts[drctn]["subval"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.logtworeqs, self.normreqs = [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             self.logtworeqs.append([])
@@ -1019,11 +1049,17 @@ class VecNormalize(g.Component):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
             with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=t) as pred:
                 x = curvec[0].read(streams=g.SG4[1], time=0)
-                x = g.reduce_max(g.bitwise_xor(x, g.right_shift(x, self.consts[drctn]["signshift"])).reinterpret(g.uint32))
-                bias = g.mask(x, self.consts[drctn]["floatbias"])
-                x = g.sub(g.right_shift(g.sub(g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32), self.consts[drctn]["subval"]).reinterpret(g.uint32), self.consts[drctn]["shiftexp"]), bias)
+                #x = g.bitwise_xor(x, g.right_shift(x, self.consts[drctn]["signshift"])).reinterpret(g.uint32)
+                x = g.bitwise_xor(x,
+                    g.right_shift(x.vxm_identity(), self.consts[drctn]["signshift"].read(streams=g.SG4[0]), alus=[0] if drctn == WEST else [15], output_streams=g.SG4[2 if drctn == WEST else 6]),
+                    alus=[1] if drctn == WEST else [14]
+                    ).reinterpret(g.uint32)            
+                #x = g.reduce_max(x)
+                #bias = g.mask(x, self.consts[drctn]["floatbias"])
+                #x = g.sub(g.right_shift(g.sub(g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32), self.consts[drctn]["subval"]).reinterpret(g.uint32), self.consts[drctn]["shiftexp"]), bias)
                 result.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
-                resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
+                #resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
+                resnorm.append(tnorm[drctn*2+plane])
                 #g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]))
         return result, resnorm
     def unit_test(chunks, dim):
@@ -1034,6 +1070,8 @@ class VecNormalize(g.Component):
                 dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
                 tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int32, name="inp" + dirstr, layout=get_slice4(drctn, 4, 7, plane)))
                 tnorm.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr, layout=get_slice1(drctn, 0, plane)))
+            g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints(tnorm, tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             parallel = len(tvec)*2
             result_mt, resnorm_mt = vn.build(tvec, tnorm)
             for x in result_mt: x.set_program_output()
@@ -1048,12 +1086,13 @@ class VecNormalize(g.Component):
             inpvec0 = num_to_bits(normals, chunks)
             exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
             inpvec1 = num_to_bits(normals, chunks)
-            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))            
+            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
             exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
         res = runner(**inputs)
         print(res)
         def actual(): pass
         def oracle(): pass
+        assert False
 class VecMatMul(g.Component):
     def __init__(self, chunks, dim, lastvmm=None, **kwargs):
         super().__init__(**kwargs)
@@ -1490,7 +1529,7 @@ def vecMulDemo():
     worstCase, useCplx = False, True
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
-    chunks = (bitsize + 7-1)//7 #ceiling division to be exact
+    chunks = 1 #(bitsize + 7-1)//7 #ceiling division to be exact
     matpow = dim//2-1
     pgm_pkg = g.ProgramPackage(name="mm", output_dir=None)
     with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
@@ -1612,7 +1651,7 @@ def main():
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = 1 #dim//2-1
-    #VecNormalize.unit_test(chunks, dim)
+    VecNormalize.unit_test(chunks, dim)
     VecMatMul.unit_test(chunks, dim)
     vecMulDemo(); assert False
 
