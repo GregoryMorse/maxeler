@@ -969,7 +969,7 @@ s16rangeE = list(range(26, 27+1))+list(range(29,42+1))
 def get_slice16(drctn, slices, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
 def alu_for_hemi(alu, drctn): return alu if drctn==WEST else 15-alu
-def sg4_for_hemi(alu, drctn, sg4): return sg4 if drctn==WEST else (sg4+2 if ((alu//4) % 2) != 0 else sg4-2) % 8 
+def sg4_for_hemi(sg4, drctn): return sg4 if drctn==WEST else (9-sg4) % 8 
 def dump_groq_doc():
     import os, pydoc, pkgutil, groq, importlib, functools, shutil
     try: os.mkdir("groqdoc")
@@ -1029,13 +1029,11 @@ class VecNormalize(g.Component):
             g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["subval"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["subval"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        self.logtworeqs, self.normreqs = [], []
+        self.logtworeqs, self.biasreqs, self.normreqs = [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-            self.logtworeqs.append([])
-            self.normreqs.append([])
-            for i in range(self.chunks+1):            
-                self.logtworeqs[-1].append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
-                self.normreqs[-1].append(tensor.create_storage_request(layout=get_slice1(drctn, 0, plane)))
+            self.biasreqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, plane)))
+            self.logtworeqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
+            #self.normreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 0, plane)))
     def build(self, tvec, tnorm, inittime=0):
         #log2 for powers of 2: https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
         #def abscomp(v): return v ^ (v >> 31) #absolute 1s complement rather than absolute value/2s complement
@@ -1046,25 +1044,41 @@ class VecNormalize(g.Component):
         #[log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
         #[float32log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
         #[((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
-        result, resnorm = [], []
+        result, biases, resnorm = [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-            curvec = g.split_inner_splits(tvec[drctn*2+plane])
+            curvec = [g.concat_inner_splits(x) for x in zip(*(g.split_vectors(x, [1]*self.chunks) for x in g.split_inner_splits(tvec[drctn*2+plane])))]        
             t = inittime+plane*max(self.dim//16, 10)
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
-            with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=t) as pred:
-                x = curvec[0].read(streams=g.SG4[0], time=0)
+            with g.ResourceScope(name="abscomp" + dirstr, is_buffered=True, time=t) as pred:
+                x = curvec[-1].read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
                 #x = g.bitwise_xor(x, g.right_shift(x, self.consts[drctn]["signshift"])).reinterpret(g.uint32)
-                x = g.bitwise_xor(g.vxm_identity(x, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[1]),
-                    g.right_shift(x, self.consts[drctn]["signshift"].read(streams=g.SG4[2 if drctn == WEST else 6]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0]),
-                    alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn, 2)]
+                x = g.bitwise_xor(g.vxm_identity(x, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]),
+                    g.right_shift(x, self.consts[drctn]["signshift"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
+                    alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]
                     ).reinterpret(g.uint32)
+                bias = g.mask(x, self.consts[drctn]["floatbias"].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
+                x = g.vxm_identity(x, alus=[alu_for_hemi(7, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 #x = g.reduce_max(x)
-                #bias = g.mask(x, self.consts[drctn]["floatbias"])
-                #x = g.sub(g.right_shift(g.sub(g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32), self.consts[drctn]["subval"]).reinterpret(g.uint32), self.consts[drctn]["shiftexp"]), bias)
                 result.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
+                biases.append(bias.write(name="bias" + dirstr, storage_req=self.biasreqs[drctn*2+plane]))
                 #resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
                 resnorm.append(tnorm[drctn*2+plane])
                 #g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]))
+            g.add_mem_constraints(biases, biases, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints(result, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)                
+            g.add_mem_constraints(tvec, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            """
+            with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=None, predecessors=[pred]):
+                x = result[drctn*2+plane].read(streams=g.SG4[0], time=0)                
+                x = g.sub(
+                        g.right_shift(
+                            g.sub(
+                                g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32),
+                                self.consts[drctn]["subval"]).reinterpret(g.uint32),
+                            self.consts[drctn]["shiftexp"]),
+                        bias)
+                result[drctn*2+plane] = x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane])
+            """    
         return result, resnorm
     def unit_test(chunks, dim):
         with g.ProgramContext() as pc:
