@@ -1059,7 +1059,7 @@ class VecNormalize(g.Component):
                 bias = g.mask(x, self.consts[drctn]["floatbias"].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
                 x = g.vxm_identity(x, alus=[alu_for_hemi(7, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 #x = g.reduce_max(x)
-                result.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
+                #result.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
                 biases.append(bias.write(name="bias" + dirstr, storage_req=self.biasreqs[drctn*2+plane]))
                 #resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
                 resnorm.append(tnorm[drctn*2+plane])
@@ -1167,7 +1167,7 @@ class VecMatMul(g.Component):
         #13 for MXM basic multiplication, 34 for SXM accumulation, 19 to stream across (6 leaving SXM, 10 stream crossings, 3 entering ALU)
         #4+9+3+13+34+19 - 6 = 76 #-6 because the S4(8-11)
         #mxm_rqs = [tensor.create_mxm_request(planes=[x], num_planes=1) for x in range(4)]
-        #g.latch(maskqrt[1-drctn].read(streams=g.SG4[3]), alu=3)
+        #g.latch(maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alu=3)
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             if plane == 0:
                 split_result = []
@@ -1175,14 +1175,14 @@ class VecMatMul(g.Component):
             #mm = nn.MatMul(time=0, buffer_output=False, planes=mxm_rqs[drctn*2+plane].planes)
             result_mt = [g.concat_inner_splits(x) for x in zip(*(g.split_vectors(x, [self.dim]*self.chunks) for x in g.split_inner_splits(tmat[drctn*2+plane])))]
             #result_mt = g.split_vectors(tmat[drctn*2+plane], [self.dim]*self.chunks)
-            rev_last_alu = [4] if drctn == WEST else [7]
-            rev_alu = [6] if drctn == WEST else [9]
-            first_alu = [0] if drctn == WEST else [3]
-            second_alu = [1] if drctn == WEST else [2]
+            rev_last_alu = [alu_for_hemi(4, drctn)]
+            rev_alu = [alu_for_hemi(6, drctn)]
+            first_alu = [alu_for_hemi(0, drctn)]
+            second_alu = [alu_for_hemi(1, drctn)]
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
             t = inittime+plane*max(self.dim//16, 10)
             for i in range(self.chunks):
-                with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[4] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
+                with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[sg4_for_hemi(4, drctn)] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
                     #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
                     #g.clear_mxm(planes=[plane], time=0)
                     mxm_rq = tensor.create_mxm_request(planes=[drctn*2+plane], num_planes=1)
@@ -1194,16 +1194,16 @@ class VecMatMul(g.Component):
                     split_result.append(g.concat_inner_splits(g.split_vectors(result_mt[i], [1]*self.chunks)))
                     #must be an arithmetic right shift (sign filled), not logical, but with signed types, this occurs
                     if i == 0:
-                        nextmasks = g.bitwise_and(split_result[-1], self.maskqrt[drctn].read(streams=g.SG4[3]), alus=rev_last_alu, output_streams=g.SG4[3]).write(name="mask" + dirstr + str(i), storage_req=self.maskreqs[drctn*2+plane][i])
+                        nextmasks = g.bitwise_and(split_result[-1], self.maskqrt[drctn].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="mask" + dirstr + str(i), storage_req=self.maskreqs[drctn*2+plane][i])
                         split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), storage_req=self.splitreqs[drctn*2+plane][i])
                     else:
-                        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=g.SG4[1])
-                        shifts = g.right_shift(split_result[-2].read(streams=g.SG4[2 if drctn == WEST else 6]), self.shiftqrt[2*drctn].read(streams=g.SG4[0]), alus=[0] if drctn == WEST else [15], output_streams=g.SG4[2 if drctn == WEST else 6])
-                        split_result[-1] = g.add(g.add(shifts, masks, alus=[1] if drctn == WEST else [14], output_streams=g.SG4[2 if drctn == WEST else 6]), split_result[-1], alus=rev_alu, output_streams=g.SG4[2 if drctn == WEST else 6])
+                        masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=g.SG4[sg4_for_hemi(1, drctn)])
+                        shifts = g.right_shift(split_result[-2].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), self.shiftqrt[2*drctn].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                        split_result[-1] = g.add(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)]), split_result[-1], alus=rev_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                         if i != self.chunks - 1:
-                            nextmasks = g.bitwise_and(self.maskqrt[1-drctn].read(streams=g.SG4[3 if drctn==WEST else 7]), split_result[-1], alus=[4] if drctn==WEST else [11], output_streams=g.SG4[3 if drctn==WEST else 7]).write(name="mask" + dirstr + str(i), storage_req=self.maskreqs[drctn*2+plane][i])
+                            nextmasks = g.bitwise_and(self.maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), split_result[-1], alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="mask" + dirstr + str(i), storage_req=self.maskreqs[drctn*2+plane][i])
                         else:
-                            nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[3 if drctn==WEST else 7]), alus=[4] if drctn==WEST else [11], output_streams=g.SG4[3 if drctn==WEST else 7]).write(name="shiftpre" + dirstr, storage_req=self.maskreqs[drctn*2+plane][i])
+                            nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="shiftpre" + dirstr, storage_req=self.maskreqs[drctn*2+plane][i])
                         split_result[-1] = split_result[-1].write(name="split" + dirstr + str(i), storage_req=self.splitreqs[drctn*2+plane][i])
                         g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                     allshifts.append(nextshifts if i == self.chunks-1 else nextmasks)
@@ -1211,12 +1211,12 @@ class VecMatMul(g.Component):
                     t += max(self.dim//16*2, (27 if i==0 else 30))
             #with complex multiplication at dimension 80 and 64-bit, we surely need 2 of these rounds to converge
             with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-18): #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
-                cursplit = split_result[-1].read(streams=g.SG4[5])
-                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[3 if drctn==WEST else 7])
-                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[4], time=0), alus=rev_last_alu, output_streams=g.SG4[4])
-                split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=g.SG4[2 if drctn == WEST else 6]))
-                #nextshifts = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=g.SG4[0]), alus=[0] if drctn == WEST else [15], output_streams=g.SG4[3 if drctn==WEST else 7]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
-                nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[0]), alus=[0] if drctn == WEST else [15], output_streams=g.SG4[3 if drctn==WEST else 7]).write(name="fixshift" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                cursplit = split_result[-1].read(streams=g.SG4[sg4_for_hemi(5, drctn)])
+                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[sg4_for_hemi(3, drctn)])
+                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[sg4_for_hemi(4, drctn)], time=0), alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(4, drctn)])
+                split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)]))
+                #nextshifts = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixshift" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
                 split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks])
                 g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                 allshifts.append(nextshifts) #allshifts.append(nextmasks)
@@ -1226,14 +1226,14 @@ class VecMatMul(g.Component):
             #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
             #for complex multiplication requires one more bit, which requires a shift right adjustment by 1
             with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY+9+10): #predecessors=[pred], time=None) as pred:
-                cursplit = split_result[-1].read(streams=g.SG4[3])
-                #masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=g.SG4[0])
-                #shifts = g.right_shift(cursplit, self.shiftqrt[2*drctn].read(streams=g.SG4[1], time=0), alus=first_alu, output_streams=g.SG4[1])
-                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[1], time=0), alus=first_alu, output_streams=g.SG4[1])
-                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[0])
-                #split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane)))
-                final_result.append(extract_int8(g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]))).write(name="extract" + dirstr, layout=get_slice1(drctn, 43, plane)))
-                #final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]).write(name="extract" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks]))
+                cursplit = split_result[-1].read(streams=g.SG4[sg4_for_hemi(3, drctn)])
+                #masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=g.SG4[sg4_for_hemi(0, drctn)])
+                #shifts = g.right_shift(cursplit, self.shiftqrt[2*drctn].read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)])
+                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)])
+                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[sg4_for_hemi(0, drctn)])
+                #split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane)))
+                final_result.append(extract_int8(g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]))).write(name="extract" + dirstr, layout=get_slice1(drctn, 43, plane)))
+                #final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="extract" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks]))
             #print("Cycle time: ", t+MATMULDELAY+9+10+31+19) #31 through ALU, 19 to write to S43
         g.add_mem_constraints(tvec + final_result, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         return final_result, t+MATMULDELAY+9+10+31+19
@@ -1547,8 +1547,8 @@ def vecMulDemo():
     worstCase, useCplx = False, True
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
-    chunks = 1 #(bitsize + 7-1)//7 #ceiling division to be exact
-    matpow = dim//2-1
+    chunks = (bitsize + 7-1)//7 #ceiling division to be exact
+    matpow = 1 #dim//2-1
     pgm_pkg = g.ProgramPackage(name="mm", output_dir=None)
     with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
         lc = LoopCorrections(chunks, dim, matpow)
@@ -1669,8 +1669,8 @@ def main():
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = 1 #dim//2-1
-    VecNormalize.unit_test(chunks, dim)
-    VecMatMul.unit_test(chunks, dim)
+    #VecNormalize.unit_test(chunks, dim)
+    #VecMatMul.unit_test(chunks, dim)
     vecMulDemo(); assert False
 
     max_dim_bits = (dim*2).bit_length() #complex domain
