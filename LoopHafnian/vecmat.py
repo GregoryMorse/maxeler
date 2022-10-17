@@ -1001,7 +1001,7 @@ def compile_unit_test(name):
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name=name, gen_vis_data=False, check_stream_conflicts=False, #tree_conflicts=True, inspect_raw=True
+        base_name=name, gen_vis_data=True, check_stream_conflicts=False, #tree_conflicts=True, inspect_raw=True
     )
     json_file = g.write_visualizer_data(name)
     print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
@@ -1016,34 +1016,25 @@ class VecNormalize(g.Component):
             dirstr = "W" if drctn == WEST else "E"
             if lastvn is None:
                 self.consts.append({
-                    "signshift": g.from_data(np.array([[32-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="signshift" + dirstr),
-                    "floatbias": g.from_data(np.array([[127-1]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="floatbias" + dirstr),
-                    "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 8, 11, drctn), name="initexp" + dirstr), 
-                    "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 12, 15, drctn), name="subval" + dirstr), 
-                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftexp" + dirstr),
-                    #"tilemaskleft": g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="tilemaskleft" + dirstr),
-                    #"tilemaskright": g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="tilemaskright" + dirstr),
+                    "signshift": g.from_data(np.array([[32-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 0, 3, drctn), name="signshift" + dirstr),
+                    "floatbias": g.from_data(np.array([[127-1]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="floatbias" + dirstr),
+                    "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="initexp" + dirstr), 
+                    "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 0, 3, drctn), name="subval" + dirstr), 
+                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="shiftexp" + dirstr),
+                    "tilemaskleft": g.from_data(np.array([[-1]*(dim//2)+[0]*(dim//2)], dtype=np.uint8), layout=get_slice1(drctn, 0, drctn), name="tilemaskleft" + dirstr),
+                    "tilemaskright": g.from_data(np.array([[0]*(dim//2)+[-1]*(dim//2)], dtype=np.uint8), layout=get_slice1(drctn, 1, drctn), name="tilemaskright" + dirstr)
                 })                
             else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvn.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
-            g.add_mem_constraints([self.consts[drctn]["signshift"]], [self.consts[drctn]["initexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["subval"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            g.add_mem_constraints([self.consts[drctn]["floatbias"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            g.add_mem_constraints([self.consts[drctn]["subval"]], [self.consts[drctn]["shiftexp"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        self.logtworeqs, self.biasreqs, self.normreqs = [], [], []
+            g.add_mem_constraints(list(self.consts[drctn].values()), list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        self.logtworeqs, self.biasreqs, self.normreqs, self.permreqs = [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             self.biasreqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, plane)))
             self.logtworeqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
-            #self.normreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 0, plane)))
+            self.normreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 0, plane)))
+            self.permreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 43, plane)))
     def build(self, tvec, tnorm, inittime=0):
-        #log2 for powers of 2: https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
-        #def abscomp(v): return v ^ (v >> 31) #absolute 1s complement rather than absolute value/2s complement
-        #def log2(v): v = abscomp(v); r = (v > 0xF) << 2; v >>= r; shift=(v > 0x3) << 1; v >>= shift; r |= shift; r |= (v >> 1); return r+(v!=0)
-        #def intToFloat(v): import struct; return struct.unpack('<f', struct.pack('<L', v))[0]
-        #def floatToInt(f): import struct; return struct.unpack('<L', struct.pack('<f', f))[0]
-        #def float32log2(v): v = abscomp(v); return (floatToInt(intToFloat(((127+23)<<23) | v)-(1<<23)) >> 23) - ((127-1) if (v!=0) else 0)
-        #[log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
-        #[float32log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
-        #[((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
+        for drctn in (WEST, EAST):
+            g.add_mem_constraints(list(self.consts[drctn].values()), tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         result, biases, resnorm = [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             curvec = [g.concat_inner_splits(x) for x in zip(*(g.split_vectors(x, [1]*self.chunks) for x in g.split_inner_splits(tvec[drctn*2+plane])))]        
@@ -1051,34 +1042,53 @@ class VecNormalize(g.Component):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P" + "_t" + str(inittime)
             with g.ResourceScope(name="abscomp" + dirstr, is_buffered=True, time=t) as pred:
                 x = curvec[-1].read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
-                #x = g.bitwise_xor(x, g.right_shift(x, self.consts[drctn]["signshift"])).reinterpret(g.uint32)
                 x = g.bitwise_xor(g.vxm_identity(x, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]),
                     g.right_shift(x, self.consts[drctn]["signshift"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
                     alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]
                     ).reinterpret(g.uint32)
                 bias = g.mask(x, self.consts[drctn]["floatbias"].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
                 x = g.vxm_identity(x, alus=[alu_for_hemi(7, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
-                #x = g.reduce_max(x)
-                #result.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
+                result.append(x.write(name="abscomp" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
                 biases.append(bias.write(name="bias" + dirstr, storage_req=self.biasreqs[drctn*2+plane]))
-                #resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
                 resnorm.append(tnorm[drctn*2+plane])
-                #g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]))
-            g.add_mem_constraints(biases, biases, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            g.add_mem_constraints(result, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)                
+            g.add_mem_constraints(result, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(tvec, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            """
-            with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=None, predecessors=[pred]):
-                x = result[drctn*2+plane].read(streams=g.SG4[0], time=0)                
+            with g.ResourceScope(name="logtwo" + dirstr, is_buffered=True, time=t+28, predecessors=None) as pred:
+                x = result[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
                 x = g.sub(
                         g.right_shift(
                             g.sub(
-                                g.bitwise_or(x, self.consts[drctn]["initexp"]).reinterpret(g.float32),
-                                self.consts[drctn]["subval"]).reinterpret(g.uint32),
-                            self.consts[drctn]["shiftexp"]),
-                        bias)
-                result[drctn*2+plane] = x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane])
-            """    
+                                g.bitwise_or(x, self.consts[drctn]["initexp"].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.float32),
+                                self.consts[drctn]["subval"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.uint32),
+                            self.consts[drctn]["shiftexp"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
+                        biases[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                result[drctn*2+plane] = x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]) #self.normreqs[drctn*2+plane])
+            with g.ResourceScope(name="maxlogtwo" + dirstr, is_buffered=True, time=t+52, predecessors=None) as pred:
+                #reduce_max inner dimension requires  Distributor x 16 -> VXM reduce_max outer -> Shifter -> reduce_max outer
+                maps = [g.from_data(np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 43, plane)) for i in range(16)]
+                x = g.concat_inner_splits([result[drctn*2+plane]]*16).read(streams=g.SG4[4*plane], time=0)
+                x = g.distribute_8(x, map=g.concat_inner_splits(maps), distributor_req=drctn*4+2*plane, bypass8=0b11110000, map_stream_req=g.SG1[(4*plane+1)*4])
+                x = g.transpose_null(x, transposer_req=drctn*2+plane, stream_order=[0,1,2,3])
+                x = g.concat_vectors(g.split_inner_splits(x), (16, 320))
+                x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(8*plane, drctn)], output_streams=g.SG4[4*plane])
+                x = extract_uint8(x)
+                result[drctn*2+plane] = x.write(name="maxlogtwo" + dirstr, storage_req=self.permreqs[drctn*2+plane])
+                g.add_mem_constraints(maps + [result[drctn*2+plane]], maps + [result[drctn*2+plane]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)                
+            with g.ResourceScope(name="maxlogtwofin" + dirstr, is_buffered=True, time=t+134, predecessors=None) as pred:
+                perms = [g.from_data(np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 42, plane)) for i in range(10)]
+                g.add_mem_constraints(perms, perms, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+                #x = x
+                x = g.concat_inner_splits([result[drctn*2+plane].reshape(1, 320)]*10)#.read(streams=g.SG4[4*plane])
+                x = g.permute_inner(x, permute_map=g.concat_inner_splits(perms), permutor_req=drctn, input_streams=[g.SG1[0], g.SG1[24]], output_streams=g.SG1[0], time=0)
+                x = g.concat_vectors(g.split_inner_splits(x), (10, 320))
+                #x = x.cast(g.uint32, alus=[alu_for_hemi(0, drctn)])
+                x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0])
+                result[drctn*2+plane] = x.write(name="maxlogtwofin" + dirstr, storage_req=self.normreqs[drctn*2+plane])
+                #resnorm.append(g.add(tnorm[drctn*2+plane], extract_uint8(x)).write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
+                #g.split_inner_splits(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[1]))
+        for drctn in (WEST, EAST):        
+            g.add_mem_constraints(result, result + list(self.consts[drctn].values()) + tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            g.add_mem_constraints(biases, result + biases + list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         return result, resnorm
     def unit_test(chunks, dim):
         with g.ProgramContext() as pc:
@@ -1103,11 +1113,20 @@ class VecNormalize(g.Component):
             inpvec0 = num_to_bits(normals, chunks)
             exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, 63-i*2-1)
             inpvec1 = num_to_bits(normals, chunks)
-            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
+            inputs[tvec[i].name] = np.random.randint(-128, 128, (chunks, dim*2*2), dtype=np.int32) #np.hstack((inpvec0, inpvec1)).astype(np.int32)
             exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
         print(inputs)
         res = runner(**inputs)
         print(res)
+        #log2 for powers of 2: https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
+        def abscomp(v): return v ^ (v >> 31) #absolute 1s complement rather than absolute value/2s complement
+        def log2(v): v = abscomp(v); r = (v > 0xF) << 2; v >>= r; shift=(v > 0x3) << 1; v >>= shift; r |= shift; r |= (v >> 1); return r+(v!=0)
+        def intToFloat(v): import struct; return struct.unpack('<f', struct.pack('<L', v))[0]
+        def floatToInt(f): import struct; return struct.unpack('<L', struct.pack('<f', f))[0]
+        def float32log2(v): v = abscomp(v); return (floatToInt(intToFloat(((127+23)<<23) | v)-(1<<23)) >> 23) - ((127-1) if (v!=0) else 0)
+        assert all([log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)])
+        assert all([float32log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)])
+        #[((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
         def actual(): pass
         def oracle(): pass
         assert False
@@ -1548,7 +1567,7 @@ def vecMulDemo():
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
-    matpow = 1 #dim//2-1
+    matpow = 100 #dim//2-1
     pgm_pkg = g.ProgramPackage(name="mm", output_dir=None)
     with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
         lc = LoopCorrections(chunks, dim, matpow)
@@ -1572,7 +1591,6 @@ def vecMulDemo():
         lc = LoopCorrections(chunks, dim, matpow, lc)
         result_mt = lc.build()
         #g.resolve_storage_requests()
-        print_utils.infoc("\nCompiling model ...")
         # Compile program to generate IOP. Also generate groqview JSON dump file and
         # check for potential stream conflicts.
         #iop_file = g.compile(
@@ -1581,6 +1599,7 @@ def vecMulDemo():
         #json_file = g.write_visualizer_data("mm_fp")
         #print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
         #g.check_stream_conflicts(json_file)
+    print_utils.infoc("\nAssembling model ...")
     iops = pgm_pkg.assemble()
     iop = runtime.IOProgram(iops[0])
     device = runtime.devices[0]
@@ -1649,7 +1668,6 @@ def vecMulDemo():
     runner = lambda: invoke(device, iop, 1, 0, None) #g.create_tsp_runner(iop_file)
     tactual = timeit.timeit(actual, number=1)/1
     tactualbatch = timeit.timeit(actual, number=100)/100
-    g.reset_program_context()
     print("Matrix Power", matpow, "File Sizes", iops[0], os.path.getsize(iops[0]))
     print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. 100000 Batch", tactualbatch)
     oracleres, results = oracleres[0], results[0]
@@ -1669,8 +1687,8 @@ def main():
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = 1 #dim//2-1
-    #VecNormalize.unit_test(chunks, dim)
-    #VecMatMul.unit_test(chunks, dim)
+    VecNormalize.unit_test(chunks, dim)
+    VecMatMul.unit_test(chunks, dim)
     vecMulDemo(); assert False
 
     max_dim_bits = (dim*2).bit_length() #complex domain
