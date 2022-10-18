@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.math.BigInteger;
 
 import maxpower.utils.CollectionUtils;
@@ -247,6 +248,58 @@ public class Utility {
             this.second = second;
         }
     }
+    public static DFEVar binaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
+    {
+        int limit = vars.length;
+        while (limit > 1) {
+            if (pipelineDelay[0] != pipelineDelay[1]) {
+                vars[0] = base.optimization.pipeline(vars[0]);
+                pipelineDelay[0]++;
+            } else {
+                int limitNew, i;
+                for (i = 0, limitNew = 0; i < limit; i++, limitNew++) {
+                    if (i >= limit-1 || pipelineDelay[i] != pipelineDelay[i+1]) {
+                        pipelineDelay[limitNew] = pipelineDelay[i];
+                        vars[limitNew] = vars[i];
+                        issub[limitNew] = issub[i];                        
+                    } else {
+                        pipelineDelay[limitNew] = pipelineDelay[i] + 1;                        
+                        if (!issub[i]) { //first argument must be positive for efficient TriArith
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i], vars[i+1], issub[i+1], true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i], vars[i+1], issub[i+1], base);
+                            issub[limitNew] = false;
+                        } else if (!issub[i+1]) {
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i+1], vars[i], issub[i], true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i+1], vars[i], issub[i], base);
+                            issub[limitNew] = false;
+                        } else { //both are negative
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i], vars[i+1], false, true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i], vars[i+1], false, base);
+                            issub[limitNew] = true;
+                        }
+                        i++;
+                    }
+                }
+                limit = limitNew;
+            }
+            DFEVar[] varsCapture = Arrays.copyOf(vars, limit);
+            int[] pipelineDelayCapture = Arrays.copyOf(pipelineDelay, limit);
+            boolean[] issubCapture = Arrays.copyOf(issub, limit);
+            int[] idxsort = IntStream.range(0, limit).mapToObj(Integer::valueOf).sorted((i, j) -> {
+                int c = Integer.compare(pipelineDelayCapture[i], pipelineDelayCapture[j]);
+                int s = Integer.compare(((DFEFix)varsCapture[i].getType()).getOffset(), ((DFEFix)varsCapture[j].getType()).getOffset());
+                return c != 0 ? c : (s != 0 ? s : Integer.compare(i, j));
+                }).mapToInt(Integer::intValue).toArray();
+            vars = IntStream.of(idxsort).mapToObj(i -> varsCapture[i]).toArray(DFEVar[]::new);
+            issub = booleanAdapter(IntStream.of(idxsort).mapToObj(i -> issubCapture[i]).toArray(Boolean[]::new));
+            pipelineDelay = IntStream.of(idxsort).map(i -> pipelineDelayCapture[i]).toArray();
+        }
+        totalDelay[0] = pipelineDelay[0] + (issub[0] ? 1 : 0);
+        return issub[0] ? -vars[0] : vars[0];
+    }    
     public static DFEVar ternaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
     {
         int limit = vars.length;
@@ -328,6 +381,141 @@ public class Utility {
         totalDelay[0] = pipelineDelay[0] + (issub[0] ? 1 : 0);
         return issub[0] ? -vars[0] : vars[0];
     }
+    public static Iterable<List<Integer>> getIntegerPartitions(int value)
+    {
+        return new Iterable<List<Integer>>() {
+            public Iterator<List<Integer>> iterator() {
+                return new Iterator<List<Integer>>() {
+                    class PartStack {
+                        int n, I, i;
+                        List<Integer> p;
+                        PartStack(int n, int I, int i, List<Integer> p) {
+                            this.n = n; this.I = I; this.i = i; this.p = p;
+                        }
+                        public String toString() { return this.n + " " + this.I + " " + this.i + " " + this.p.toString(); }
+                    }            
+                    List<PartStack> stack = null;
+                    public boolean hasNext() { return stack == null || stack.size() != 0; }
+                    public List<Integer> next() {
+                        List<Integer> nextList = null;
+                        if (stack == null) {
+                            stack = new ArrayList<>();
+                            stack.add(new PartStack(value, 1, 0, new ArrayList<>()));
+                        }
+                        while (stack.size() != 0) {
+                            PartStack ps = stack.get(stack.size()-1);
+                            if (ps.i == 0) {
+                                if (nextList != null) break;
+                                nextList = new ArrayList<>(ps.p);
+                                nextList.add(ps.n);
+                                ps.i = ps.I;
+                                ps.p.add(ps.i);
+                            } else ps.p.set(ps.p.size()-1, ps.i);
+                            if (ps.i > ps.n/2) {
+                                stack.remove(stack.size()-1);
+                                if (stack.size() != 0) {
+                                    stack.get(stack.size()-1).i++;
+                                }
+                                continue;
+                            }                            
+                            stack.add(new PartStack(ps.n-ps.i, ps.i, 0, new ArrayList<>(ps.p)));
+                        }
+                        return nextList;
+                    }
+                };
+            }
+        };
+    }
+    public static <T> Iterable<List<T>> getPermutations(List<T> start) {
+        return new Iterable<List<T>>() {
+            public Iterator<List<T>> iterator() {
+                return new Iterator<List<T>>() {
+                    class PermStack {
+                        int i;
+                        List<T> lst;
+                        List<T> p;
+                        PermStack(int i, List<T> lst, List<T> p) {
+                            this.i = i; this.lst = lst; this.p = p;
+                        }
+                        public String toString() { return this.i + " " + this.lst.toString() + " " + this.p.toString(); }
+                    }
+                    List<PermStack> stack = null;
+                    public boolean hasNext() { return start.size() != 0 && (stack == null || stack.size() != 0); }
+                    public List<T> next() {
+                        List<T> nextList = null;
+                        if (stack == null) {
+                            stack = new ArrayList<>();
+                            if (start.size() == 1) return start;
+                            stack.add(new PermStack(-1, start, new ArrayList<>()));
+                        }
+                        while (stack.size() != 0) {
+                            PermStack ps = stack.get(stack.size()-1);
+                            if (ps.lst.size() == 0) {
+                                if (nextList != null) break;
+                                nextList = new ArrayList<>(ps.p);
+                                ps.i++;
+                            } else if (ps.i == -1) {
+                                ps.i++;
+                                ps.p.add(ps.lst[ps.i]);
+                            }
+                            if (ps.i >= ps.lst.size()) {
+                                stack.remove(stack.size()-1);
+                                if (stack.size() != 0) {
+                                    stack.get(stack.size()-1).i++;
+                                }
+                                continue;
+                            }
+                            ps.p.set(ps.p.size()-1, ps.lst[ps.i]);                            
+                            List<T> remLst = new ArrayList<>(ps.lst.subList(0, ps.i));
+                            remLst.addAll(ps.lst.subList(ps.i+1, ps.lst.size()));
+                            stack.add(new PermStack(-1, remLst, new ArrayList<>(ps.p)));
+                        }
+                        return nextList;
+                    }
+                };
+            }
+        };    
+    }
+    //https://www.epfl.ch/labs/lap/wp-content/uploads/2018/05/ParandehAfsharJan08_EfficientSynthesisOfCompressorTreesOnFpgas_ASPDAC08.pdf
+    public static DFEVar compressionTree(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) {
+        final int lut_size = 6, max_out_size = 3;
+        List<Pair<List<Integer>, Integer>> gpcs = new ArrayList<>();
+        for (int k = 3; k <= lut_size; k++) {
+            for (List<Integer> part : getIntegerPartitions(k)) {
+                HashSet<List<Integer>> perms = new HashSet<>();
+                getPermutations(part).forEach(perms::add);
+                for (List<Integer> perm : perms) {
+                    int s = 0, outbits = 0;
+                    for (Integer x : perm) {
+                        s = (s + x) >> 1;
+                        if (s == 0) { outbits = 0; break; } //unnecessary additions removed
+                        outbits++;
+                    }
+                    outbits += Integer.highestOneBit(s);
+                    if (outbits != 0 && outbits <= max_out_size) gpcs.add(new Pair<List<Integer>, Integer>(perm, outbits));
+                }
+            }
+        }
+        gpcs.sort((a, b) -> {
+            double aCompress = a.first.stream().mapToInt(x -> x).sum()*b.second;
+            double bCompress = b.first.stream().mapToInt(x -> x).sum()*a.second;
+            if (aCompress == bCompress) {
+                for (int i = 0; i < Math.max(a.first.size(), b.first.size()); i++) {
+                    if (i >= a.first.size()) return 1;
+                    if (i >= b.first.size()) return -1;
+                    if (a.first.get(i) == b.first.get(i)) continue;
+                    return a.first.get(i) < b.first.get(i) ? 1 : -1; 
+                }
+                return 0;
+            }
+            return aCompress < bCompress ? 1 : -1;
+            });
+        System.out.println(gpcs);
+        int limit = vars.length;
+        //while (limit > 2) {
+        //}
+        return null;
+    }
     public static boolean[] booleanAdapter(Boolean[] l)
     {
         boolean[] res = new boolean[l.length];
@@ -343,6 +531,7 @@ public class Utility {
         DFEVar[] orderedVars = IntStream.of(idxsort).mapToObj(i -> shiftLeftFix(vars[i], shift[i], base)).toArray(DFEVar[]::new);
         boolean[] issub = addsub == null ? new boolean[vars.length] : booleanAdapter(IntStream.of(idxsort).mapToObj(i -> addsub[i]).toArray(Boolean[]::new));
         int[] orderedPipelineDelay = pipelineDelay == null ? new int[vars.length] : IntStream.of(idxsort).map(i -> pipelineDelay[i]).toArray();
+        //return binaryAdder(orderedVars, issub, orderedPipelineDelay, totalDelay, base);
         return ternaryAdder(orderedVars, issub, orderedPipelineDelay, totalDelay, base);
     }
     public static int getIntSplits(DFEFix aType, int bits, int signbits, KernelBase<?> base)
@@ -527,7 +716,7 @@ public class Utility {
         HashMap<Object, DFEVar> extraProdMap = new HashMap<>(); //for 18 bit unsigned case
         HashMap<Object, Integer> prodMapDelay = new HashMap<>();
         for (Pair<Integer, Integer> sub : subs) {
-            if (sub.getFirst() < 0 || sub.getSecond() < 0) {
+            if (sub.getFirst() < 0 || sub.getSecond() < 0) { //for pre-adder inference use the larger b argument, convert to signed for maxcompiler recognition
                 subMap.put(sub, addExact(bSplit[-sub.getFirst()], bSplit[-sub.getSecond()], true, base));
             } else {
                 subMap.put(sub, addExact(aSplit[sub.getFirst()], aSplit[sub.getSecond()], true, base));
@@ -885,10 +1074,12 @@ public class Utility {
     }
     public static DFEVar uToSigned(DFEVar a, KernelBase<?> base) {
         //KernelBase.dfeInt(a.getType().getTotalBits() + 1);
+        if (((DFEFix)a.getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) return a;
         return base.constant.zero(KernelBase.dfeBool()).cat(a).reinterpret(KernelBase.dfeFixOffset(a.getType().getTotalBits() + 1, -((DFEFix)a.getType()).getFractionBits(), SignMode.TWOSCOMPLEMENT));
     }
     public static DFEVar sToUnsigned(DFEVar a) {
         //KernelBase.dfeUInt(a.getType().getTotalBits() - 1)
+        if (((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED) return a;
         return a.slice(0, a.getType().getTotalBits() - 1).reinterpret(KernelBase.dfeFixOffset(a.getType().getTotalBits() - 1, -((DFEFix)a.getType()).getFractionBits(), SignMode.UNSIGNED));
     }
     public static DFEVar shiftLeftFix(DFEVar a, int bits, KernelBase<?> base) {
@@ -1284,10 +1475,14 @@ public class Utility {
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
         //base.optimization.pushEnableBitGrowth(true);
+        if (isSub && ((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED && ((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) {
+            a = uToSigned(a, base);
+            b = uToSigned(b, base);
+        }
         DFEVar result = isSub ? (a - b) : (a + b);
         base.optimization.popFixOpMode(MathOps.ADD_SUB);
         //base.optimization.popEnableBitGrowth();
-        return isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        return result; //isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
     }
     public static DFEVar doAddExact(DFEVar a, DFEVar b, DFEVar isSub, KernelBase<?> base) {
         DFEFix resultType = getAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), true);
