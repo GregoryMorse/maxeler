@@ -934,14 +934,22 @@ def karatsuba_mul16(tensor1, tensor2, dim):
     
 def num_to_bits(num, chunks):
     res, shp = np.repeat(num[np.newaxis,...], chunks, axis=0), [chunks] + [1] * len(num.shape)
-    return ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8) #(70, -63) bit fixed point integers
+    bits = ((res >> np.arange(0, 7 * chunks, 7).reshape(shp)) & np.array([((1 << 7)-1)]*(chunks-1)+[-1]).reshape(shp)).astype(np.int8) #(70, -63) bit fixed point integers
+    #if len(bits.shape)==3: assert np.allclose(num, bits_to_num(bits.transpose(1, 2, 0), 0)), (num, bits_to_num(bits.transpose(1, 2, 0), 0))
+    #else: assert np.allclose(num, bits_to_num(bits.transpose(), 0)), (num, bits_to_num(bits.transpose(), 0))
+    #assert ((bits >=0) & (bits <= 127)).all()
+    return bits
 def bits_to_num(num, offset=7):
-    #assert all((num[:,-1] == 0) | (num[:,-1] == -1))
-    return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[1]-offset, 7), axis=1) #the high byte can be 0/-1 or this overflows...
+    #assert ((num[:,-1] == 0) | (num[:,-1] == -1)).all()
+    if not (num[:,0:-1] >= 0).all(): print(num[:,0:-1] >= 0)
+    #assert (num[:,0:-1] >= 0).all(), num[:,0:-1] >= 0 
+    return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[-1]-offset, 7), axis=-1) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension, fractionbits=63):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
-    return maxexp, np.rint(np.ldexp(mantissas, exponents-(maxexp[:,np.newaxis] if dimension==1 else maxexp)+fractionbits)).astype(np.int64) #(64, -63) bit fixed point integers
+    mant = np.rint(np.ldexp(mantissas, exponents-(maxexp[:,np.newaxis] if dimension==1 else maxexp)+fractionbits)).astype(np.int64) #(64, -63) bit fixed point integers
+    #assert np.allclose(num, renormalize_doubles(mant, maxexp+fractionbits)), maxexp #, (num, renormalize_doubles(mant, maxexp+fractionbits))
+    return maxexp, mant
 def renormalize_doubles(num, exp):
     return num.astype(np.float64) / (2 ** exp.astype(np.float64))
 def vector_complex_to_real(cplx):
@@ -1228,23 +1236,25 @@ class VecMatMul(g.Component):
                     allshifts.append(nextshifts if i == self.chunks-1 else nextmasks)
                     g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
                     t += max(self.dim//16*2, (27 if i==0 else 30))
-            #with complex multiplication at dimension 80 and 64-bit, we surely need 2 of these rounds to converge
-            with g.ResourceScope(name="finsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-18): #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
-                cursplit = split_result[-1].read(streams=g.SG4[sg4_for_hemi(5, drctn)])
-                shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[sg4_for_hemi(3, drctn)])
-                masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[sg4_for_hemi(4, drctn)], time=0), alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(4, drctn)])
-                split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)]))
-                #nextshifts = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
-                nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixshift" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
-                split_result[-1] = split_result[-1].write(name="finsplit" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks])
-                g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-                allshifts.append(nextshifts) #allshifts.append(nextmasks)
-                g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            #with complex multiplication at dimension 80 and 64-bit, we surely need chunks-1 of these rounds to converge with numerical safety
+            for i in range(self.chunks-2):
+                with g.ResourceScope(name="finsma" + dirstr + str(i), is_buffered=True, time=t+MATMULDELAY-18) as pred: #+predecessors=[pred], time=None) as pred: #they are not all fitting in int8 yet but after first iteration, the final computation can occur
+                    cursplit = split_result[-1].read(streams=g.SG4[sg4_for_hemi(5, drctn)])
+                    shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[sg4_for_hemi(3, drctn)])
+                    masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[sg4_for_hemi(4, drctn)], time=0), alus=rev_last_alu, output_streams=g.SG4[sg4_for_hemi(4, drctn)])
+                    split_result.append(g.add(masks, shifts, alus=rev_alu, output_streams=g.SG4[sg4_for_hemi(2, drctn)]))
+                    #nextshifts = g.bitwise_and(split_result[-1], self.maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixmask" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                    nextshifts = g.right_shift(split_result[-1], self.shiftqrt[2*(1-drctn)+1].read(streams=g.SG4[sg4_for_hemi(0, drctn)]), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(3, drctn)]).write(name="fixshift" + dirstr, storage_req=self.maskreqs[drctn*2+plane][self.chunks])
+                    split_result[-1] = split_result[-1].write(name="finsplit" + dirstr + str(i), storage_req=self.splitreqs[drctn*2+plane][self.chunks])
+                    g.add_mem_constraints(split_result[:-1], [split_result[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+                    allshifts.append(nextshifts) #allshifts.append(nextmasks)
+                    g.add_mem_constraints(allshifts[:-1], [allshifts[-1]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+                    t += 30
                 
             #chunks-1 correct 7-bit int8s
             #final adjustment for between 0-7 bit addition extra bits, for 64x64-127x127 this is exactly 7 bits
             #for complex multiplication requires one more bit, which requires a shift right adjustment by 1
-            with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY+9+10): #predecessors=[pred], time=None) as pred:
+            with g.ResourceScope(name="fixsma" + dirstr, is_buffered=True, time=t+MATMULDELAY-12) as pred: #predecessors=[pred], time=None) as pred:
                 cursplit = split_result[-1].read(streams=g.SG4[sg4_for_hemi(3, drctn)])
                 #masks = g.concat_inner_splits(g.split_inner_splits(nextmasks)[1:] + [self.zeros[drctn*2+plane]]).read(streams=g.SG4[sg4_for_hemi(0, drctn)])
                 #shifts = g.right_shift(cursplit, self.shiftqrt[2*drctn].read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)])
@@ -1273,59 +1283,72 @@ class VecMatMul(g.Component):
             result_mt, _ = vmm.build(tvec, tmat)
             for x in result_mt: x.set_program_output()
             iop_file, json_file = compile_unit_test("vecmatmul")
-        runner = g.create_tsp_runner(iop_file)
-        useCplx = True
-        originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
-        originpmat = [np.full((dim, dim), -((1 << 53)-1)/(1<<53)-((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
-
-        oracleres = [None]
-        def oracle():
-            B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-            oracleres[0] = []
-            for i in range(parallel):
-                w = originpvec[i].astype(np.clongdouble)
-                w = w @ B[i]
-                oracleres[0].append(w.astype(np.cdouble))
-        oracle()
-        print_utils.infoc("\nRunning on HW ...")
         np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
-        # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".        
-        results = [None]
-        def actual():
-            fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
-            inputs = {}
-            exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
-            for i in range(parallel//2):
-                exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
-                inpvec0 = num_to_bits(normals, chunks)
-                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
-                inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
-                exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
-                inpvec1 = num_to_bits(normals, chunks)
-                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
-                inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
-                inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
-                inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
-                exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
-            res = runner(**inputs)
-            results[0] = []
-            for i in range(parallel//2):
-                result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
-                #the results come back truncating the lower 7*(chunks-1) bits
-                results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2]).reshape(1, dim*2)).reshape(dim))
-                results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1]).reshape(1, dim*2)).reshape(dim))
         runner = g.create_tsp_runner(iop_file)
-        actual()
-        oracleres, results = oracleres[0], results[0]
-        for i in range(parallel):
-            print_utils.infoc("\nComparing results with oracle ...")
-            print(oracleres[i][0], results[i][0])
-            max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-            if max_atol <= 0.001:
-                print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
+        print_utils.infoc("\nRunning on HW ...")
+        worstCase, useCplx = False, False
+        for _ in range(1000):
+            if worstCase:
+                if useCplx:
+                    originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
+                    originpmat = [np.full((dim, dim), -((1 << 53)-1)/(1<<53)-((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
+                else:    
+                    originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)) for _ in range(parallel)]
+                    originpmat = [np.full((dim, dim), -((1 << 53)-1)/(1<<53)) for _ in range(parallel)]
+            elif useCplx:
+                originpvec = [np.random.rand(dim)*2-1 + (np.random.rand(dim)*2j-1j) for _ in range(parallel)]                
+                originpmat = [unitary_group.rvs(dim) for _ in range(parallel)]
+                #originpmat = [np.random.rand(dim, dim)*2-1 + (np.random.rand(dim, dim)*2j-1j) for _ in range(parallel)]
             else:
-                print_utils.err(
-                    f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)")
+                originpvec = [np.random.rand(dim)*2-1 for _ in range(parallel)]
+                originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)]
+    
+            oracleres = [None]
+            def oracle():
+                B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
+                oracleres[0] = []
+                for i in range(parallel):
+                    w = originpvec[i].astype(np.clongdouble)
+                    w = w @ B[i]
+                    oracleres[0].append(w.astype(np.cdouble))
+            oracle()
+            # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".        
+            results = [None]
+            def actual():
+                fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
+                inputs = {}
+                exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+                for i in range(parallel//2):
+                    exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
+                    inpvec0 = num_to_bits(normals, chunks)
+                    exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                    inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+                    exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
+                    inpvec1 = num_to_bits(normals, chunks)
+                    exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                    inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+                    inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
+                    inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+                    exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
+                res = runner(**inputs)
+                results[0] = []
+                for i in range(parallel//2):
+                    result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                    #the results come back truncating the lower 7*(chunks-1) bits
+                    results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2]).reshape(1, dim*2)).reshape(dim))
+                    results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1]).reshape(1, dim*2)).reshape(dim))
+            runner = g.create_tsp_runner(iop_file)
+            actual()
+            oracleres, results = oracleres[0], results[0]
+            for i in range(parallel):
+                print_utils.infoc("\nComparing results with oracle ...")
+                print(oracleres[i][0], results[i][0])
+                max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
+                if max_atol <= 0.001:
+                    print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
+                else:
+                    print_utils.err(
+                        f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"); assert False, (oracleres[i], results[i], abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
 def flatten_zip(z): return [item for sublist in z for item in sublist]
 def flatten_unzip(z, interleave=2): return list(zip(*zip(*([iter(z)] * interleave))))
 class UnpackComplexMatrix(g.Component):
@@ -1427,7 +1450,9 @@ class DiagonalExtractor(g.Component):
         self.chunks, self.dim = chunks, dim      
         self.identmat, self.allones = [], []
         for hemi in (WEST, EAST):
-            self.identmat.append(g.from_data(np.kron(np.eye(2, dtype=np.int8), np.hstack((np.tile(np.eye(dim, dtype=np.int8), (2, 1)), np.zeros((dim*2, dim), dtype=np.int8)))), layout=get_slice4(hemi, 0, 3, 0)))
+            self.identmat.append(g.from_data(np.kron(np.eye(2, dtype=np.int8),
+                np.hstack((np.tile(np.eye(dim, dtype=np.int8), (2, 1)), np.zeros((dim*2, dim), dtype=np.int8)))),
+                layout=get_slice4(hemi, 0, 3, 0)))
             self.allones.append(g.ones((1,320), dtype=g.int8, layout=get_slice1(hemi, 43, 0)))
     def build(self, tmat):
         tmatsplit = g.split_vectors(tmat, [self.chunks*self.dim*2*self.dim*2*2//320]*2)
@@ -1435,12 +1460,24 @@ class DiagonalExtractor(g.Component):
             result = []
             for hemi in (WEST, EAST):
                 #basemem = tensor.create_storage_request(layout=get_slice16(hemi, s16rangeW if hemi==WEST else s16rangeE, 0))
-                staggered_s16 = tensor.create_storage_request(storage=tensor.Storage(address_tensor=np.roll(inst.malloc(hemis=["W" if hemi==WEST else "E"], slices=s16rangeW if hemi==WEST else s16rangeE, banks=[0], count=self.chunks*self.dim*2*self.dim*2*2//320//16, reserve_key="REV_W" if hemi == WEST else "REV_E"), 8, axis=1).transpose(0,2,3,1).flatten()))
+                staggered_s16 = tensor.create_storage_request(
+                    storage=tensor.Storage(address_tensor=
+                        np.roll(inst.malloc(hemis=["W" if hemi==WEST else "E"],
+                                slices=s16rangeW if hemi==WEST else s16rangeE, banks=[0],
+                                count=self.chunks*self.dim*2*self.dim*2*2//320//16,
+                                reserve_key="REV_W" if hemi == WEST else "REV_E"),
+                            8, axis=1).transpose(0,2,3,1).flatten()))
                 result_mt = g.mask(
-                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(g.concat_vectors([self.identmat[hemi]] * (self.chunks//2), (self.dim*self.chunks*2, 320)), [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)).read(streams=g.SG4[1 if hemi==WEST else 4]),
-                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi], [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)).read(streams=g.SG4[2 if hemi==WEST else 5], time=0),
+                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(
+                        g.concat_vectors([self.identmat[hemi]] * (self.chunks//2), (self.dim*self.chunks*2, 320)),
+                        [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)
+                    ).read(streams=g.SG4[1 if hemi==WEST else 4]),
+                    g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi],
+                        [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)
+                    ).read(streams=g.SG4[2 if hemi==WEST else 5], time=0),
                     alus=[0 if hemi==WEST else 7], output_streams=g.SG4[2 if hemi==WEST else 5])
-                result_mt = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(result_mt, [1]*(self.chunks*self.dim*2)), self.chunks*self.dim*2//16)), (self.chunks*self.dim*2, 320))
+                result_mt = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(result_mt,
+                    [1]*(self.chunks*self.dim*2)), self.chunks*self.dim*2//16)), (self.chunks*self.dim*2, 320))
                 result.append(result_mt.write(storage_req=staggered_s16))
         g.add_mem_constraints(tmatsplit, result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         with g.ResourceScope(name="extract", is_buffered=True, time=None, predecessors=[pred]) as pred:
@@ -1451,8 +1488,10 @@ class DiagonalExtractor(g.Component):
                 for i in range(self.chunks//2):
                     with g.ResourceScope(name="matmulextract" + str(i), is_buffered=False, time=10+i*30):
                         iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0)
-                        result_mt[i] = extract_int8([self.allones[hemi].matmul(iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)])
-                result[hemi] = g.concat_vectors(result_mt, (self.chunks//2,self.dim*2*2)).write(name="origvec" + str(hemi), layout=get_slice1(hemi, 43, 1))
+                        result_mt[i] = extract_int8([self.allones[hemi].matmul(
+                            iw, planes=mxm_rq, num_planes=1, accum_input=None, time=0)])
+                result[hemi] = g.concat_vectors(result_mt, (self.chunks//2,self.dim*2*2)
+                    ).write(name="origvec" + str(hemi), layout=get_slice1(hemi, 43, 1))
         #result = g.from_addresses(np.vstack((result[0].addrs.reshape(self.chunks//2, 1), result[1].addrs.reshape(self.chunks//2, 1))).reshape(-1, g.int8.size), 320, g.int8, "vecresult")
         g.add_mem_constraints(result, self.allones, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         result = g.concat_vectors(result, (self.chunks, self.dim*2*2))
@@ -1687,9 +1726,10 @@ def main():
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = 1 #dim//2-1
-    VecNormalize.unit_test(chunks, dim)
+    #VecNormalize.unit_test(chunks, dim)
     VecMatMul.unit_test(chunks, dim)
-    vecMulDemo(); assert False
+    #vecMulDemo()
+    return
 
     max_dim_bits = (dim*2).bit_length() #complex domain
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
