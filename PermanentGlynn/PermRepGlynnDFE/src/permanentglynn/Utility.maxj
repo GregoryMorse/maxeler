@@ -8,6 +8,7 @@ import java.util.stream.IntStream;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.function.BiFunction;
 import java.math.BigInteger;
 
 import maxpower.utils.CollectionUtils;
@@ -45,7 +46,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObject;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.KernelObjectVectorizable;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
@@ -476,11 +477,41 @@ public class Utility {
             }
         };    
     }
+    /*
+def partitions(n, I=1):
+    yield (n,)
+    for i in range(I, n//2 + 1):
+        for p in partitions(n-i, i):
+            yield (i,) + p
+def gen_gpc(m, n): #m>=3 for carry-save-adder e.g. LUT-6 with maximum of 3 outputs is m=6, n=3
+    import itertools
+    gpcs = []
+    for k in range(3, m+1):
+        for part in partitions(k):
+            for perm in set(itertools.permutations(part)):
+                s, outbits = 0, 0
+                for x in perm:
+                    s = (s + x) >> 1
+                    if s == 0: outbits = 0; break #unnecessary additions removed
+                    outbits += 1
+                outbits += s.bit_length()
+                if outbits != 0 and outbits <= n: gpcs.append((perm, outbits))
+    return list(sorted(gpcs, key=lambda x: (sum(x[0])/x[1], x[0][0]), reverse=True))
+def gpc_to_lut(gpc):
+    l, luts = [], []
+    for i in range(gpc[1]):
+        if i < len(gpc[0]): l.extend([1<<i]*gpc[0][i])
+        luts.append([(sum(l[q] for q in range(len(l)) if ((1<<q) & b) != 0)>>i) & 1 for b in range(1 << len(l))])
+    return luts
+
+print(gen_gpc(6, 3))
+print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
+    */
     //https://www.epfl.ch/labs/lap/wp-content/uploads/2018/05/ParandehAfsharJan08_EfficientSynthesisOfCompressorTreesOnFpgas_ASPDAC08.pdf
     public static DFEVar compressionTree(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) {
-        final int lut_size = 6, max_out_size = 3;
+        final int lut_size = 6, max_out_size = 3, const_lut_size = 7 + 1; //for constants we extend to 7 (8 always needs 4 output bits)
         List<Pair<List<Integer>, Integer>> gpcs = new ArrayList<>();
-        for (int k = 3; k <= lut_size; k++) {
+        for (int k = 3; k <= const_lut_size; k++) {
             for (List<Integer> part : getIntegerPartitions(k)) {
                 HashSet<List<Integer>> perms = new HashSet<>();
                 getPermutations(part).forEach(perms::add);
@@ -510,11 +541,138 @@ public class Utility {
             }
             return aCompress < bCompress ? 1 : -1;
             });
-        System.out.println(gpcs);
-        int limit = vars.length;
-        //while (limit > 2) {
-        //}
-        return null;
+        BiFunction<Pair<List<Integer>, Integer>, List<Integer>, List<List<Integer>>> getBitmaps = (x, y) -> {
+            List<Integer> l = new ArrayList<>();
+            List<List<Integer>> luts = new ArrayList<>();
+            int curidx = 0, constmask = 0;
+            for (int i = 0; i < x.second; i++) {
+                if (i < x.first.size()) {
+                    for (int j = 0; j < x.first.get(i); j++) {
+                        if (curidx == y.size()) return luts; 
+                        l.add(1<<i);
+                        if (y.get(curidx) == 2) constmask |= 1<<curidx;
+                        curidx++;
+                    }
+                }
+                final int fi = i, fconstmask = constmask;
+                luts.add(IntStream.range(0, 1<<l.size()).filter(b -> (b & fconstmask) == fconstmask).map(b -> (IntStream.range(0, l.size()).filter(q -> y.get(q) == 1 ^ ((1<<q) & b) != 0).map(q -> l.get(q)).sum() >> fi) & 1).boxed().collect(Collectors.toList()));
+            }
+            return luts;
+        };
+        int idx = 0;
+        int curDelay = pipelineDelay[idx];
+        HashMap<Integer, List<Pair<Boolean, DFEVar>>> columns = new HashMap<>();
+        int maxcol = Arrays.stream(vars).mapToInt(x -> -((DFEFix)x.getType()).getFractionBits()+x.getType().getTotalBits()).max().getAsInt();
+        boolean isUnsigned = true;
+        while (true) {
+            while (idx != pipelineDelay.length && pipelineDelay[idx] == curDelay) {
+                int offset = -((DFEFix)vars[idx].getType()).getFractionBits();
+                for (int i = 0; i < vars[idx].getType().getTotalBits(); i++) { //unpack bits
+                    if (!columns.containsKey(offset+i)) columns.put(offset+i, new ArrayList<>());
+                    columns.get(offset+i).add(new Pair<Boolean, DFEVar>(issub[idx], vars[idx].get(i)));
+                }
+                if (((DFEFix)vars[idx].getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) { //sign extension
+                    isUnsigned = false;
+                    for (int i = vars[idx].getType().getTotalBits(); i < maxcol - offset; i++) {
+                        if (!columns.containsKey(offset+i)) columns.put(offset+i, new ArrayList<>());
+                        columns.get(offset+i).add(new Pair<Boolean, DFEVar>(issub[idx], vars[idx].get(vars[idx].getType().getTotalBits()-1)));
+                    }
+                }
+                if (issub[idx]) columns.get(offset).add(new Pair<Boolean, DFEVar>(false, null)); //null represents a constant one
+                idx++;
+            }
+            List<Integer> sortedTallCols = columns.entrySet().stream().sorted((x, y) -> Integer.compare(y.getValue().size(), x.getValue().size())).map(x -> x.getKey()).collect(Collectors.toList());
+            if (columns.get(sortedTallCols.get(0)).size() <= 3) { //repack bits for ternary addition
+                totalDelay[0] = curDelay;
+                List<List<DFEVar>> toSum = new ArrayList<>();
+                for (int i = 0; i < columns.get(sortedTallCols.get(0)).size(); i++) toSum.add(new ArrayList<>());
+                int startcol = columns.keySet().stream().mapToInt(x -> x).min().getAsInt();
+                for (int i = startcol; i < maxcol; i++) {
+                    for (int j = 0; j < toSum.size(); j++) {
+                        if (j < columns.get(i).size()) {
+                            if (columns.get(i).get(j).first) throw new IllegalArgumentException(); //subtraction inversions require one stage at least, this case can easily be handling by pre-detection and just using a ternary adder
+                            toSum.get(j).add(columns.get(i).get(j).second == null ? base.constant.var(KernelBase.dfeBool(), 1) : columns.get(i).get(j).second);
+                        } else {
+                            toSum.get(j).add(base.constant.zero(KernelBase.dfeBool()));
+                        }
+                    }
+                }                
+                if (toSum.size() == 1) return Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                else if (toSum.size() == 2) {
+                    DFEVar add1 = Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add2 = Bitops.catLsbToMsb(toSum.get(1)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    List<List<DFEVar>> chunks = getBitChunks128(add1, add2, false, true);
+                    if (chunks != null) totalDelay[0] += chunks.size() - 1;
+                    totalDelay[0]++;
+                    return addExact(add1, add2, false, base);                    
+                } else if (toSum.size() == 3) {
+                    DFEVar add1 = Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add2 = Bitops.catLsbToMsb(toSum.get(1)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add3 = Bitops.catLsbToMsb(toSum.get(2)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    List<List<DFEVar>> chunks = getTriBitChunks128(add1, add2, add3, false, false, true);
+                    if (chunks != null) totalDelay[0] += chunks.size() - 1;
+                    totalDelay[0]++;
+                    return triAddExact(add1, add2, add3, false, false, base);                    
+                }
+                return null; //toSum.size() == 0 implies invalid input anyway
+            }
+            HashMap<Integer, List<Pair<Boolean, DFEVar>>> nextcols = new HashMap<>();
+            while (true) {
+                boolean changed = false;
+                for (int tallCol : sortedTallCols) {
+                    for (Pair<List<Integer>, Integer> gpc : gpcs) {
+                        boolean found = true;
+                        int constAvail = 0;
+                        for (int j = 0; j < gpc.first.size(); j++) {
+                            if (!columns.containsKey(tallCol+j) || columns.get(tallCol+j).size() < gpc.first.get(j)) { found = false; break; }
+                            constAvail += Math.min(gpc.first.get(j), columns.get(tallCol+j).stream().filter(x -> x.second == null).count());
+                        }
+                        int needConsts = gpc.first.stream().mapToInt(x -> x).sum() - lut_size;
+                        if (needConsts > constAvail) found = false;
+                        if (found) {
+                            List<DFEVar> curvars = new ArrayList<>();
+                            List<Integer> vartypes = new ArrayList<>();
+                            for (int j = 0; j < gpc.second; j++) {
+                                if (j < gpc.first.size()) {
+                                    for (Pair<Boolean, DFEVar> entry : columns.get(tallCol+j).stream().sorted((x, y) -> Boolean.compare(x.second != null, y.second != null)).limit(gpc.first.get(j)).collect(Collectors.toList())) {
+                                        if (entry.second == null) {
+                                            vartypes.add(2);
+                                        } else {
+                                            vartypes.add(entry.first ? 1 : 0);
+                                            curvars.add(entry.second);
+                                        }
+                                        columns.get(tallCol+j).remove(entry);
+                                    }
+                                }
+                                if (tallCol + j >= maxcol) continue;
+                                if (!nextcols.containsKey(tallCol+j)) nextcols.put(tallCol+j, new ArrayList<>());
+                                nextcols.get(tallCol+j).add(new Pair<Boolean, DFEVar>(false, base.control.mux(Bitops.catLsbToMsb(curvars),
+                                    getBitmaps.apply(gpc, vartypes).get(j).stream().map(x -> base.constant.var(KernelBase.dfeBool(), x)).collect(Collectors.toList()))));
+                            }
+                            changed = true;
+                            break;
+                        }
+                    }
+                    if (changed) break;
+                }
+                if (!changed) break;
+                sortedTallCols = columns.entrySet().stream().sorted((x, y) -> Integer.compare(y.getValue().size(), x.getValue().size())).map(x -> x.getKey()).collect(Collectors.toList());
+            }
+            for (HashMap.Entry<Integer, List<Pair<Boolean, DFEVar>>> entry : columns.entrySet()) {
+                if (!nextcols.containsKey(entry.getKey()) && entry.getValue().size() != 0) nextcols.put(entry.getKey(), new ArrayList<>());
+                for (int i = 0; i < entry.getValue().size(); i++) {
+                    if (entry.getValue().get(i).second == null ) {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, null));
+                    } else if (entry.getValue().get(i).first) {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, ~entry.getValue().get(i).second));
+                    } else {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, base.optimization.pipeline(entry.getValue().get(i).second)));
+                    }
+                }
+            }            
+            columns = nextcols;
+            curDelay++;
+        }        
     }
     public static boolean[] booleanAdapter(Boolean[] l)
     {
