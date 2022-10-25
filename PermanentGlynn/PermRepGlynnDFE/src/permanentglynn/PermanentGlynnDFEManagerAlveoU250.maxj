@@ -277,7 +277,8 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
-        getManagerConfig().setStreamClockFrequencyMHz(params.getFrequency()); //setDefaultStreamClockFrequency
+        setDefaultStreamClockFrequency(params.getFrequency());
+        //getManagerConfig().setStreamClockFrequencyMHz(params.getFrequency()); //setDefaultStreamClockFrequency
         getManagerConfig().setDefaultStreamFifoDepth(512); //64 minimum, 512 is default, with 300/320MHz and 4 registers per crossing, the minimum moves to 128, might cause stalling if too low
         setup(this, params.dual(), params.isSim(), params.useFloat(), params.getFrequency(), params.getMaxDim());
     }
@@ -306,7 +307,6 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         //manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.verbose_output, true);
         manager.getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false); //problematic for successful builds, but failed builds which have a timing score will get deleted...can manually delete dcp checkpoint files instead
         manager.rebuildFromTimingMetImplementation(implementationStrategyName);
-
         manager.build();
     }
 
