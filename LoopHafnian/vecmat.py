@@ -966,6 +966,8 @@ def extract_int8(var):
 def extract_uint8(var):
     return var.reinterpret(g.uint8).split_vectors([1]*4)[0]
 WEST, EAST = 0, 1
+def get_slice8(drctn, start, end, bank=0):
+    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S8(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
 def get_slice4(drctn, start, end, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S4(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
 def get_slice2(drctn, start, end, bank=0):
@@ -1562,11 +1564,136 @@ class ColumnSwapVector(g.Component):
         #g.resolve_storage_requests()
         return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles
 class AdvanceGrayCode(g.Component):        
-    def __init__(self, chunks, dim, **kwargs):
+    def __init__(self, chunks, dim, lastagc=None, **kwargs):
         super().__init__(**kwargs)
         self.chunks, self.dim = chunks, dim
-    def build(self, tvec, tmat):
-        pass
+        self.allones, self.allzeros, self.shiftleft, self.gcodemasks, self.negtwo = [], [], [], [], []
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            if lastagc is None or lastagc == True:
+                self.allones.append(g.ones(shape=(1, dim*2*2), dtype=g.uint32, name="allones" + dirstr, layout=get_slice4(drctn, 8, 11, plane)))
+                self.allzeros.append(g.ones(shape=(1, dim*2*2), dtype=g.uint32, name="allzeros" + dirstr, layout=get_slice4(drctn, 8, 11, plane)))
+                self.shiftleft.append(g.from_data(np.array([[32-1]*dim*2*2], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftleft" + dirstr))
+                self.gcodemasks.append(g.from_data(np.array([([0]*4*2+[1<<(i//2%32) if i <32*2 else 0 for i in range(0, (dim//2-1-3)*2)])*4,
+                                                 ([0]*4*2+[1<<(i//2%32) if i>=32*2 else 0 for i in range(0, (dim//2-1-3)*2)])*4], dtype=np.uint32),
+                                                layout=get_slice8(drctn, 8, 15, plane), name="gcodemask" + dirstr))
+                self.negtwo.append(g.from_data(np.array([[-2]*dim*2*2], dtype=np.int32), layout=get_slice4(drctn, 12, 15, drctn), name="negtwo" + dirstr))
+            else:
+                self.allones.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allones[drctn*2+plane], name="postallones" + dirstr))
+                self.allzeros.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allzeros[drctn*2+plane], name="postallzeros" + dirstr))
+                self.shiftleft.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.shiftleft[drctn*2+plane], name="postshiftleft" + dirstr))
+                self.gcodemasks.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.gcodemasks[drctn*2+plane], name="postgcodemask" + dirstr))
+                self.negtwo.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.negtwo[drctn*2+plane], name="postnegtwo" + dirstr))
+        g.add_mem_constraints(self.allones + self.allzeros + self.gcodemasks, self.allones + self.allzeros + self.gcodemasks, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(self.shiftleft + self.gcodemasks + self.negtwo, self.shiftleft + self.gcodemasks + self.negtwo, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        if not lastagc is None: 
+            self.counterreqs, self.gcodereqs, self.gcodechangereqs = [], [], []
+            for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+                self.counterreqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
+                self.gcodereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
+                self.gcodechangereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
+    def build(self, tcounter, tgcode, tvec, tmat, inittime=0):
+        counters, gcodes, gcodechanges, negmulvecs = [], [], [], []
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)): 
+            dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            t = inittime + plane*max(self.dim//16, 10)
+            counter = g.split_vectors(tcounter[drctn*2+plane], [1]*2)
+            lastgcode = g.split_vectors(tgcode[(1-drctn)*2+plane], [1]*2)
+            with g.ResourceScope(name="inccounter" + dirstr, is_buffered=True, time=t, predecessors=None) as pred:
+                x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), counter[0].read(streams=g.SG4[sg4_for_hemi(4, drctn)], time=0), alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(4, drctn)])
+                #y = g.mask_bar(x, g.split_inner_splits(ones)[1], alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)]) #mask seems to only check the low 8 bits...
+                y = g.equal(x, self.allzeros[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(5, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]).reinterpret(g.uint32)
+                y = g.add(y, counter[1].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
+                x = g.vxm_identity(x, alus=[alu_for_hemi(9, drctn)], output_streams=g.SG4[sg4_for_hemi(4, drctn)])
+                counters.append(g.concat_vectors([x, y], (2, self.dim*2*2)).write(name="counter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
+            counter = g.split_vectors(counters[drctn*2+plane], [1]*2)
+            with g.ResourceScope(name="countertogcode" + dirstr, is_buffered=True, time=None, predecessors=[pred]) as pred:
+                ones = self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)])        
+                low = counter[0].read(streams=g.SG4[sg4_for_hemi(2, drctn)])    
+                high = counter[1].read(streams=g.SG4[sg4_for_hemi(0, drctn)])               
+                shl = self.shiftleft[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(6, drctn)])
+                y = g.right_shift(high, ones, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])                                
+                x = g.bitwise_or(g.left_shift(high, shl, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
+                    g.right_shift(low, ones, alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]),
+                    alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                x = g.bitwise_xor(x, counter[0].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
+                y = g.bitwise_xor(y, counter[1].read(streams=g.SG4[sg4_for_hemi(7, drctn)]), alus=[alu_for_hemi(13, drctn)], output_streams=g.SG4[sg4_for_hemi(7, drctn)])
+                gcodes.append(g.concat_vectors([x, y], (2, self.dim*2*2)).write(name="gcode" + dirstr, storage_req=self.gcodereqs[(1-drctn)*2+plane]))
+                x = g.bitwise_xor(x, lastgcode[0].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
+                y = g.bitwise_xor(y, lastgcode[1].read(streams=g.SG4[sg4_for_hemi(7, drctn)]), alus=[alu_for_hemi(14, drctn)], output_streams=g.SG4[sg4_for_hemi(7, drctn)])
+                gcodechanges.append(g.concat_vectors([x, y], (2, self.dim*2*2)).write(name="gcodechange" + dirstr, storage_req=self.gcodechangereqs[drctn*2+plane]))
+            gcode = g.split_vectors(gcodechanges[drctn*2+plane], [1]*2)
+            with g.ResourceScope(name="gcodeadapter" + dirstr, is_buffered=True, time=None, predecessors=[pred]) as pred:
+                gcodemask = g.split_vectors(self.gcodemasks[drctn*2+plane], [1]*2)
+                x = g.bitwise_and(gcode[0].read(streams=g.SG4[sg4_for_hemi(0, drctn)]),
+                    gcodemask[0].read(streams=g.SG4[sg4_for_hemi(1, drctn)]),
+                    alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                y = g.bitwise_and(gcode[1].read(streams=g.SG4[sg4_for_hemi(2, drctn)]),
+                    gcodemask[1].read(streams=g.SG4[sg4_for_hemi(3, drctn)]),
+                    alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                x = g.mask(g.bitwise_or(x, y, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.int32),
+                    self.negtwo[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                negmulvecs.append(extract_int8([x]).write(name="negmulvec" + dirstr, layout=get_slice1(drctn, 0, plane)))
+        g.add_mem_constraints(gcodechanges, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(counters + gcodes + gcodechanges + negmulvecs, counters + gcodes + gcodechanges + negmulvecs, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        return counters, gcodes, None, None
+    def chain_test(chunks, dim): pass
+    def unit_test(chunks, dim):
+        with g.ProgramContext() as pc:
+            agc = AdvanceGrayCode(chunks, dim, True)
+            tcounter, tgcode = [], []
+            for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+                dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+                #tcounter.append(g.zeros(shape=(2, dim*2*2), dtype=g.uint32, name="initcounter" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
+                #tgcode.append(g.zeros(shape=(2, dim*2*2), dtype=g.uint32, name="initgcode" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
+                tcounter.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initcounter" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
+                tgcode.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initgcode" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
+            g.add_mem_constraints(tcounter + tgcode, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            parallel = len(tcounter)
+            counters_mt, gcodes_mt, _, _ = agc.build(tcounter, tgcode, None, None)
+            g.add_mem_constraints(counters_mt + gcodes_mt, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            for x in counters_mt: x.set_program_output()
+            for x in gcodes_mt: x.set_program_output()
+            iop_file, json_file = compile_unit_test("advgraycode")
+        runner = g.create_tsp_runner(iop_file)
+        """
+        originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
+        inputs, exp_inpvecs = {}, []
+        for i in range(parallel//2):
+            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, 63-i*2)
+            inpvec0 = num_to_bits(normals, chunks)
+            inpvec0 = np.roll(inpvec0, 1, axis=0)
+            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, 63-i*2-1)
+            inpvec1 = num_to_bits(normals, chunks)
+            inpvec1 = np.roll(inpvec1, 1, axis=0)
+            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
+            exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
+        """
+        origcounter = [np.random.randint(0, 1<<32, (2, dim*2*2), dtype=np.uint32)] * parallel
+        origgcode = [np.array((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1))) for x in origcounter]
+        oracleres, result = [], []
+        def oracle():
+            oracleres.append([])
+            for i in range(parallel):
+                x = np.vstack((origcounter[i][0,:] + 1, origcounter[i][1,:] + np.where(origcounter[i][0,:]==0xFFFFFFFF, np.ones((1,), dtype=np.uint32), np.zeros((1,), dtype=np.uint32))))
+                newgcode = np.vstack((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1)))
+                oracleres[0].append((x, newgcode))
+        def actual():
+            inputs = {}
+            for i in range(parallel):
+                inputs[tcounter[i].name] = origcounter[i]
+                inputs[tgcode[i].name] = origgcode[i]
+            res = runner(**inputs)
+            result.append([])
+            for i in range(parallel):
+                result[0].append((res[counters_mt[i].name], res[gcodes_mt[i].name]))
+        oracle()
+        actual()
+        oracleres, result = oracleres[0], result[0]
+        np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
+        assert all(np.all(oracleres[i][0] == result[i][0]) for i in range(parallel)), [(oracleres[i][0][oracleres[i][0] != result[i][0]], result[i][0][oracleres[i][0] != result[i][0]]) for i in range(parallel)]
+        assert all(np.all(oracleres[i][1] == result[i][1]) for i in range(parallel)), [(oracleres[i][1][oracleres[i][1] != result[i][1]], result[i][1][oracleres[i][1] != result[i][1]]) for i in range(parallel)]
 class LoopCorrections(g.Component):
     def __init__(self, chunks, dim, matpow, lastlc=None, **kwargs):
         super().__init__(**kwargs)
@@ -1780,7 +1907,8 @@ def main():
     matpow = 1 #dim//2-1
     #VecNormalize.unit_test(chunks, dim)
     #VecMatMul.unit_test(chunks, dim)
-    vecMulDemo()
+    AdvanceGrayCode.unit_test(chunks, dim)
+    #vecMulDemo()
     return
 
     max_dim_bits = (dim*2).bit_length() #complex domain
