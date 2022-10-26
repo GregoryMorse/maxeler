@@ -4,6 +4,8 @@
 
 #/nix/store/8vd44g013blr4a4qymjwhgx7mmxgpaf2-GroqAPI.lib/
 
+#cat /usr/local/groq/version
+#aa-latest, groq-compiler, groq-view, iop-utils, run-iop, serve-docs (not present), tsp-ctl, tsp-regression
 import sys, os
 MANT_DIG = sys.float_info.mant_dig
 import numpy as np
@@ -1060,8 +1062,9 @@ class VecNormalize(g.Component):
                 })                
             else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvn.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
             g.add_mem_constraints(list(self.consts[drctn].values()), list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        self.logtworeqs, self.biasreqs, self.shftreqs, self.shiftedreqs, self.selreqs, self.cmpreqs, self.permreqs = [], [], [], [], [], [], []
+        self.normreqs, self.logtworeqs, self.biasreqs, self.shftreqs, self.shiftedreqs, self.selreqs, self.cmpreqs, self.permreqs = [], [], [], [], [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            self.normreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 1, plane)))
             self.biasreqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, plane)))
             self.logtworeqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
             self.shftreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 0, plane)))
@@ -1124,7 +1127,7 @@ class VecNormalize(g.Component):
                     alus=[alu_for_hemi(8, drctn)], output_streams=g.SG4[sg4_for_hemi(6, drctn)])                
                 norm = g.add(tnorm[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0), maxfinresult[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(1, drctn)]),
                     alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
-                resnorm.append(norm.write(name="norm"+dirstr, layout=get_slice1(drctn, 1, plane)))
+                resnorm.append(norm.write(name="norm"+dirstr, storage_req=self.normreqs[drctn*2+plane]))
                 nextmasks.append(g.concat_inner_splits(g.split_vectors(extract_int8(g.split_inner_splits(nextmask) + [topmask]), [1]*self.chunks)).write(name="nextmask"+dirstr, storage_req=self.selreqs[drctn*2+plane]))
             with g.ResourceScope(name="firstshift" + dirstr, is_buffered=True, time=t+280, predecessors=None) as pred:
                 cmpr = g.concat_inner_splits([compared]*self.chunks).read(streams=g.SG4[sg4_for_hemi(2, drctn)])
@@ -1158,7 +1161,7 @@ class VecNormalize(g.Component):
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
                 tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int32, name="inp" + dirstr, layout=get_slice4(drctn, 4, 7, plane)))
-                tnorm.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr, layout=get_slice1(drctn, 1, plane)))
+                tnorm.append(g.from_data(np.zeros((1, dim*2*2), dtype=np.uint8), name="norm" + dirstr, storage_req=vn.normreqs[drctn*2+plane]))
             g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(tnorm, tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             parallel = len(tvec)*2
@@ -1168,20 +1171,8 @@ class VecNormalize(g.Component):
             iop_file, json_file = compile_unit_test("vecnorm")
         runner = g.create_tsp_runner(iop_file)
         originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
-        inputs, exp_inpvecs = {}, []
-        for i in range(parallel//2):
-            exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, 63-i*2)
-            inpvec0 = num_to_bits(normals, chunks)
-            inpvec0 = np.roll(inpvec0, 1, axis=0)
-            exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, 63-i*2-1)
-            inpvec1 = num_to_bits(normals, chunks)
-            inpvec1 = np.roll(inpvec1, 1, axis=0)
-            inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
-            exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
-        print(inputs)
-        res = runner(**inputs)
+       
         np.set_printoptions(threshold=sys.maxsize)
-        print(res)
         #log2 for powers of 2: https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
         def abscomp(v): return v ^ (v >> 31) #absolute 1s complement rather than absolute value/2s complement
         def log2(v): v = abscomp(v); r = (v > 0xF) << 2; v >>= r; shift=(v > 0x3) << 1; v >>= shift; r |= shift; r |= (v >> 1); return r+(v!=0)
@@ -1191,9 +1182,35 @@ class VecNormalize(g.Component):
         assert all([log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)])
         assert all([float32log2(x)==((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)])
         #[((~x).bit_length() if x < 0 else x.bit_length()) for x in range(-128,127+1)]
-        def actual(): pass
-        def oracle(): pass
-        assert False
+        results, oracleres = [], []
+        def actual():
+            inputs, exp_inpvecs = {}, []
+            for i in range(parallel//2):
+                exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, 63-i*2)
+                inpvec0 = num_to_bits(normals, chunks)
+                inpvec0 = np.roll(inpvec0, 1, axis=0)
+                exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, 63-i*2-1)
+                inpvec1 = num_to_bits(normals, chunks)
+                inpvec1 = np.roll(inpvec1, 1, axis=0)
+                inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1)).astype(np.int32)
+                exp_inpvecs.extend([exp_inpvec0, exp_inpvec1])
+            #print(inputs)
+            res = runner(**inputs)
+            for i in range(parallel//2):
+                bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                nums = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                results.append((vector_complex_to_real(
+                    renormalize_doubles(nums[:dim*2], 63 - 7 - exp_inpvecs[i*2]).reshape(1, dim*2)),
+                    res[resnorm_mt[i].name][0, :dim*2].reshape(dim*2)))
+                results.append((vector_complex_to_real(
+                    renormalize_doubles(nums[dim*2:], 63 - 7 - exp_inpvecs[i*2]).reshape(1, dim*2)),
+                    res[resnorm_mt[i].name][0, dim*2:].reshape(dim*2)))
+        def oracle():
+            for i in range(parallel):
+                oracleres.append((originpvec[i], np.full(dim*2, 7-i, np.uint8)))
+        actual()
+        oracle()
+        assert all(np.all(oracleres[i][j] == results[i][j]) for i in range(parallel) for j in range(2))        
 class VecMatMul(g.Component):
     def __init__(self, chunks, dim, lastvmm=None, **kwargs):
         super().__init__(**kwargs)
@@ -1328,16 +1345,16 @@ class VecMatMul(g.Component):
         return norm_result, norms, t+MATMULDELAY+9+10+31+19
     def unit_test(chunks, dim):
         with g.ProgramContext() as pc:
+            vmm = VecMatMul(chunks, dim*2*2, True)
             tvec, tmat, tnorm = [], [], []
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
                 tvec.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="A" + dirstr, layout=get_slice1(drctn, 43, plane)))
                 tmat.append(g.input_tensor(shape=(chunks*dim*2*2, dim*2*2), dtype=g.int8, name="B" + dirstr, layout=get_slice16(drctn, s16rangeW if drctn == WEST else s16rangeE, plane)))
-                tnorm.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr, layout=get_slice1(drctn, 1, plane)))
+                tnorm.append(g.from_data(np.zeros((1, dim*2*2), dtype=np.uint8), name="norm" + dirstr, storage_req=vmm.vn.normreqs[drctn*2+plane]))
             g.add_mem_constraints(tvec, tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(tmat, tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(tnorm, tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            vmm = VecMatMul(chunks, dim*2*2, True)
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 g.add_mem_constraints([vmm.consts[drctn]["maskqrttop"], vmm.consts[drctn]["maskqrttoppre"]], [tmat[drctn*2+plane]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)        
 
@@ -1590,10 +1607,18 @@ class AdvanceGrayCode(g.Component):
         self.chunks, self.dim = chunks, dim
         self.gcodemaskarr = np.array([([0]*4*2+[1<<(i//2%32) if i <32*2 else 0 for i in range(0, (dim//2-1-3)*2)])*4,
                                       ([0]*4*2+[1<<(i//2%32) if i>=32*2 else 0 for i in range(0, (dim//2-1-3)*2)])*4], dtype=np.uint32)
+        self.origcounter = np.zeros((2, dim*2*2), dtype=np.uint32)
+        self.origgcode = np.array((self.origcounter[0,:] ^ ((self.origcounter[1,:] << 31) | (self.origcounter[0,:] >> 1)), self.origcounter[1,:] ^ (self.origcounter[1,:] >> 1)))                                      
+        self.counterreqs, self.gcodereqs, self.gcodechangereqs = [], [], []
+        self.tcounter, self.tgcode = [], []        
         self.allones, self.allzeros, self.shiftleft, self.gcodemasks, self.negtwo = [], [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
+            if not lastagc is None:
+                self.gcodechangereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
             if lastagc is None or lastagc == True:
+                self.counterreqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
+                self.gcodereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
                 self.allones.append(g.ones(shape=(1, dim*2*2), dtype=g.uint32, name="allones" + dirstr, layout=get_slice4(drctn, 8, 11, plane)))
                 self.allzeros.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint32, name="allzeros" + dirstr, layout=get_slice4(drctn, 8, 11, plane)))
                 self.shiftleft.append(g.from_data(np.array([[32-1]*dim*2*2], dtype=np.uint32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftleft" + dirstr))
@@ -1601,30 +1626,32 @@ class AdvanceGrayCode(g.Component):
                                                 layout=get_slice8(drctn, 8, 15, plane), name="gcodemask" + dirstr))
                 self.negtwo.append(g.from_data(np.array([[-2]*dim*2*2], dtype=np.int32), layout=get_slice4(drctn, 12, 15, drctn), name="negtwo" + dirstr))
             else:
+                self.counterreqs.append(lastagc.counterreqs[drctn*2+plane])
+                self.gcodereqs.append(lastagc.gcodereqs[drctn*2+plane])
                 self.allones.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allones[drctn*2+plane], name="postallones" + dirstr))
                 self.allzeros.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allzeros[drctn*2+plane], name="postallzeros" + dirstr))
                 self.shiftleft.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.shiftleft[drctn*2+plane], name="postshiftleft" + dirstr))
                 self.gcodemasks.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.gcodemasks[drctn*2+plane], name="postgcodemask" + dirstr))
                 self.negtwo.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.negtwo[drctn*2+plane], name="postnegtwo" + dirstr))
+            if lastagc == True:
+                self.tcounter.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initcounter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
+                self.tgcode.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initgcode" + dirstr, storage_req=self.gcodereqs[drctn*2+plane]))
+            elif lastagc is None:
+                self.tcounter.append(g.from_data(self.origcounter, name="initcounter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
+                self.tgcode.append(g.from_data(self.origgcode, name="initgcode" + dirstr, storage_req=self.gcodereqs[drctn*2+plane]))
+            else:
+                self.tcounter.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.tcounter[drctn*2+plane], name="postinitcounter" + dirstr))
+                self.tgcode.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.tgcode[drctn*2+plane], name="postgcode" + dirstr))  
+        g.add_mem_constraints(self.tcounter + self.tgcode, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(self.allones + self.allzeros + self.gcodemasks, self.allones + self.allzeros + self.gcodemasks, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(self.shiftleft + self.gcodemasks + self.negtwo, self.shiftleft + self.gcodemasks + self.negtwo, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)               
-        self.counterreqs, self.gcodereqs, self.gcodechangereqs = [], [], []
-        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-            if not lastagc is None:
-                self.gcodechangereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
-            if lastagc is None or lastagc == True:
-                self.counterreqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
-                self.gcodereqs.append(tensor.create_storage_request(layout=get_slice8(drctn, 0, 7, plane)))
-            else:
-                self.counterreqs.append(lastagc.counterreqs[drctn*2+plane])
-                self.gcodereqs.append(lastagc.gcodereqs[drctn*2+plane])
-    def build(self, tcounter, tgcode, inittime=0):
+    def build(self, inittime=0):
         counters, gcodes, gcodechanges, negmulvecs = [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)): 
             dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
             t = inittime + plane*max(self.dim//16, 10)
-            counter = g.split_vectors(tcounter[drctn*2+plane], [1]*2)
-            lastgcode = g.split_vectors(tgcode[(1-drctn)*2+plane], [1]*2)
+            counter = g.split_vectors(self.tcounter[drctn*2+plane], [1]*2)
+            lastgcode = g.split_vectors(self.tgcode[(1-drctn)*2+plane], [1]*2)
             with g.ResourceScope(name="inccounter" + dirstr, is_buffered=True, time=t, predecessors=None) as pred:
                 x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), counter[0].read(streams=g.SG4[sg4_for_hemi(4, drctn)], time=0), alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(4, drctn)])
                 #y = g.mask_bar(x, g.split_inner_splits(ones)[1], alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)]) #mask only checks the low 8 bits are zero/not zero...
@@ -1664,27 +1691,28 @@ class AdvanceGrayCode(g.Component):
                 #x = g.mask(x, self.negtwo[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 #x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 negmulvecs.append(extract_int8([x]).write(name="negmulvec" + dirstr, layout=get_slice1(drctn, 0, plane)))
-        g.add_mem_constraints(gcodechanges, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(gcodechanges + negmulvecs, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(counters + gcodes + gcodechanges + negmulvecs, counters + gcodes + gcodechanges + negmulvecs, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        return counters, gcodes, negmulvecs
+        return counters, gcodes, negmulvecs, 82
+    def adjvecmat(self, tvec, tmat, inittime=0):
+        vecres = [], matres = []
+        for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
+            with g.ResourceScope(name="adjvecmat" + dirstr, time=t, predecessors=None) as pred:
+                #g.latch(negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)])
+                res = g.mul(tvec[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                vecres.append(res.write(name="adjvec" + dirstr, storage_req=tvec[drctn*2+plane].storage_req))
+                res = g.mul(tmat[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                matres.append(res.write(name="adjmat" + dirstr, storage_req=tmat[drctn*2+plane.storage_req]))
+        return vecres, matres
     def chain_test(chunks, dim): #verify performance
         import timeit
-        origcounter = [np.zeros((2, dim*2*2), dtype=np.uint32)] * 4
-        origgcode = [np.array((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1))) for x in origcounter]
-        pgm_pkg = g.ProgramPackage(name="agcpackage", output_dir=None)
+        pgm_pkg = g.ProgramPackage(name="agcpackage", output_dir="agcpackage")
         with pgm_pkg.create_program_context("init_agc") as pcinit:
             agc = AdvanceGrayCode(chunks, dim)
-            tcounter, tgcode = [], []
-            for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-                dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-                tcounter.append(g.from_data(origcounter[drctn*2+plane], name="initcounter" + dirstr, storage_req=agc.counterreqs[drctn*2+plane]))
-                tgcode.append(g.from_data(origgcode[drctn*2+plane], name="initgcode" + dirstr, storage_req=agc.gcodereqs[drctn*2+plane]))
-            g.add_mem_constraints(tcounter + tgcode, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)            
-            parallel = len(tcounter)
+            parallel = len(agc.tcounter)
         with pgm_pkg.create_program_context("agc") as pc:
             agc = AdvanceGrayCode(chunks, dim, agc)
-            counters_mt, gcodes_mt, negmulvecs = agc.build(tcounter, tgcode)
-            g.add_mem_constraints(counters_mt + gcodes_mt + negmulvecs, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            counters_mt, gcodes_mt, negmulvecs, _ = agc.build()
             for x in counters_mt: x.set_program_output()
             for x in gcodes_mt: x.set_program_output()
             for x in negmulvecs: x.set_program_output()
@@ -1699,7 +1727,9 @@ class AdvanceGrayCode(g.Component):
             device.load(iop[1], unsafe_keep_entry_points=True)
             invoke(device, iop, 0, 0, None)
         tloaddata = timeit.timeit(runnerinit, number=1)/1
-        runner = lambda: invoke(device, iop, 1, 0, None)        
+        runner = lambda: invoke(device, iop, 1, 0, None)
+        origcounter = [agc.origcounter for _ in range(parallel)]
+        origgcode = [agc.origgcode for _ in range(parallel)]        
         oracleres, result = [], []
         def oracle():
             oracleres.clear(); oracleres.append([])
@@ -1730,22 +1760,17 @@ class AdvanceGrayCode(g.Component):
         #now measure performance
         tactual = timeit.timeit(actual, number=1)/1
         toracle = timeit.timeit(oracle, number=1000)/1000
-        tactualbatch = timeit.timeit(actual, number=100000)/100000
+        batchsize = 100000
+        tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
         print("File Sizes", iops[0], os.path.getsize(iops[0]))
-        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. 100000 Batch", tactualbatch)
+        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch", tactualbatch)
+        device.close()
     
     def unit_test(chunks, dim): #verify accuracy
         with g.ProgramContext() as pc:
             agc = AdvanceGrayCode(chunks, dim, True)
-            tcounter, tgcode = [], []
-            for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
-                dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
-                tcounter.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initcounter" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
-                tgcode.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initgcode" + dirstr, layout=get_slice8(drctn, 0, 7, plane)))
-            g.add_mem_constraints(tcounter + tgcode, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-            parallel = len(tcounter)
-            counters_mt, gcodes_mt, negmulvecs = agc.build(tcounter, tgcode)
-            g.add_mem_constraints(counters_mt + gcodes_mt + negmulvecs, tcounter + tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            parallel = len(agc.tcounter)
+            counters_mt, gcodes_mt, negmulvecs, _ = agc.build()
             for x in counters_mt: x.set_program_output()
             for x in gcodes_mt: x.set_program_output()
             for x in negmulvecs: x.set_program_output()
@@ -1765,8 +1790,8 @@ class AdvanceGrayCode(g.Component):
         def actual():
             inputs = {}
             for i in range(parallel):
-                inputs[tcounter[i].name] = origcounter[i]
-                inputs[tgcode[i].name] = origgcode[i]
+                inputs[agc.tcounter[i].name] = origcounter[i]
+                inputs[agc.tgcode[i].name] = origgcode[i]
             res = runner(**inputs)
             result.append([])
             for i in range(parallel):
@@ -1822,7 +1847,7 @@ class LoopCorrections(g.Component):
         #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
         #with g.ResourceScope(name="advgraycode", is_buffered=True, time=None, predecessors=[pred]) as pred:
-        #    self.tmat, self.cx_diag = AdvanceGrayCode(self.chunks, self.dim*2*2).build(self.cx_diag, self.tmat)
+        #    self.cx_diag, self.tmat = AdvanceGrayCode(self.chunks, self.dim*2*2).build(self.cx_diag, self.tmat)
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
@@ -1852,7 +1877,7 @@ def vecMulDemo():
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = dim//2-1
-    pgm_pkg = g.ProgramPackage(name="mm", output_dir=None)
+    pgm_pkg = g.ProgramPackage(name="mm", output_dir="mm")
     with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
         lc = LoopCorrections(chunks, dim, matpow)
         tvec, tmat = lc.tvec, lc.tmat
@@ -1887,9 +1912,6 @@ def vecMulDemo():
     iops = pgm_pkg.assemble()
     iop = runtime.IOProgram(iops[0])
     device = runtime.devices[0]
-    device.open()
-    device.load(iop[0], unsafe_keep_entry_points=True)
-    device.load(iop[1], unsafe_keep_entry_points=True)
         
     if worstCase:
         if useCplx:
@@ -1921,6 +1943,9 @@ def vecMulDemo():
     
     results, runfunc = [None], [None]   
     def loaddata():
+        device.open()
+        device.load(iop[0], unsafe_keep_entry_points=True)
+        device.load(iop[1], unsafe_keep_entry_points=True)
         fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
         inputs = {}
         exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
@@ -1952,9 +1977,10 @@ def vecMulDemo():
     actual = runfunc[0]
     runner = lambda: invoke(device, iop, 1, 0, None) #g.create_tsp_runner(iop_file)
     tactual = timeit.timeit(actual, number=1)/1
-    tactualbatch = timeit.timeit(actual, number=100)/100
+    batchsize = 30000
+    tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
     print("Matrix Power", matpow, "File Sizes", iops[0], os.path.getsize(iops[0]))
-    print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. 100000 Batch", tactualbatch)
+    print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x)", tactualbatch)
     oracleres, results = oracleres[0], results[0]
     for i in range(parallel):
         print_utils.infoc("\nComparing results with oracle ...")
@@ -1966,17 +1992,18 @@ def vecMulDemo():
             print_utils.err(
                 f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
             )
+    device.close()
 def main():
     import timeit
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
     matpow = 1 #dim//2-1
-    #VecNormalize.unit_test(chunks, dim)
-    #VecMatMul.unit_test(chunks, dim)
+    VecNormalize.unit_test(chunks, dim)
+    VecMatMul.unit_test(chunks, dim)
     AdvanceGrayCode.unit_test(chunks, dim)
     AdvanceGrayCode.chain_test(chunks, dim)
-    #vecMulDemo()
+    vecMulDemo()
     return
 
     max_dim_bits = (dim*2).bit_length() #complex domain
