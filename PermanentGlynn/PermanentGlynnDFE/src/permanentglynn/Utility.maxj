@@ -18,10 +18,10 @@ import com.maxeler.platform.max5.manager.SynthesisStrategy;
 
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
-import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
+//import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernel;
 import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
 import com.maxeler.maxcompiler.v2.managers.custom.blocks.Fanout;
-import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+//import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
 import com.maxeler.maxcompiler.v2.managers.custom.ManagerClock;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration.OptimizationOptions;
@@ -247,6 +247,58 @@ public class Utility {
             this.second = second;
         }
     }
+    public static DFEVar binaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
+    {
+        int limit = vars.length;
+        while (limit > 1) {
+            if (pipelineDelay[0] != pipelineDelay[1]) {
+                vars[0] = base.optimization.pipeline(vars[0]);
+                pipelineDelay[0]++;
+            } else {
+                int limitNew, i;
+                for (i = 0, limitNew = 0; i < limit; i++, limitNew++) {
+                    if (i >= limit-1 || pipelineDelay[i] != pipelineDelay[i+1]) {
+                        pipelineDelay[limitNew] = pipelineDelay[i];
+                        vars[limitNew] = vars[i];
+                        issub[limitNew] = issub[i];                        
+                    } else {
+                        pipelineDelay[limitNew] = pipelineDelay[i] + 1;                        
+                        if (!issub[i]) { //first argument must be positive for efficient TriArith
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i], vars[i+1], issub[i+1], true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i], vars[i+1], issub[i+1], base);
+                            issub[limitNew] = false;
+                        } else if (!issub[i+1]) {
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i+1], vars[i], issub[i], true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i+1], vars[i], issub[i], base);
+                            issub[limitNew] = false;
+                        } else { //both are negative
+                            List<List<DFEVar>> chunks = getBitChunks128(vars[i], vars[i+1], false, true);
+                            if (chunks != null) pipelineDelay[limitNew] += chunks.size() - 1;
+                            vars[limitNew] = addExact(vars[i], vars[i+1], false, base);
+                            issub[limitNew] = true;
+                        }
+                        i++;
+                    }
+                }
+                limit = limitNew;
+            }
+            DFEVar[] varsCapture = Arrays.copyOf(vars, limit);
+            int[] pipelineDelayCapture = Arrays.copyOf(pipelineDelay, limit);
+            boolean[] issubCapture = Arrays.copyOf(issub, limit);
+            int[] idxsort = IntStream.range(0, limit).mapToObj(Integer::valueOf).sorted((i, j) -> {
+                int c = Integer.compare(pipelineDelayCapture[i], pipelineDelayCapture[j]);
+                int s = Integer.compare(((DFEFix)varsCapture[i].getType()).getOffset(), ((DFEFix)varsCapture[j].getType()).getOffset());
+                return c != 0 ? c : (s != 0 ? s : Integer.compare(i, j));
+                }).mapToInt(Integer::intValue).toArray();
+            vars = IntStream.of(idxsort).mapToObj(i -> varsCapture[i]).toArray(DFEVar[]::new);
+            issub = booleanAdapter(IntStream.of(idxsort).mapToObj(i -> issubCapture[i]).toArray(Boolean[]::new));
+            pipelineDelay = IntStream.of(idxsort).map(i -> pipelineDelayCapture[i]).toArray();
+        }
+        totalDelay[0] = pipelineDelay[0] + (issub[0] ? 1 : 0);
+        return issub[0] ? -vars[0] : vars[0];
+    }    
     public static DFEVar ternaryAdder(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) //O(ceil(log_3 n)) + additional 1 if negation occurs...at 6 additions this routine is more efficient than the default chaining
     {
         int limit = vars.length;
@@ -327,6 +379,298 @@ public class Utility {
         }
         totalDelay[0] = pipelineDelay[0] + (issub[0] ? 1 : 0);
         return issub[0] ? -vars[0] : vars[0];
+    }
+    public static Iterable<List<Integer>> getIntegerPartitions(int value)
+    {
+        return new Iterable<List<Integer>>() {
+            public Iterator<List<Integer>> iterator() {
+                return new Iterator<List<Integer>>() {
+                    class PartStack {
+                        int n, I, i;
+                        List<Integer> p;
+                        PartStack(int n, int I, int i, List<Integer> p) {
+                            this.n = n; this.I = I; this.i = i; this.p = p;
+                        }
+                        public String toString() { return this.n + " " + this.I + " " + this.i + " " + this.p.toString(); }
+                    }            
+                    List<PartStack> stack = null;
+                    public boolean hasNext() { return stack == null || stack.size() != 0; }
+                    public List<Integer> next() {
+                        List<Integer> nextList = null;
+                        if (stack == null) {
+                            stack = new ArrayList<>();
+                            stack.add(new PartStack(value, 1, 0, new ArrayList<>()));
+                        }
+                        while (stack.size() != 0) {
+                            PartStack ps = stack.get(stack.size()-1);
+                            if (ps.i == 0) {
+                                if (nextList != null) break;
+                                nextList = new ArrayList<>(ps.p);
+                                nextList.add(ps.n);
+                                ps.i = ps.I;
+                                ps.p.add(ps.i);
+                            } else ps.p.set(ps.p.size()-1, ps.i);
+                            if (ps.i > ps.n/2) {
+                                stack.remove(stack.size()-1);
+                                if (stack.size() != 0) {
+                                    stack.get(stack.size()-1).i++;
+                                }
+                                continue;
+                            }                            
+                            stack.add(new PartStack(ps.n-ps.i, ps.i, 0, new ArrayList<>(ps.p)));
+                        }
+                        return nextList;
+                    }
+                };
+            }
+        };
+    }
+    public static <T> Iterable<List<T>> getPermutations(List<T> start) {
+        return new Iterable<List<T>>() {
+            public Iterator<List<T>> iterator() {
+                return new Iterator<List<T>>() {
+                    class PermStack {
+                        int i;
+                        List<T> lst;
+                        List<T> p;
+                        PermStack(int i, List<T> lst, List<T> p) {
+                            this.i = i; this.lst = lst; this.p = p;
+                        }
+                        public String toString() { return this.i + " " + this.lst.toString() + " " + this.p.toString(); }
+                    }
+                    List<PermStack> stack = null;
+                    public boolean hasNext() { return start.size() != 0 && (stack == null || stack.size() != 0); }
+                    public List<T> next() {
+                        List<T> nextList = null;
+                        if (stack == null) {
+                            stack = new ArrayList<>();
+                            if (start.size() == 1) return start;
+                            stack.add(new PermStack(-1, start, new ArrayList<>()));
+                        }
+                        while (stack.size() != 0) {
+                            PermStack ps = stack.get(stack.size()-1);
+                            if (ps.lst.size() == 0) {
+                                if (nextList != null) break;
+                                nextList = new ArrayList<>(ps.p);
+                                ps.i++;
+                            } else if (ps.i == -1) {
+                                ps.i++;
+                                ps.p.add(ps.lst[ps.i]);
+                            }
+                            if (ps.i >= ps.lst.size()) {
+                                stack.remove(stack.size()-1);
+                                if (stack.size() != 0) {
+                                    stack.get(stack.size()-1).i++;
+                                }
+                                continue;
+                            }
+                            ps.p.set(ps.p.size()-1, ps.lst[ps.i]);                            
+                            List<T> remLst = new ArrayList<>(ps.lst.subList(0, ps.i));
+                            remLst.addAll(ps.lst.subList(ps.i+1, ps.lst.size()));
+                            stack.add(new PermStack(-1, remLst, new ArrayList<>(ps.p)));
+                        }
+                        return nextList;
+                    }
+                };
+            }
+        };    
+    }
+    /*
+def partitions(n, I=1):
+    yield (n,)
+    for i in range(I, n//2 + 1):
+        for p in partitions(n-i, i):
+            yield (i,) + p
+def gen_gpc(m, n): #m>=3 for carry-save-adder e.g. LUT-6 with maximum of 3 outputs is m=6, n=3
+    import itertools
+    gpcs = []
+    for k in range(3, m+1):
+        for part in partitions(k):
+            for perm in set(itertools.permutations(part)):
+                s, outbits = 0, 0
+                for x in perm:
+                    s = (s + x) >> 1
+                    if s == 0: outbits = 0; break #unnecessary additions removed
+                    outbits += 1
+                outbits += s.bit_length()
+                if outbits != 0 and outbits <= n: gpcs.append((perm, outbits))
+    return list(sorted(gpcs, key=lambda x: (sum(x[0])/x[1], x[0][0]), reverse=True))
+def gpc_to_lut(gpc):
+    l, luts = [], []
+    for i in range(gpc[1]):
+        if i < len(gpc[0]): l.extend([1<<i]*gpc[0][i])
+        luts.append([(sum(l[q] for q in range(len(l)) if ((1<<q) & b) != 0)>>i) & 1 for b in range(1 << len(l))])
+    return luts
+
+print(gen_gpc(6, 3))
+print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
+    */
+    //https://www.epfl.ch/labs/lap/wp-content/uploads/2018/05/ParandehAfsharJan08_EfficientSynthesisOfCompressorTreesOnFpgas_ASPDAC08.pdf
+    public static DFEVar compressionTree(DFEVar[] vars, boolean[] issub, int[] pipelineDelay, Integer[] totalDelay, KernelBase<?> base) {
+        final int lut_size = 6, max_out_size = 3, const_lut_size = 7 + 1; //for constants we extend to 7 (8 always needs 4 output bits)
+        List<Pair<List<Integer>, Integer>> gpcs = new ArrayList<>();
+        for (int k = 3; k <= const_lut_size; k++) {
+            for (List<Integer> part : getIntegerPartitions(k)) {
+                HashSet<List<Integer>> perms = new HashSet<>();
+                getPermutations(part).forEach(perms::add);
+                for (List<Integer> perm : perms) {
+                    int s = 0, outbits = 0;
+                    for (Integer x : perm) {
+                        s = (s + x) >> 1;
+                        if (s == 0) { outbits = 0; break; } //unnecessary additions removed
+                        outbits++;
+                    }
+                    outbits += Integer.highestOneBit(s);
+                    if (outbits != 0 && outbits <= max_out_size) gpcs.add(new Pair<List<Integer>, Integer>(perm, outbits));
+                }
+            }
+        }
+        gpcs.sort((a, b) -> {
+            double aCompress = a.first.stream().mapToInt(x -> x).sum()*b.second;
+            double bCompress = b.first.stream().mapToInt(x -> x).sum()*a.second;
+            if (aCompress == bCompress) {
+                for (int i = 0; i < Math.max(a.first.size(), b.first.size()); i++) {
+                    if (i >= a.first.size()) return 1;
+                    if (i >= b.first.size()) return -1;
+                    if (a.first.get(i) == b.first.get(i)) continue;
+                    return a.first.get(i) < b.first.get(i) ? 1 : -1; 
+                }
+                return 0;
+            }
+            return aCompress < bCompress ? 1 : -1;
+            });
+        BiFunction<Pair<List<Integer>, Integer>, List<Integer>, List<List<Integer>>> getBitmaps = (x, y) -> {
+            List<Integer> l = new ArrayList<>();
+            List<List<Integer>> luts = new ArrayList<>();
+            int curidx = 0, constmask = 0;
+            for (int i = 0; i < x.second; i++) {
+                if (i < x.first.size()) {
+                    for (int j = 0; j < x.first.get(i); j++) {
+                        if (curidx == y.size()) return luts; 
+                        l.add(1<<i);
+                        if (y.get(curidx) == 2) constmask |= 1<<curidx;
+                        curidx++;
+                    }
+                }
+                final int fi = i, fconstmask = constmask;
+                luts.add(IntStream.range(0, 1<<l.size()).filter(b -> (b & fconstmask) == fconstmask).map(b -> (IntStream.range(0, l.size()).filter(q -> y.get(q) == 1 ^ ((1<<q) & b) != 0).map(q -> l.get(q)).sum() >> fi) & 1).boxed().collect(Collectors.toList()));
+            }
+            return luts;
+        };
+        int idx = 0;
+        int curDelay = pipelineDelay[idx];
+        HashMap<Integer, List<Pair<Boolean, DFEVar>>> columns = new HashMap<>();
+        int maxcol = Arrays.stream(vars).mapToInt(x -> -((DFEFix)x.getType()).getFractionBits()+x.getType().getTotalBits()).max().getAsInt();
+        boolean isUnsigned = true;
+        while (true) {
+            while (idx != pipelineDelay.length && pipelineDelay[idx] == curDelay) {
+                int offset = -((DFEFix)vars[idx].getType()).getFractionBits();
+                for (int i = 0; i < vars[idx].getType().getTotalBits(); i++) { //unpack bits
+                    if (!columns.containsKey(offset+i)) columns.put(offset+i, new ArrayList<>());
+                    columns.get(offset+i).add(new Pair<Boolean, DFEVar>(issub[idx], vars[idx].get(i)));
+                }
+                if (((DFEFix)vars[idx].getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) { //sign extension
+                    isUnsigned = false;
+                    for (int i = vars[idx].getType().getTotalBits(); i < maxcol - offset; i++) {
+                        if (!columns.containsKey(offset+i)) columns.put(offset+i, new ArrayList<>());
+                        columns.get(offset+i).add(new Pair<Boolean, DFEVar>(issub[idx], vars[idx].get(vars[idx].getType().getTotalBits()-1)));
+                    }
+                }
+                if (issub[idx]) columns.get(offset).add(new Pair<Boolean, DFEVar>(false, null)); //null represents a constant one
+                idx++;
+            }
+            List<Integer> sortedTallCols = columns.entrySet().stream().sorted((x, y) -> Integer.compare(y.getValue().size(), x.getValue().size())).map(x -> x.getKey()).collect(Collectors.toList());
+            if (columns.get(sortedTallCols.get(0)).size() <= 3) { //repack bits for ternary addition
+                totalDelay[0] = curDelay;
+                List<List<DFEVar>> toSum = new ArrayList<>();
+                for (int i = 0; i < columns.get(sortedTallCols.get(0)).size(); i++) toSum.add(new ArrayList<>());
+                int startcol = columns.keySet().stream().mapToInt(x -> x).min().getAsInt();
+                for (int i = startcol; i < maxcol; i++) {
+                    for (int j = 0; j < toSum.size(); j++) {
+                        if (j < columns.get(i).size()) {
+                            if (columns.get(i).get(j).first) throw new IllegalArgumentException(); //subtraction inversions require one stage at least, this case can easily be handling by pre-detection and just using a ternary adder
+                            toSum.get(j).add(columns.get(i).get(j).second == null ? base.constant.var(KernelBase.dfeBool(), 1) : columns.get(i).get(j).second);
+                        } else {
+                            toSum.get(j).add(base.constant.zero(KernelBase.dfeBool()));
+                        }
+                    }
+                }                
+                if (toSum.size() == 1) return Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                else if (toSum.size() == 2) {
+                    DFEVar add1 = Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add2 = Bitops.catLsbToMsb(toSum.get(1)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    List<List<DFEVar>> chunks = getBitChunks128(add1, add2, false, true);
+                    if (chunks != null) totalDelay[0] += chunks.size() - 1;
+                    totalDelay[0]++;
+                    return addExact(add1, add2, false, base);                    
+                } else if (toSum.size() == 3) {
+                    DFEVar add1 = Bitops.catLsbToMsb(toSum.get(0)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add2 = Bitops.catLsbToMsb(toSum.get(1)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    DFEVar add3 = Bitops.catLsbToMsb(toSum.get(2)).reinterpret(KernelBase.dfeFixOffset(maxcol - startcol, -startcol, isUnsigned ? SignMode.UNSIGNED : SignMode.TWOSCOMPLEMENT));
+                    List<List<DFEVar>> chunks = getTriBitChunks128(add1, add2, add3, false, false, true);
+                    if (chunks != null) totalDelay[0] += chunks.size() - 1;
+                    totalDelay[0]++;
+                    return triAddExact(add1, add2, add3, false, false, base);                    
+                }
+                return null; //toSum.size() == 0 implies invalid input anyway
+            }
+            HashMap<Integer, List<Pair<Boolean, DFEVar>>> nextcols = new HashMap<>();
+            while (true) {
+                boolean changed = false;
+                for (int tallCol : sortedTallCols) {
+                    for (Pair<List<Integer>, Integer> gpc : gpcs) {
+                        boolean found = true;
+                        int constAvail = 0;
+                        for (int j = 0; j < gpc.first.size(); j++) {
+                            if (!columns.containsKey(tallCol+j) || columns.get(tallCol+j).size() < gpc.first.get(j)) { found = false; break; }
+                            constAvail += Math.min(gpc.first.get(j), columns.get(tallCol+j).stream().filter(x -> x.second == null).count());
+                        }
+                        int needConsts = gpc.first.stream().mapToInt(x -> x).sum() - lut_size;
+                        if (needConsts > constAvail) found = false;
+                        if (found) {
+                            List<DFEVar> curvars = new ArrayList<>();
+                            List<Integer> vartypes = new ArrayList<>();
+                            for (int j = 0; j < gpc.second; j++) {
+                                if (j < gpc.first.size()) {
+                                    for (Pair<Boolean, DFEVar> entry : columns.get(tallCol+j).stream().sorted((x, y) -> Boolean.compare(x.second != null, y.second != null)).limit(gpc.first.get(j)).collect(Collectors.toList())) {
+                                        if (entry.second == null) {
+                                            vartypes.add(2);
+                                        } else {
+                                            vartypes.add(entry.first ? 1 : 0);
+                                            curvars.add(entry.second);
+                                        }
+                                        columns.get(tallCol+j).remove(entry);
+                                    }
+                                }
+                                if (tallCol + j >= maxcol) continue;
+                                if (!nextcols.containsKey(tallCol+j)) nextcols.put(tallCol+j, new ArrayList<>());
+                                nextcols.get(tallCol+j).add(new Pair<Boolean, DFEVar>(false, base.control.mux(Bitops.catLsbToMsb(curvars),
+                                    getBitmaps.apply(gpc, vartypes).get(j).stream().map(x -> base.constant.var(KernelBase.dfeBool(), x)).collect(Collectors.toList()))));
+                            }
+                            changed = true;
+                            break;
+                        }
+                    }
+                    if (changed) break;
+                }
+                if (!changed) break;
+                sortedTallCols = columns.entrySet().stream().sorted((x, y) -> Integer.compare(y.getValue().size(), x.getValue().size())).map(x -> x.getKey()).collect(Collectors.toList());
+            }
+            for (HashMap.Entry<Integer, List<Pair<Boolean, DFEVar>>> entry : columns.entrySet()) {
+                if (!nextcols.containsKey(entry.getKey()) && entry.getValue().size() != 0) nextcols.put(entry.getKey(), new ArrayList<>());
+                for (int i = 0; i < entry.getValue().size(); i++) {
+                    if (entry.getValue().get(i).second == null ) {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, null));
+                    } else if (entry.getValue().get(i).first) {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, ~entry.getValue().get(i).second));
+                    } else {
+                        nextcols.get(entry.getKey()).add(new Pair<Boolean, DFEVar>(false, base.optimization.pipeline(entry.getValue().get(i).second)));
+                    }
+                }
+            }            
+            columns = nextcols;
+            curDelay++;
+        }        
     }
     public static boolean[] booleanAdapter(Boolean[] l)
     {
@@ -885,10 +1229,12 @@ public class Utility {
     }
     public static DFEVar uToSigned(DFEVar a, KernelBase<?> base) {
         //KernelBase.dfeInt(a.getType().getTotalBits() + 1);
+        if (((DFEFix)a.getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) return a;
         return base.constant.zero(KernelBase.dfeBool()).cat(a).reinterpret(KernelBase.dfeFixOffset(a.getType().getTotalBits() + 1, -((DFEFix)a.getType()).getFractionBits(), SignMode.TWOSCOMPLEMENT));
     }
     public static DFEVar sToUnsigned(DFEVar a) {
         //KernelBase.dfeUInt(a.getType().getTotalBits() - 1)
+        if (((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED) return a;
         return a.slice(0, a.getType().getTotalBits() - 1).reinterpret(KernelBase.dfeFixOffset(a.getType().getTotalBits() - 1, -((DFEFix)a.getType()).getFractionBits(), SignMode.UNSIGNED));
     }
     public static DFEVar shiftLeftFix(DFEVar a, int bits, KernelBase<?> base) {
@@ -2013,24 +2359,24 @@ public class Utility {
         System.out.println("Fanout Limit Type: " + owner.optimization.peekFanoutLimitType()); //default CHAIN
         System.out.println("Rounding Mode: " + owner.optimization.getRoundingMode()); //default TONEAREVEN
     }
-    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerKernel owner, ManagerClock[] mc) //-1 for PCIE //ManagerRouting owner
+    public static DFELink slrCrossingChain(String name, String suffix, DFELink input, int slrStart, int slrEnd, int regPerX, ManagerRouting owner, ManagerClock[] mc) //-1 for PCIE //ManagerKernel owner
     {
         if (owner != null) {
             for (int i = slrStart + (slrEnd >= slrStart ? 1 : -1); slrEnd >= slrStart ? i < slrEnd : i > slrEnd; ) {
                 selectSLR(i, (XilinxAlveoU250Manager)owner);
-                KernelConfiguration config = new KernelConfiguration(owner.getCurrentKernelConfig());
-                config.optimization.setUseGlobalClockBuffer(false);
-                KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, config, 1, input.getSourceWidth()));
-                //Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
+                //KernelConfiguration config = new KernelConfiguration(owner.getCurrentKernelConfig());
+                //config.optimization.setUseGlobalClockBuffer(false);
+                //KernelBlock fo = owner.addKernel(new PassThroughKernelLite(owner, name + "Fanout" + suffix + i, config, 1, input.getSourceWidth()));
+                Fanout fo = owner.fanout(name + "Fanout" + suffix + i);
                 unselectSLR((XilinxAlveoU250Manager)owner);
-                //fo.setClock(owner.generateStaticClock(name + "Clock" + suffix + i, freq));
+                //fo.setClock(((ManagerKernel)owner).generateStaticClock(name + "Clock" + suffix + i, freq));
                 if (mc[i] != null) fo.setClock(mc[i]);
-                DFELink inp = fo.getInput("input");
-                //DFELink inp = fo.getInput();
+                //DFELink inp = fo.getInput("input");
+                DFELink inp = fo.getInput();
                 inp.setAdditionalRegisters(regPerX);
-                inp <== input;                
-                input = fo.getOutput("output");
-                //input = fo.addOutput(name + "Chain" + suffix + i);
+                inp <== input;
+                //input = fo.getOutput("output");
+                input = fo.addOutput(name + "Chain" + suffix + i);
                 input.setAdditionalRegisters(regPerX);
                 if (slrEnd >= slrStart) i++; else i--;
             }
@@ -2070,7 +2416,7 @@ public class Utility {
         //PhysOpt.EXPLORE_WITH_HOLD_FIX but hold_fix and sll_reg_hold_fix are different options
 
         //boolean timingDriven, boolean timingSummary, boolean unplace, boolean postPlaceOpt, boolean fanoutOpt, boolean bufgOpt, java.lang.String additionalOptions
-        //The directive option is incompatible with other options with the exception of -no_fanout_opt, -no_bufg_opt, -quiet, and -verbose
+        //The directive option is incompatible with other options with the exception of -no_fanout_opt, -no_bufg_opt, -quiet, and -verbose but Vivado 2021.1 and later only
         //ImplementationStrategy.PlaceOpt PlaceOptAuto1 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_1"); //High performing predicted directive
         //ImplementationStrategy.PlaceOpt PlaceOptAuto2 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_2"); //Second best predicted directive
         //ImplementationStrategy.PlaceOpt PlaceOptAuto3 = ImplementationStrategy.PlaceOpt.createCustom(true, false, false, false, false, true, "-directive Auto_3"); //Third best predicted directive
@@ -2080,6 +2426,17 @@ public class Utility {
         //https://docs.xilinx.com/r/en-US/ug904-vivado-implementation/Available-Physical-Optimizations
         ImplementationStrategy.PhysOpt postPlaceOpt = ImplementationStrategy.PhysOpt.createCustom(true, true, false, true, true, true, true, true, true, true, true, true, true, "", true, false, "", "-insert_negative_edge_ffs -aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
+        //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
+        int hierFanoutLimit = 10000; //512 minimum
+        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, true, hierFanoutLimit, true, true, true, true, true,
+            "-aggressive_remap"); // -resynth_remap -dsp_register_opt
+        ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptEXPLORE_AREA = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptEXPLORE_SEQUENTIAL_AREA = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptEXPLORE_WITH_REMAP = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptRUNTIME_OPTIMIZED = netlistOpt;
+        ImplementationStrategy.NetlistOpt netlistOptNO_BRAM_POWER_OPT = netlistOpt;
         //"-directive ExploreWithAggressiveHoldFix"
         ImplementationStrategy.PhysOpt PhysOptDISABLED = ImplementationStrategy.PhysOpt.DISABLED;
         ImplementationStrategy.PhysOpt PhysOptDEFAULT = postPlaceOpt; //default with retiming
@@ -2092,45 +2449,45 @@ public class Utility {
         ImplementationStrategy.PhysOpt PhysOptALTERNATE_REPLICATION = postPlaceOpt; //Use different algorithms for performing critical cell replication.
         ImplementationStrategy.PhysOpt PhysOptALTERNATE_FLOW_WITH_RETIMING = postPlaceOpt; //Perform more aggressive replication and DSP and block RAM optimization, and enable register retiming.
         HashMap<String, ImplementationStrategy> strategies = new HashMap<>();
-        strategies.put("VIVADO_DEFAULT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), PhysOptPostEXPLORE));
-        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_REPLICATION, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_FANOUT_OPT, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_EARLY_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EARLY_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostDEFAULT));
-        strategies.put("PERFORMANCE_NET_DELAY_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_NET_DELAY_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_RETIMING", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_FLOW_WITH_RETIMING, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_EXTRA_TIMING_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_TIMING_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_REFINE_PLACEMENT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostEXPLORE));
-        strategies.put("PERFORMANCE_SPREAD_SLLS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_BALANCE_SLLS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("CONGESTION_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
-        strategies.put("CONGESTION_SPREAD_LOGIC_MEDIUM", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
-        strategies.put("CONGESTION_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
-        strategies.put("CONGESTION_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
-        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
-        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("AREA_EXPLORE", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("AREA_EXPLORE_SEQUENTIAL", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("AREA_EXPLORE_WITH_REMAP", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_WITH_REMAP, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("POWER_DEFAULT_OPTS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("POWER_EXPLORE_AREA", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("FLOW_RUN_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
-        strategies.put("FLOW_RUN_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.DEFAULT, true, false, ""), PhysOptPostEXPLORE));
-        strategies.put("FLOW_RUNTIME_OPTIMIZED", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.RUNTIME_OPTIMIZED, PhysOptDISABLED));
-        strategies.put("FLOW_QUICK", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.QUICK, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.QUICK, PhysOptDISABLED));
-        strategies.put("MAXELER1", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.NO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
-        strategies.put("MAXELER2", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.NO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
-        strategies.put("MAXELER3", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
-        strategies.put("MAXELER4", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
-        strategies.put("PERFORMANCE_BALANCE_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        strategies.put("PERFORMANCE_HIGH_UTIL_SLRS", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        //strategies.put("AUTO_1", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto1, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        //strategies.put("AUTO_2", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto2, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
-        //strategies.put("AUTO_3", ImplementationStrategy.createCustomStrategy(ImplementationStrategy.NetlistOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto3, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("VIVADO_DEFAULT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXPLORE", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXPLORE, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.EXPLORE, true, false, ""), PhysOptPostEXPLORE));
+        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_REPLICATION, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_WL_BLOCK_PLACEMENT_FANOUT_OPT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.WIRE_LENGTH_DRIVEN_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_FANOUT_OPT, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EARLY_BLOCK_PLACEMENT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EARLY_BLOCK_PLACEMENT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostDEFAULT));
+        strategies.put("PERFORMANCE_NET_DELAY_HIGH", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_NET_DELAY_LOW", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_RETIMING", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptALTERNATE_FLOW_WITH_RETIMING, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_EXTRA_TIMING_OPT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_TIMING_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_REFINE_PLACEMENT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_REFINE_PLACEMENT_AGGEXPLORE_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostEXPLORE));
+        strategies.put("PERFORMANCE_SPREAD_SLLS", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_BALANCE_SLLS", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLLS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_MEDIUM", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_MEDIUM, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.ALT_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_HIGH", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_LOW", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_LOW, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, PhysOptDISABLED));
+        strategies.put("CONGESTION_SSI_SPREAD_LOGIC_EXPLORE", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE_SEQUENTIAL", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("AREA_EXPLORE_WITH_REMAP", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE_WITH_REMAP, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("POWER_DEFAULT_OPTS", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("POWER_EXPLORE_AREA", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE_SEQUENTIAL_AREA, ImplementationStrategy.PowerOpt.ENABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("FLOW_RUN_PHYS_OPT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.DEFAULT, PhysOptDISABLED));
+        strategies.put("FLOW_RUN_POST_ROUTE_PHYS_OPT", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.DEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDEFAULT, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.DEFAULT, true, false, ""), PhysOptPostEXPLORE));
+        strategies.put("FLOW_RUNTIME_OPTIMIZED", ImplementationStrategy.createCustomStrategy(netlistOptRUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.RUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.RUNTIME_OPTIMIZED, PhysOptDISABLED));
+        strategies.put("FLOW_QUICK", ImplementationStrategy.createCustomStrategy(netlistOptRUNTIME_OPTIMIZED, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.QUICK, ImplementationStrategy.PowerOpt.DISABLED, PhysOptDISABLED, ImplementationStrategy.RouteOpt.QUICK, PhysOptDISABLED));
+        strategies.put("MAXELER1", ImplementationStrategy.createCustomStrategy(netlistOptNO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER2", ImplementationStrategy.createCustomStrategy(netlistOptNO_BRAM_POWER_OPT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_POST_PLACEMENT_OPT, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER3", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.EXTRA_NET_DELAY_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("MAXELER4", ImplementationStrategy.createCustomStrategy(netlistOptEXPLORE, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_SPREAD_LOGIC_HIGH, ImplementationStrategy.PowerOpt.DISABLED, PhysOptAGGRESSIVE_EXPLORE, ImplementationStrategy.RouteOpt.createCustom(ImplementationStrategy.RouteOpt.ALTERNATE_CLB_ROUTING, true, false, ""), PhysOptPostAGGRESSIVE_EXPLORE));
+        strategies.put("PERFORMANCE_BALANCE_SLRS", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_BALANCE_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        strategies.put("PERFORMANCE_HIGH_UTIL_SLRS", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, ImplementationStrategy.PlaceOpt.SSI_HIGH_UTIL_SLRS, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        //strategies.put("AUTO_1", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto1, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        //strategies.put("AUTO_2", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto2, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
+        //strategies.put("AUTO_3", ImplementationStrategy.createCustomStrategy(netlistOptDEFAULT, ImplementationStrategy.PowerOpt.DISABLED, PlaceOptAuto3, ImplementationStrategy.PowerOpt.DISABLED, PhysOptEXPLORE, ImplementationStrategy.RouteOpt.EXPLORE, PhysOptDISABLED));
         
         return strategies;
     }
@@ -2235,11 +2592,13 @@ public class Utility {
         //SynthesisStrategy.VIVADO_DEFAULT, SynthesisStrategy.FLOW_ALTERNATE_ROUTABILITY, SynthesisStrategy.FLOW_AREA_MULT_THRESHOLD_DSP,
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
-        int bufg = 12; //base on number of streams, rather than default of 12
+        int bufg = 24; //base on number of streams, rather than default of 12, UltraScale maximum of 24
         int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
+        int fanoutLimit = 10000; //400 is the performance default
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
-        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, 400, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        //SynthesisStrategy.Directive directive, SynthesisStrategy.FlattenHierarchy flattenHierarchy, SynthesisStrategy.FsmExtraction fsmExtraction, SynthesisStrategy.CascadeDsp cascadeDsp, SynthesisStrategy.GatedClock gatedClock, SynthesisStrategy.ResourceSharing resourceSharing, boolean keepEquivalentRegisters, boolean lutCombining, boolean srlExtract, boolean retiming, int bufg, int fanoutLimit, int controlSetOptThreshold, int shregMinSize, int maxBram, int maxBramCascadeHeight, int maxUram, int maxUramCascadeHeight, int maxDsp, boolean vhdlAssert, boolean oocMode, java.lang.String options
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, fanoutLimit, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
         return customPerfOptHigh;
     }
     public static void printKernelConfigurationOptimizationDefaults(ManagerKernelBase owner)
