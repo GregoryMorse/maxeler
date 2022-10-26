@@ -2479,7 +2479,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
         int hierFanoutLimit = 10000; //512 minimum
         ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, true, hierFanoutLimit, true, true, true, true, true,
-            "-aggressive_remap -resynth_remap -carry_remap -dsp_register_opt");
+            "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE_AREA = netlistOpt;
