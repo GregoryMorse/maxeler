@@ -1247,14 +1247,14 @@ class VecMatMul(g.Component):
                     [self.consts[drctn]["shiftqrt"]] * self.chunks))
                 self.zeros.append(self.consts[drctn]["zerospre"])
                 self.zeros.append(self.consts[drctn]["zeros"])
-            self.maskreqs = []
-            self.splitreqs = []
+            self.maskreqs, self.splitreqs, self.extractreqs = [], [], []
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 self.maskreqs.append([])
                 self.splitreqs.append([])
                 for i in range(self.chunks+1):            
                     self.maskreqs[-1].append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
                     self.splitreqs[-1].append(tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, plane)))
+                self.extractreqs.append(tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, plane)))
     def build(self, tvec, tmat, tnorm, inittime=0):
         # Instantiate matmul component.   
         # Build matmul component.
@@ -1334,7 +1334,7 @@ class VecMatMul(g.Component):
                 masks = g.bitwise_and(cursplit, self.maskqrttop[drctn].read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0), alus=first_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)])
                 shifts = g.concat_inner_splits([self.zeros[drctn*2+plane]] + g.split_inner_splits(nextshifts)[:-1]).read(streams=g.SG4[sg4_for_hemi(0, drctn)])
                 #split_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="fixsplit" + dirstr, layout=get_slice4(drctn, 0, 3, plane)))
-                final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="extract" + dirstr, layout=get_slice4(drctn, 4, 7, plane))) #extract_int8(g.split_inner_splits()) get_slice1(drctn, 43, plane)
+                final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="extract" + dirstr, storage_req=self.extractreqs[drctn*2+plane])) #extract_int8(g.split_inner_splits()) get_slice1(drctn, 43, plane)
                 #final_result.append(g.add(shifts, masks, alus=second_alu, output_streams=g.SG4[sg4_for_hemi(1, drctn)]).write(name="extract" + dirstr, storage_req=self.splitreqs[drctn*2+plane][self.chunks]))
             #print("Cycle time: ", t+MATMULDELAY+9+10+31+19) #31 through ALU, 19 to write to S43
             g.add_mem_constraints(allshifts, final_result, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1688,17 +1688,23 @@ class AdvanceGrayCode(g.Component):
                 x = g.bitwise_or(x, y, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
                 x = g.not_equal(x, self.allzeros[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]).reinterpret(g.int32)
                 x = g.neg(x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
-                x = g.bitwise_or(x, self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), alus=[alu_for_hemi(6, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                x = g.bitwise_or(x, self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), alus=[alu_for_hemi(6, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)], time=0)
                 #x = g.mask(x, self.negtwo[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 #x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 negmulvecs.append(extract_int8([x]).write(name="negmulvec" + dirstr, layout=get_slice1(drctn, 0, plane)))
-            if not tvec is None and not tmat is None:
-                with g.ResourceScope(name="adjvecmat" + dirstr, time=None, predecessors=[pred]) as pred:
-                    #g.latch(negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)])
-                    res = g.mul(tvec[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
-                    vecres.append(res.write(name="adjvec" + dirstr, storage_req=tvec[drctn*2+plane].storage_request))
-                    res = g.mul(tmat[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(8, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
-                    matres.append(res.write(name="adjmat" + dirstr, storage_req=tmat[drctn*2+plane.storage_request]))
+            if not tvec is None and not tmat is None and plane==1:
+                with g.ResourceScope(name="adjvecmat" + dirstr, is_buffered=True, time=None, predecessors=[pred]) as pred:
+                    #res = g.mul(tvec[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                    #vecres.append(res.write(name="adjvec" + dirstr, storage_req=tvec[drctn*2+plane].storage_request))
+                    mulalu = tensor.create_alu_request([alu_for_hemi(0+plane*8, drctn)])
+                    if plane == 0:
+                        rows = g.concat_inner_splits(flatten_zip(flatten_unzip(g.split_vectors(tmat[drctn*2+plane], [1]*(self.chunks*self.dim*2*2)), 16))).read(streams=g.SG4[sg4_for_hemi(0+plane*4, drctn)], time=0)
+                    else:
+                        rows = g.concat_inner_splits(flatten_zip(flatten_unzip(g.split_vectors(tmat[drctn*2+plane], [1]*(self.chunks*self.dim*2*2)), 16))).read(streams=g.SG4[sg4_for_hemi(0+plane*4, drctn)], time=0)
+                    #g.latch(negmulvecs[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(1+plane*4, drctn)]), alus=mulalu) 
+                    rows = rows.mul(g.concat_inner_splits([negmulvecs[drctn*2+plane]] * self.chunks*self.dim*2*2).read(streams=g.SG4[sg4_for_hemi(1+plane*4, drctn)]), alus=mulalu, output_streams=g.SG4[sg4_for_hemi(0+plane*4, drctn)])
+                    rows = g.concat_vectors(flatten_zip(flatten_unzip(g.split_inner_splits(rows), self.chunks*self.dim*2*2//16)), (self.chunks*self.dim*2*2, 320))                    
+                    matres.append(rows.write(name="adjmat" + dirstr, storage_req=tmat[drctn*2+1-plane].storage_request))
         g.add_mem_constraints(gcodechanges + negmulvecs, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(counters + gcodes + gcodechanges + negmulvecs, counters + gcodes + gcodechanges + negmulvecs, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         if not tvec is None and not tmat is None:
@@ -1841,10 +1847,11 @@ class LoopCorrections(g.Component):
         pred = None
         diag_mt, norm = self.tvec, self.tnorm
         curt = 0
-        for i in range(self.matpow):
-            with g.ResourceScope(name="vecmatmul" + str(i), is_buffered=True, time=curt, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
-                diag_mt, norm, t = self.VMM.build(diag_mt, self.tmat, norm, 0)
+        with g.ResourceScope(name="vecmatmul", is_buffered=True, time=0, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
+            for i in range(self.matpow):
+                diag_mt, norm, t = self.VMM.build(diag_mt, self.tmat, norm, curt)
                 results_mt.append(diag_mt); results_norm.append(norm); curt += t
+            print(curt)
         flat = [y for x in results_mt for y in x]
         g.add_mem_constraints(flat, flat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         flat = [y for x in results_norm for y in x]
@@ -1852,18 +1859,19 @@ class LoopCorrections(g.Component):
         #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
         with g.ResourceScope(name="advgraycode", is_buffered=True, time=curt, predecessors=None) as pred:
-            self.cx_diag, self.tmat = self.agc.build(self.cx_diag, self.tmat, 0)
+            self.cx_diag, self.tmat, t = self.agc.build(self.cx_diag, self.tmat, 0)
+            curt += t
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
-    def unit_test(chunks, dim):
+    def chain_test(chunks, dim):
         import timeit
         worstCase, useCplx = False, True
         matpow = dim//2-1
         pgm_pkg = g.ProgramPackage(name="mm", output_dir="mm")
         with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
             lc = LoopCorrections(chunks, dim, matpow)
-            tvec, tmat = lc.tvec, lc.tmat
+            tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
             parallel = len(tvec)*2
             #g.resolve_storage_requests()
             
@@ -1880,6 +1888,7 @@ class LoopCorrections(g.Component):
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 g.reserve_tensor(pcinit, pc, lc.tvec[drctn*2+plane])
                 g.reserve_tensor(pcinit, pc, lc.tmat[drctn*2+plane])
+                g.reserve_tensor(pcinit, pc, lc.cx_diag[drctn*2+plane])
             lc = LoopCorrections(chunks, dim, matpow, lc)
             result_mt, resnorm = lc.build()
             #g.resolve_storage_requests()
@@ -1943,6 +1952,7 @@ class LoopCorrections(g.Component):
                 inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
                 inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
                 inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+                inputs[cx_diag[i].name] = np.hstack((inpvec0, inpvec1)) #colswap
                 exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
             runner(inputs)
             def actual():
@@ -2003,7 +2013,7 @@ def main():
     #VecMatMul.unit_test(chunks, dim)
     #AdvanceGrayCode.unit_test(chunks, dim)
     #AdvanceGrayCode.chain_test(chunks, dim)
-    LoopCorrections.unit_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim)
     return
 
     max_dim_bits = (dim*2).bit_length() #complex domain
