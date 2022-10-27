@@ -1849,9 +1849,8 @@ class LoopCorrections(g.Component):
         curt = 0
         with g.ResourceScope(name="vecmatmul", is_buffered=True, time=0, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
             for i in range(self.matpow):
-                diag_mt, norm, t = self.VMM.build(diag_mt, self.tmat, norm, curt)
-                results_mt.append(diag_mt); results_norm.append(norm); curt += t
-            print(curt)
+                diag_mt, norm, curt = self.VMM.build(diag_mt, self.tmat, norm, curt)
+                results_mt.append(diag_mt); results_norm.append(norm)
         flat = [y for x in results_mt for y in x]
         g.add_mem_constraints(flat, flat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         flat = [y for x in results_norm for y in x]
