@@ -1601,6 +1601,11 @@ class ColumnSwapVector(g.Component):
         final_result = g.concat_vectors(final_result, (self.chunks, self.dim*2*2))
         #g.resolve_storage_requests()
         return final_result #8 cycles for permute_map to finish stream to SXM perm + 48 cycle delay (#chunks*2 initialization in parallel) + 4 cycles to exit permute + #chunks*2 cycles to write output = 80 cycles
+class VectorsToComplexMatrix(g.Component):
+    def __init__(self, chunks, dim, lastagc=None, **kwargs):
+        super().__init__(**kwargs)
+    def build(self, tvec, tnorm, inittime=0):
+        pass
 class AdvanceGrayCode(g.Component):        
     def __init__(self, chunks, dim, lastagc=None, **kwargs):
         super().__init__(**kwargs)
@@ -1662,9 +1667,9 @@ class AdvanceGrayCode(g.Component):
                 counters.append(g.concat_vectors([x, y], (2, self.dim*2*2)).write(name="counter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
             counter = g.split_vectors(counters[drctn*2+plane], [1]*2)
             with g.ResourceScope(name="countertogcode" + dirstr, is_buffered=True, time=None, predecessors=[pred]) as pred:
-                ones = self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)])        
-                low = counter[0].read(streams=g.SG4[sg4_for_hemi(2, drctn)])    
-                high = counter[1].read(streams=g.SG4[sg4_for_hemi(0, drctn)])               
+                ones = self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)])
+                low = counter[0].read(streams=g.SG4[sg4_for_hemi(2, drctn)])
+                high = counter[1].read(streams=g.SG4[sg4_for_hemi(0, drctn)])
                 shl = self.shiftleft[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(6, drctn)])
                 y = g.right_shift(high, ones, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])                                
                 x = g.bitwise_or(g.left_shift(high, shl, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
@@ -1692,33 +1697,44 @@ class AdvanceGrayCode(g.Component):
                 #x = g.mask(x, self.negtwo[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 #x = g.add(self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]).reinterpret(g.int32), x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 negmulvecs.append(extract_int8([x]).write(name="negmulvec" + dirstr, layout=get_slice1(drctn, 0, plane)))
-        if not tvec is None and not tmat is None and False:
+        if not tvec is None and not tmat is None:
             splittings = []
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 splittings.append(np.vsplit(np.array(g.split_vectors(tmat[drctn*2+plane], [1]*(self.chunks*self.dim*2*2))).reshape(self.chunks*self.dim*2*2//16, 16).transpose(), 4))
             with g.ResourceScope(name="adjvecmat", is_buffered=True, time=None, predecessors=[pred]) as pred:
-                mulvecs = [g.concat_inner_splits([negmulvecs[drctn*2+0]] * (self.chunks*self.dim*2*2)).read(streams=g.SG4[sg4_for_hemi(3+4*drctn, WEST)], time=0) for drctn in (WEST, EAST)]
-                #res = g.mul(tvec[drctn*2+plane], negmulvecs[drctn*2+plane], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
-                #vecres.append(res.write(name="adjvec" + dirstr, storage_req=tvec[drctn*2+plane].storage_request))                
-                #flatten_zip(flatten_unzip(g.split_vectors(tmat[drctn*2+plane], [1]*(self.chunks*self.dim*2*2)), 16))
-                rows = []
-                for i in range(4):
-                    mulalu = tensor.create_alu_request([alu_for_hemi([0,5,8,13][i], WEST)])
-                    rows.append(np.stack([splittings[drctn*2+plane][i].reshape(4, 4, self.chunks*self.dim*2*2//16//4) for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1))], axis=2))
-                    rows[i] = g.concat_inner_splits(rows[i].flatten().tolist()).read(streams=g.SG4[sg4_for_hemi(2*i, WEST)])
-                    #g.latch(negmulvecs[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2*i+1, WEST)]), alus=mulalu)
-                    rows[i] = rows[i].mul(mulvecs[i//2], alus=mulalu, output_streams=g.SG4[sg4_for_hemi(2*i, WEST)])
-                    rows[i] = np.split(np.array(g.split_inner_splits(rows[i])).reshape(4, 4, self.chunks*self.dim*2*2//16), 4, axis=2)
-                #flatten_zip(flatten_unzip(g.split_inner_splits(rows), self.chunks*self.dim*2*2//16))
-                for drctn, plane in ((WEST, 0),):#, (WEST, 1), (EAST, 0), (EAST, 1)):
-                    matres.append(g.concat_vectors(np.vstack([rows[i][drctn*2+plane] for i in range(4)]).transpose().flatten().tolist(), (self.chunks*self.dim*2*2, 320))
-                        .write(name="adjmat" + ("W" if drctn == WEST else "E") + "p" + str(plane), storage_req=tmat[drctn*2+0].storage_request))
+                d = 1+9+2 #read, alu, write/write delay time
+                splts = []
+                for drctn in (WEST, EAST):
+                    s16g = s16rangeW if drctn == WEST else s16rangeE
+                    splts.append([[np.arange(d+s16g[4*i+j]//4*2, self.chunks*self.dim*2*2//16, d+s16g[4*i+j]//4*2) for j in range(4)] for i in range(4)])
+                pads = max([max((d+s16g[4*i+j]//4*2-self.chunks*self.dim*2*2//16+splts[drctn][i][j][-1]) % (d+s16g[4*i+j]//4*2) for drctn in (WEST, EAST) for i in range(4)) for j in range(4)])
+                mulvecs = [g.concat_inner_splits([negmulvecs[drctn*2+0]] * (self.chunks*self.dim*2*2//2 + pads*4)).read(streams=g.SG4[sg4_for_hemi(3+4*drctn, WEST)], time=0) for drctn in (WEST, EAST)]
+                def unpadlast(lst, sz):
+                    return [[x if i != len(lst[0])-1 else x[:sz] for i, x in enumerate(lst[0])],
+                            [x if i != len(lst[1])-1 else x[:sz] for i, x in enumerate(lst[1])]]
+                def padlast(lst1, lst2, sz, pad):
+                    return ([x if i != len(lst1)-1 else np.concatenate((x, [x[-1]]*(sz-len(x)))) for i, x in enumerate(lst1)],
+                            [x if i != len(lst2)-1 else np.concatenate((x, [x[-1]]*min(sz-len(x), pad-sz+len(lst1[-1])), [lst1[-1][-1]]*(pad-sz+len(lst1[-1])-min(sz-len(x), pad-sz+len(lst1[-1]))))) for i, x in enumerate(lst2)])
+                for drctn in (WEST, EAST):
+                    rows = []
+                    s16g = s16rangeW if drctn == WEST else s16rangeE
+                    for i in range(4):
+                        mulalu = tensor.create_alu_request([alu_for_hemi([0,5,8,13][i], drctn)])
+                        rows.append(np.vstack([np.concatenate(flatten_zip(zip(*padlast(np.hsplit(a.flatten(), splts[drctn][i][j]), np.hsplit(b.flatten(), splts[drctn][i][j]), d+s16g[4*i+j]//4*2, pads)))) for j, (a, b) in enumerate(zip(np.vsplit(splittings[drctn*2+0][i], 4), np.vsplit(splittings[drctn*2+1][i], 4)))]))
+                        rows[i] = g.concat_inner_splits(rows[i].flatten().tolist()).read(streams=g.SG4[sg4_for_hemi(2*i+drctn, drctn)])
+                        rows[i] = rows[i].mul(mulvecs[i//2 if drctn==WEST else 1-i//2], alus=mulalu, output_streams=(g.SG4_W if drctn==WEST else g.SG4_E)[sg4_for_hemi(2*i+drctn, drctn)])
+                        rows[i] = np.hstack([np.hstack(flatten_zip(unpadlast(flatten_unzip(np.hsplit(a.flatten(),
+                            np.arange(d+s16g[4*i+j]//4*2, self.chunks*self.dim*2*2//16*2+pads, d+s16g[4*i+j]//4*2)
+                            )), self.chunks*self.dim*2*2//16-splts[drctn][i][j][-1]))).reshape(2, 4, self.chunks*self.dim*2*2//16//4) for j, a in enumerate(np.vsplit(np.array(g.split_inner_splits(rows[i])).reshape(4, self.chunks*self.dim*2*2//16*2+pads), 4))])
+                    for plane in range(2):
+                        matres.append(g.concat_vectors(np.vstack([rows[i][plane].reshape(4, 200) for i in range(4)]).transpose().flatten().tolist(), (self.chunks*self.dim*2*2, 320))
+                            .write(name="adjmat" + ("W" if drctn == WEST else "E") + "p" + str(plane), storage_req=tmat[drctn*2+plane].storage_request))
         g.add_mem_constraints(gcodechanges + negmulvecs, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(counters + gcodes + gcodechanges + negmulvecs, counters + gcodes + gcodechanges + negmulvecs, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         if not tvec is None and not tmat is None:
-            return vecres, matres, 82 + 0
+            return vecres, matres, t + 82
         else:
-            return counters, gcodes, negmulvecs, 82
+            return counters, gcodes, negmulvecs, t + 82
     def chain_test(chunks, dim): #verify performance
         import timeit
         pgm_pkg = g.ProgramPackage(name="agcpackage", output_dir="agcpackage")
@@ -1856,7 +1872,7 @@ class LoopCorrections(g.Component):
         pred = None
         diag_mt, norm = self.tvec, self.tnorm
         curt = 0
-        with g.ResourceScope(name="vecmatmul", is_buffered=True, time=0, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
+        with g.ResourceScope(name="vecmatmul", is_buffered=False, time=0, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
             for i in range(self.matpow):
                 diag_mt, norm, curt = self.VMM.build(diag_mt, self.tmat, norm, curt)
                 results_mt.append(diag_mt); results_norm.append(norm)
@@ -1864,11 +1880,11 @@ class LoopCorrections(g.Component):
         g.add_mem_constraints(flat, flat + self.cx_diag, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         flat = [y for x in results_norm for y in x]
         g.add_mem_constraints(flat, flat + self.agc.tcounter + self.agc.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        #VectorsToComplexMatrix(results_mt, results_norm)
         #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
-        with g.ResourceScope(name="advgraycode", is_buffered=True, time=curt, predecessors=None) as pred:
-            self.cx_diag, self.tmat, t = self.agc.build(self.cx_diag, self.tmat, 0)
-            curt += t
+        with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
+            self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
