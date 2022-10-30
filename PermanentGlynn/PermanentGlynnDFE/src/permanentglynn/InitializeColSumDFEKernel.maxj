@@ -95,8 +95,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar oneHotInit = dfeUInt(gcodeRows).newInstance(this);
         oneHotInit <== (mainCount <= 1) ? 1 : (stream.offset(oneHotInit, -1) << 1);
         //if (kernNum == 0) debug.simPrintf("%d %d\n", oneHotInit, initToOneHot.cast(dfeUInt(gcodeRows)) << initCountM1);
-        //oneHotInit = optimization.pipeline(oneHotInit.slice(gcodeRows/2, gcodeRows - gcodeRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, gcodeRows/2)));
-        DFEVector<DFEVar> initOneHot = optimization.pipeline(oneHotInit).reinterpret(initOneHotType);
+        oneHotInit = optimization.pipeline(oneHotInit.slice(gcodeRows/2, gcodeRows - gcodeRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, gcodeRows/2)));
+        DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);
         if (kernNum != 0) {
             DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
                     c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
@@ -150,7 +150,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
        
 
-        //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
+        //if (!dual) debug.simPrintf(ticksMax===3, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msizem1, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
             io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
         }
