@@ -123,6 +123,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 } else {
                     colmnSumVector <== io.input("colSums" + j, colSumType);
                 }
+                if (2*cols > 32) colmnSumVector = Utility.repeatVectorPipeline(colmnSumVector, 1, cols / initKerns / 2, this);
     
                 for (int idx = 0; idx < cols / initKerns; idx++) {
                     colSumFix[j * (cols / initKerns) + idx] = useFloat ? optimization.pipeline(colmnSumVector[idx]) : colmnSumVector[idx];
@@ -184,7 +185,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 //}
                 totalprec-=3; //save 2 extra bits for inner and outer addition in 3M formula
                 if (totalprec < 77+3) totalprec = 77+3;
-                if (initKernMulti > 1 && totalprec < 92+3) totalprec = 92+3;
+                //if (initKernMulti > 1 && totalprec < 92+3) totalprec = 92+3;
                 //if (kernNum == 0) debug.simPrintf("%X %X ", colSumFix[2 * idx].reinterpret(dfeUInt(colSumFix[2 * idx].getType().getTotalBits())), colSumFix[2 * idx + 1].reinterpret(dfeUInt(colSumFix[2 * idx + 1].getType().getTotalBits())));
                 colSumFix[idx] = Utility.doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
                 //if (kernNum == 0 && idx == 0) System.out.println(colSumFix[idx].getType());  
