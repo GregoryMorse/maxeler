@@ -137,7 +137,8 @@ public class InitializeColSumDFEKernel extends Kernel {
                 startOfLoop.cat(isInitGcode).cat(isInitMplicity).cat(stream.offset(mplicityWrap, -loopLength)).reinterpret(dfeUInt(4)) >= 11; //0-10, 11-15
         
         oneRowPacked <== io.input("mappedInputMtx_Rows", oneRowPackedType, rowData);
-        DFEVar curRowChangeIndex = oneRowPacked[2*cols].slice(0, dimBits).reinterpret(dfeUInt(dimBits));
+        DFEVar controlBits = oneRowPacked[2*cols+1].cat(oneRowPacked[2*cols]);
+        DFEVar curRowChangeIndex = controlBits.slice(0, dimBits).reinterpret(dfeUInt(dimBits));
         DFEVar rowChangeIndex = dfeUInt(dimBits).newInstance(this);
         rowChangeIndex <== startOfRowLoop ? curRowChangeIndex : stream.offset(rowChangeIndex, -1);
         //DFEVar[] mplicityCounter = counterWithInit(dimBits, rowChangeIndex, constant.var(dfeBool(), 1), 1, constant.zero(dfeUInt(dimBits)), initLoop, initLoop, loopLength, true, false, this);
@@ -161,14 +162,19 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar readRow = kernNum == 0 ? startOfRowLoop : startOfRowLoop & needData;
         rowChangeIndex = kernNum == 0 ? rowChangeIndex : (needData ? rowChangeIndex : 1);
         
-        oneRow <== readRow ? oneRowPacked.pack().slice(0, oneRowType.getTotalBits()).reinterpret(oneRowType) : stream.offset(oneRow, -1);
-        DFEVar cInit = initLoop ? oneRowPacked[2*cols].slice(dimBits, dimBits).reinterpret(dfeUInt(dimBits)) : stream.offset(counterInit, -loopLength);
-        DFEVar cDir = initLoop ? oneRowPacked[2*cols].slice(dimBits + dimBits, 1).reinterpret(dfeBool()) : stream.offset(curdir, -loopLength);
+        //oneRow <== readRow ? oneRowPacked.pack().slice(0, oneRowType.getTotalBits()).reinterpret(oneRowType) : stream.offset(oneRow, -1);
+        DFEVar readRowSel = null;
+        for (int j = 0; j < 2 * cols; j++) {
+            if (j == 0 || j == cols) readRowSel = optimization.pipeline(readRow);
+            oneRow[j] <== readRowSel ? oneRowPacked[j] : stream.offset(oneRow[j], -1);
+        }
+        DFEVar cInit = initLoop ? controlBits.slice(dimBits, dimBits).reinterpret(dfeUInt(dimBits)) : stream.offset(counterInit, -loopLength);
+        DFEVar cDir = initLoop ? controlBits.slice(dimBits + dimBits, 1).reinterpret(dfeBool()) : stream.offset(curdir, -loopLength);
         DFEVar nextCounterInit = kernNum == 0 ? cInit : (needData ? cInit : 0);
         counterInit <== nextCounterInit;
         curdir <== kernNum == 0 ? cDir : (needData ? cDir : 1);
         DFEVar initBinCoeff = kernNum != 0 ? null : dfeUInt(bincoeffbits).newInstance(this);
-        if (kernNum == 0) initBinCoeff <== rowData ? oneRowPacked[2*cols+1].cat(oneRowPacked[2*cols]).slice(dimBits + dimBits + 1, bincoeffbits).reinterpret(dfeUInt(bincoeffbits)) : stream.offset(initBinCoeff, -loopLength);
+        if (kernNum == 0) initBinCoeff <== rowData ? controlBits.slice(dimBits + dimBits + 1, bincoeffbits).reinterpret(dfeUInt(bincoeffbits)) : stream.offset(initBinCoeff, -loopLength);
         
         DFEVar inpmp = rowChangeIndex + 1;
         
@@ -200,20 +206,27 @@ public class InitializeColSumDFEKernel extends Kernel {
         storeRowIndex = Utility.oneHotEncode(storeRowIndex - 1, mplicityRows, 32, this).reinterpret(dfeUInt(mplicityRows));
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), mplicityRows);
         DFEVar oneHotInit = startOfRowLoop ? storeRowIndex : 0;
-        //oneHotInit = optimization.pipeline(oneHotInit.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, mplicityRows/2)));
+        oneHotInit = optimization.pipeline(oneHotInit.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInit.slice(0, mplicityRows/2)));
         DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);        
         DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
         DFEVector < DFEVar > onerow1 = optimization.pipeline(oneRow);
         for (int i = 0; i < mplicityRows; i++) {
-            allRows[i] <== optimization.pipeline(initOneHot[i]) ? (i < mplicityRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
+            if (2 * cols > 32) {
+                DFEVar sel = null;
+                for (int j = 0; j < cols * 2; j++) {
+                    if (j == 0 || j == cols) sel = optimization.pipeline(initOneHot[i]);
+                    allRows[i][j] <== sel ? (i < mplicityRows/2 ? onerow0 : onerow1)[j] : stream.offset(allRows[i][j], -1); 
+                }
+            } else {
+                allRows[i] <== optimization.pipeline(initOneHot[i]) ? (i < mplicityRows/2 ? onerow0 : onerow1) : stream.offset(allRows[i], -1);
+            }
         }
         //if (kernNum == 0) debug.simPrintf("%d %d %d %d %d %d %d %d\n", mainCount, counterInit, gcodeCounter, inpmp, curdir, initDirection, mplicityCount, storeRowIndex);
         
         DFEVar oneHotInitMplicity = initLoop ? storeRowIndex : 0;
-        oneHotInitMplicity = optimization.pipeline(oneHotInitMplicity.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInitMplicity.slice(0, mplicityRows/2)));
-        DFEVector<DFEVar> initMplicity = optimization.pipeline(oneHotInitMplicity).reinterpret(initOneHotType);
-        DFEVector<DFEVar> initMplicityDelay = optimization.pipeline(oneHotInitMplicity).reinterpret(initOneHotType);
-        DFEVector<DFEVar> initMplicityDelay8 = optimization.pipeline(oneHotInitMplicity).reinterpret(initOneHotType);
+        DFEVector<DFEVar> initMplicity = optimization.pipeline(oneHotInitMplicity.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInitMplicity.slice(0, mplicityRows/2))).reinterpret(initOneHotType);
+        DFEVector<DFEVar> initMplicityDelay = optimization.pipeline(oneHotInitMplicity.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInitMplicity.slice(0, mplicityRows/2))).reinterpret(initOneHotType);
+        DFEVector<DFEVar> initMplicityDelay8 = optimization.pipeline(oneHotInitMplicity.slice(mplicityRows/2, mplicityRows - mplicityRows/2)).cat(optimization.pipeline(oneHotInitMplicity.slice(0, mplicityRows/2))).reinterpret(initOneHotType);
         DFEVectorType<DFEVar> mplicityType = new DFEVectorType<DFEVar>(dfeUInt(dimBits), mplicityRows);
         DFEVar[] rowChangeIndexFanout = Utility.parallelFanout(inpmp, mplicityRows, 32, this);
         DFEVector<DFEVar> rowChangeIndexFanned = new DFEVectorType<DFEVar>(dfeUInt(dimBits), mplicityRows).newInstance(this);
@@ -336,7 +349,13 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
             rowToAdd = (useRow.slice(expBits+mantBits-1, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<expBits)-1)).cast(expType)).cat(useRow.slice(0, mantBits-1))).reinterpret(cplxRowType).cast(colSumType);
             //rowToAdd = (useRow.reinterpret(cplxRowType)*2).cast(colSumType);
-        } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
+        } else {
+            //rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
+            rowToAdd = colSumType.newInstance(this);
+            for (int j = 0; j < cols; j++) {
+                rowToAdd[j] <== DFEComplexType.newInstance(this, useRow[2*j].cat(constant.var(dfeBool(), 0)).reinterpret(dataTypeFixCommonAdd), useRow[2*j+1].cat(constant.var(dfeBool(), 0)).reinterpret(dataTypeFixCommonAdd));
+            }
+        }
         //rowToAdd = isInit ? Utility.repeatPipeline(oneRow, 3 + (useFloat ? 3 : 0), this).cast(oneRowFixType).reinterpret(colSumType) : rowToAdd;
         List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
         selRow.add(oneRow.cast(oneRowFixType).reinterpret(colSumType));
@@ -346,9 +365,19 @@ public class InitializeColSumDFEKernel extends Kernel {
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
             DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
-            prevColmnSumVector <== optimization.pipeline(firstTick) ? constant.zero(colSumType) : stream.offset(allColSums[kern], -loopLength);
-            if (useFloat) allColSums[kern] <== Utility.doFloatAdd(prevColmnSumVector, (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd)), false, this);
-            else allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
+            //prevColmnSumVector <== optimization.pipeline(firstTick) ? constant.zero(colSumType) : stream.offset(allColSums[kern], -loopLength);
+            //if (useFloat) allColSums[kern] <== Utility.doFloatAdd(prevColmnSumVector, (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd)), false, this);
+            //else allColSums[kern] <== prevColmnSumVector + (negations[kern] ? optimization.pipeline(negRowToAdd) : optimization.pipeline(rowToAdd));
+            DFEVar firstSel = null, negSel = null;
+            for (int j = 0; j < cols; j++) {
+                if (j == 0 || j == cols / 2) {
+                    firstSel = optimization.pipeline(firstTick);
+                    negSel = optimization.pipeline(negations[kern]);
+                }
+                prevColmnSumVector[j] <== firstSel ? constant.zero(cplxFixCommonAddType) : stream.offset(allColSums[kern][j], -loopLength);
+                if (useFloat) allColSums[kern][j] <== Utility.doFloatAdd(prevColmnSumVector[j], (negSel ? optimization.pipeline(negRowToAdd[j]) : optimization.pipeline(rowToAdd[j])), false, this);
+                else allColSums[kern][j] <== prevColmnSumVector[j] + (negSel ? optimization.pipeline(negRowToAdd[j]) : optimization.pipeline(rowToAdd[j])); 
+            }
         }
         //for float - mux=1 + float add=13, for fixed point - mux+add is optimized to conditional add=1
         //if (!dual) debug.simPrintf(ticksMax===4, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msize, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
