@@ -758,10 +758,11 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static void latencyDump(DFEVar a, DFEVar b, KernelBase<?> base)
     {
+        final int DSP_X = 18, DSP_Y = 27; //DSP_Y = 25;
         for (int is = 0; is <= 1; is++) {
-            for (int i = (is == 1 ? 2 : 1); i <= (is == 1 ? 18 : 17); i++) {
+            for (int i = (is == 1 ? 2 : 1); i <= (is == 1 ? DSP_X : DSP_X-1); i++) {
                 for (int js = 0; js <= 1; js++) {
-                    for (int j = (js == 1 ? 2 : 1); j <= (js == 1 ? 25 : 24); j++) {
+                    for (int j = (js == 1 ? 2 : 1); j <= (js == 1 ? DSP_Y : DSP_Y-1); j++) {
                         base.debug.simPrintf("%X\n", mulExact(a.slice(0, i).reinterpret(KernelBase.dfeFixOffset(i, 0, is == 1 ? SignMode.TWOSCOMPLEMENT : SignMode.UNSIGNED)),
                                                 b.slice(0, j).reinterpret(KernelBase.dfeFixOffset(j, 0, js == 1 ? SignMode.TWOSCOMPLEMENT : SignMode.UNSIGNED)), base));
                     }
@@ -769,7 +770,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             }
         }
     } 
-    public static int getMulPipelineDelay(DFEFix aType, DFEFix bType) //only for sizes up to 18x25 signed/unsigned 
+    public static int getMulPipelineDelay(DFEFix aType, DFEFix bType) //only for sizes up to 18x27 (DSP48E2) 18x25 (DSP48E1) signed/unsigned 
     {
         if ((aType.getTotalBits() == 1 || bType.getTotalBits() == 1) && aType.getSignMode() == SignMode.UNSIGNED && bType.getSignMode() == SignMode.UNSIGNED) return 1;
         //if (aType.getTotalBits() <= 10 || bType.getTotalBits() <= 10) return 3;         
@@ -788,6 +789,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         int W = gcd(tileX, tileY);
         int M = tileX / W;
         int N = tileY / W;
+        final int DSP_X = 18, DSP_Y = 27; //DSP_Y = 25;
         /*int MNWa = M * N * W;
         int MNWb1 = (N + 1) * M * W, MNWb2 = (M + 1) * N * W; 
         int MNWc = 2 * MNWa; 
@@ -807,8 +809,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             return new Object[] { new DFEVar[] { z0, z0, z2, z1, z2, }, new int[] { 0, splitPoint, splitPoint, splitPoint, 2 * splitPoint },
                 null, new int[] { delay0[0], delay0[0], delay2[0], delay1[0]+1, delay2[0] } };
         }*/
-        DFEVar[] aSplit = splitInt(a, tileX, 18, base);
-        DFEVar[] bSplit = splitInt(b, tileY, 25, base);
+        DFEVar[] aSplit = splitInt(a, tileX, DSP_X, base);
+        DFEVar[] bSplit = splitInt(b, tileY, DSP_Y, base);
 
         HashMap<Integer, List<Object>> sums = new HashMap<>();
         HashSet<Pair<Integer, Integer>> subs = new HashSet<>();
@@ -863,7 +865,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         long rightSubs = subs.stream().filter(o -> o.getFirst() < 0 || o.getSecond() < 0).count();
         long prodcount = prods.stream().filter(o -> o instanceof Pair<?, ?> && !(((Pair<?, ?>)o).getFirst() instanceof Pair<?, ?>)).count();
         //System.out.println(rightSubs + " " + prodcount + " " + aSplit[aSplit.length-1].getType() + " " + bSplit[bSplit.length-1].getType());
-        if (rightSubs*2 + prodcount > 32 || (subs.size()-rightSubs)*2+prodcount > 32) { //we are not accounting for 18-bit left and 26-bit right  
+        if (rightSubs*2 + prodcount > 32 || (subs.size()-rightSubs)*2+prodcount > 32) { //we are not accounting for 18-bit left and 26,28-bit right  
             for (int i = 0; i < aSplit.length; i++) aSplit[i] = base.optimization.pipeline(aSplit[i]);
             for (int i = 0; i < bSplit.length; i++) bSplit[i] = base.optimization.pipeline(bSplit[i]);
         }
@@ -904,14 +906,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 } else throw new IllegalArgumentException();
             } else throw new IllegalArgumentException();
             //if (tileMode == 2) System.out.println(left.getType().getTotalBits() + " " + right.getType().getTotalBits());
-            if (left.getType().getTotalBits() == 18 && ((DFEFix)left.getType()).getSignMode() == SignMode.UNSIGNED && right.getType().getTotalBits() > 17) {                
+            if (left.getType().getTotalBits() == DSP_X && ((DFEFix)left.getType()).getSignMode() == SignMode.UNSIGNED && right.getType().getTotalBits() > DSP_X-1) {                
                 extraProdMap.put(o, left.get(0) ? right : base.constant.zero(KernelBase.dfeFixOffset(right.getType().getTotalBits(), 0, ((DFEFix)right.getType()).getSignMode())));
-                left = left.slice(1, 17).reinterpret(KernelBase.dfeUInt(17));
-            } else if (right.getType().getTotalBits() == 26 && ((DFEFix)right.getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) {
+                left = left.slice(1, DSP_X-1).reinterpret(KernelBase.dfeUInt(DSP_X-1));
+            } else if (right.getType().getTotalBits() == DSP_Y+1 && ((DFEFix)right.getType()).getSignMode() == SignMode.TWOSCOMPLEMENT) {
                 extraProdMap.put(o, right.get(0) ? left : base.constant.zero(KernelBase.dfeFixOffset(left.getType().getTotalBits(), 0, ((DFEFix)left.getType()).getSignMode())));
-                right = right.slice(1, 25).reinterpret(KernelBase.dfeInt(25));               
+                right = right.slice(1, DSP_Y).reinterpret(KernelBase.dfeInt(DSP_Y));
             }
-            if (!(getMulInpBits((DFEFix)left.getType()) <= 18 && getMulInpBits((DFEFix)right.getType()) <= 25)) throw new IllegalArgumentException("Size: " + aType.getTotalBits() + " " + bType.getTotalBits());
+            if (!(getMulInpBits((DFEFix)left.getType()) <= DSP_X && getMulInpBits((DFEFix)right.getType()) <= DSP_Y)) throw new IllegalArgumentException("Size: " + aType.getTotalBits() + " " + bType.getTotalBits());
             if (left.getType().getTotalBits() == 1) { //must be unsigned...
                 if (((DFEFix)left.getType()).getSignMode() != SignMode.UNSIGNED) throw new IllegalArgumentException();
                 prodMap.put(o, left ? right : base.constant.zero(KernelBase.dfeFixOffset(right.getType().getTotalBits(), 0, ((DFEFix)right.getType()).getSignMode())));
@@ -958,13 +960,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         int W = gcd(tileX, tileY);
         int M = tileX / W;
         int N = tileY / W;
+        final int DSP_X = 18, DSP_Y = 27; //DSP_Y = 25;
         int MNWa = M * N * W;
         int MNWb1 = (N + 1) * M * W, MNWb2 = (M + 1) * N * W;
         int MNWc = 2 * MNWa;
         int MNWd1 = (2*N + 1) * M * W, MNWd2 = (2 * M + 1) * N * W;
         if (aType.getTotalBits()-(aType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa && bType.getTotalBits()-(bType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWa) { //16x24 tiling, 48x48
-            DFEVar[] aSplit = splitInt(a, tileX, 18, owner);
-            DFEVar[] bSplit = splitInt(b, tileY, 25, owner);
+            DFEVar[] aSplit = splitInt(a, tileX, DSP_X, owner);
+            DFEVar[] bSplit = splitInt(b, tileY, DSP_Y, owner);
             List<DFEVar> c = new ArrayList<>();
             List<Integer> shift = new ArrayList<>();
             List<Boolean> issub = new ArrayList<>();
@@ -972,13 +975,13 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             for (int i = 0; i < aSplit.length; i++) { //rectangular tiled grade school multiplication
                 for (int j = 0; j < bSplit.length; j++) {
                     DFEVar aArg;
-                    if (aSplit[i].getType().getTotalBits() == 18 && ((DFEFix)aSplit[i].getType()).getSignMode() == SignMode.UNSIGNED && bSplit[j].getType().getTotalBits() > 17) {
-                        aArg = aSplit[i].get(17).reinterpret(KernelBase.dfeBool());
+                    if (aSplit[i].getType().getTotalBits() == DSP_X && ((DFEFix)aSplit[i].getType()).getSignMode() == SignMode.UNSIGNED && bSplit[j].getType().getTotalBits() > DSP_X-1) {
+                        aArg = aSplit[i].get(DSP_X-1).reinterpret(KernelBase.dfeBool());
                         c.add(aArg ? bSplit[j] : owner.constant.zero(KernelBase.dfeFixOffset(bSplit[j].getType().getTotalBits(), 0, ((DFEFix)bSplit[j].getType()).getSignMode())));
-                        shift.add(W * (i * M + j * N) + 17);
+                        shift.add(W * (i * M + j * N) + DSP_X-1);
                         pipelineDelay.add(0);
                         issub.add(false);                        
-                        aArg = aSplit[i].slice(0, 17).reinterpret(KernelBase.dfeUInt(17));
+                        aArg = aSplit[i].slice(0, DSP_X-1).reinterpret(KernelBase.dfeUInt(DSP_X-1));
                     } else aArg = aSplit[i]; //i*bSplit.length+j
                     c.add(mulExact(aArg, bSplit[j], owner));
                     shift.add(W * (i * M + j * N));
@@ -988,8 +991,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             }
             return new Object[] { c.toArray(new DFEVar[c.size()]), shift.stream().mapToInt(Integer::intValue).toArray(), booleanAdapter(issub.toArray(new Boolean[issub.size()])), pipelineDelay.stream().mapToInt(Integer::intValue).toArray() };
         } else if (aType.getTotalBits()-(aType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWb1 && bType.getTotalBits()-(bType.getSignMode() == SignMode.UNSIGNED ? 0 : 1) <= MNWb2) { //16x24 tiling, 64x72
-            DFEVar[] aSplit = splitInt(a, tileX, 18, owner);
-            DFEVar[] bSplit = splitInt(b, tileY, 25, owner);
+            DFEVar[] aSplit = splitInt(a, tileX, DSP_X, owner);
+            DFEVar[] bSplit = splitInt(b, tileY, DSP_Y, owner);
             //for (int i = 0; i < aSplit.length; i++) aSplit[i] = owner.optimization.pipeline(aSplit[i]);
             //for (int i = 0; i < bSplit.length; i++) bSplit[i] = owner.optimization.pipeline(bSplit[i]);
             int extra = bType.getSignMode() == SignMode.TWOSCOMPLEMENT ? 1 : 0;
@@ -1020,12 +1023,12 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 int m = poly[k][1] >> 8, n = poly[k][1] & 0xFF;
                 DFEVar x = addExact(aSplit[i], aSplit[m], true, owner); //take care for the mistake in the paper on subtracting high-low vs low-high
                 DFEVar y = addExact(bSplit[j], bSplit[n], true, owner);
-                if (extra != 0) { //y.getType().getTotalBits() == 26
+                if (extra != 0) { //y.getType().getTotalBits() == 26,28
                     DFEVar ylow = y.get(0).reinterpret(KernelBase.dfeBool());
                     c[c.length-1] = ylow ? x : owner.constant.zero(KernelBase.dfeFixOffset(x.getType().getTotalBits(), 0, ((DFEFix)x.getType()).getSignMode()));
                     shift[shift.length-1] = W * (i * M + j * N);
                     pipelineDelay[pipelineDelay.length-1] = 1;
-                    y = y.slice(1, 25).reinterpret(KernelBase.dfeFixOffset(25, 0, ((DFEFix)y.getType()).getSignMode()));
+                    y = y.slice(1, DSP_Y).reinterpret(KernelBase.dfeFixOffset(DSP_Y, 0, ((DFEFix)y.getType()).getSignMode()));
                 }
                 c[i * M + j * N] = mulExact(x, y, owner);
                 shift[i * M + j * N] = W * (i * M + j * N)+extra;
@@ -1109,16 +1112,17 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         return result;
     }
     public static Object[] mulKaratsubaInner(DFEVar a, DFEVar b, KernelBase<?> owner) {
+        final int DSP_X = 18, DSP_Y = 27; //DSP_Y = 25;
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
-        if ((aType.getTotalBits() % 24 == 0 ? 0 : (24 - aType.getTotalBits() % 24)) + (bType.getTotalBits() % 17 == 0 ? 0 : (17 - bType.getTotalBits() % 17)) <
-            (aType.getTotalBits() % 17 == 0 ? 0 : (17 - aType.getTotalBits() % 17)) + (bType.getTotalBits() % 24 == 0 ? 0 : (24 - bType.getTotalBits() % 24)))
+        if ((aType.getTotalBits() % (DSP_Y-1) == 0 ? 0 : ((DSP_Y-1) - aType.getTotalBits() % (DSP_Y-1))) + (bType.getTotalBits() % (DSP_X-1) == 0 ? 0 : ((DSP_X-1) - bType.getTotalBits() % (DSP_X-1))) <
+            (aType.getTotalBits() % (DSP_X-1) == 0 ? 0 : ((DSP_X-1) - aType.getTotalBits() % (DSP_X-1))) + (bType.getTotalBits() % (DSP_Y-1) == 0 ? 0 : ((DSP_Y-1) - bType.getTotalBits() % (DSP_Y-1))))
             return mulKaratsubaInner(b, a, owner);
         if (getDSPCount(aType.getTotalBits(), bType.getTotalBits()) <= 5) {
             return new Object[] { new DFEVar[] { mulExact(a, b, owner) }, new int[] { 0 }, new boolean[] { false }, new int[] { getMulPipelineDelay(aType, bType) }};
         }
         int aDiv = aType.getTotalBits() / 2, bDiv = bType.getTotalBits() / 2;
-        aDiv = aDiv - aDiv % 17 + (aDiv % 17 > 8 ? 17 : 0); //ideally we want to round up/down to minimize abs(b-a)
-        bDiv = bDiv - bDiv % 24 + (bDiv % 24 > 11 ? 24 : 0); //divide closeness ranges 0-8, 9-17, 0-11, 12-23
+        aDiv = aDiv - aDiv % (DSP_X-1) + (aDiv % (DSP_X-1) > 8 ? (DSP_X-1) : 0); //ideally we want to round up/down to minimize abs(b-a)
+        bDiv = bDiv - bDiv % (DSP_Y-1) + (bDiv % (DSP_Y-1) > 11 ? (DSP_Y-1) : 0); //divide closeness ranges 0-8, 9-17, 0-11, 12-23
         DFEVar high1 = a.slice(aDiv, aType.getTotalBits() - aDiv).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - aDiv, 0, aType.getSignMode())), low1 = a.slice(0, aDiv).reinterpret(KernelBase.dfeUInt(aDiv));
         DFEVar high2 = b.slice(bDiv, bType.getTotalBits() - bDiv).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() - bDiv, 0, bType.getSignMode())), low2 = b.slice(0, bDiv).reinterpret(KernelBase.dfeUInt(bDiv));
         Object[] z0 = mulKaratsubaInner(low1, low2, owner), z1;
@@ -1215,13 +1219,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         return getMulKaratsubaDSPCount(a-1, b-1)+1;
     }
     public static int getMulKaratsubaDSPCount(int a, int b) {
-        if ((a % 24 == 0 ? 0 : (24 - a % 24)) + (b % 17 == 0 ? 0 : (17 - b % 17)) <
-            (a % 17 == 0 ? 0 : (17 - a % 17)) + (b % 24 == 0 ? 0 : (24 - b % 24)))
+        final int DSP_X = 18, DSP_Y = 27; //DSP_Y = 25;
+        if ((a % (DSP_Y-1) == 0 ? 0 : ((DSP_Y-1) - a % (DSP_Y-1))) + (b % (DSP_X-1) == 0 ? 0 : ((DSP_X-1) - b % (DSP_X-1))) <
+            (a % (DSP_X-1) == 0 ? 0 : ((DSP_X-1) - a % (DSP_X-1))) + (b % (DSP_Y-1) == 0 ? 0 : ((DSP_Y-1) - b % (DSP_Y-1))))
             return getMulKaratsubaDSPCount(b, a);
         if (getDSPCount(a, b) <= 5) return getDSPCount(a, b);
         int aDiv = a / 2, bDiv = b / 2;
-        aDiv = aDiv - aDiv % 17 + (aDiv % 17 > 8 ? 17 : 0); //ideally we want to round up/down to minimize abs(b-a)
-        bDiv = bDiv - bDiv % 24 + (bDiv % 24 > 11 ? 24 : 0); //divide closeness ranges 0-8, 9-17, 0-11, 12-23
+        aDiv = aDiv - aDiv % (DSP_X-1) + (aDiv % (DSP_X-1) > 8 ? (DSP_X-1) : 0); //ideally we want to round up/down to minimize abs(b-a)
+        bDiv = bDiv - bDiv % (DSP_Y-1) + (bDiv % (DSP_Y-1) > 11 ? (DSP_Y-1) : 0); //divide closeness ranges 0-8, 9-17, 0-11, 12-23
         int z0 = getMulKaratsubaDSPCount(aDiv, bDiv), z2 = getMulKaratsubaDSPCount(a-aDiv, b-bDiv);
         int z1;
         if (aDiv == bDiv) z1 = getSignedMulKaratsubaDSPCount(Math.max(aDiv, a-aDiv)+1, Math.max(bDiv, b-bDiv)+1);
@@ -2430,7 +2435,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
         int hierFanoutLimit = 10000; //512 minimum
-        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, true, hierFanoutLimit, true, true, true, true, true,
+        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, false, hierFanoutLimit, true, true, false, false, false,
             "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
