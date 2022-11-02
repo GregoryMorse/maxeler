@@ -1998,6 +1998,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             new CounterWithInitValue(owner, bit_width, max.getType().isConcreteType() ? max.getType().getTotalBits() : bit_width + 1, wrap_value, inc, needWrap, loopLength));
         smio.connectInput("initValue", initValue);
         smio.connectInput("nextInitValue", nextInitValue);
+        smio.connectInput("preWrap", nextInitValue >= max);
         smio.connectInput("max", max);
         if (userReset != null) smio.connectInput("userReset", userReset);
         smio.connectInput("enable", enable);
@@ -2056,13 +2057,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         private final DFEsmStateValue[] m_counter_next_values;
         private final DFEsmStateValue[] m_counter_onext_values;
         private final DFEsmStateValue[] m_has_wrappeds;
-        private DFEsmValue m_user_enable;
+        private final DFEsmStateValue[] m_next_wrap;
+        private DFEsmInput m_user_enable;
         private DFEsmInput m_user_reset;
+        private DFEsmInput m_prewrap;
         private final DFEsmValue m_limit;
         private final DFEsmValue m_init_value;
         private final DFEsmValue m_next_init_value;
         private DFEsmValue wrap;
-        private DFEsmValue enable_i;
         public CounterWithInitValue(KernelLib owner, int bit_width, int max_width, long wrap_value, long inc, boolean needWrap, int loopLength)
         {
             super(owner);
@@ -2074,7 +2076,6 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             m_user_enable = null;
             m_user_reset = null;
             wrap = null;
-            enable_i = null;
             m_count_type = StateMachineLib.dfeUInt(m_bit_width);
             m_count_type_int = StateMachineLib.dfeUInt(m_bit_width + 1);
             m_init_value = io.input("initValue", m_count_type).cast(m_count_type_int);
@@ -2084,22 +2085,25 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             m_limit = io.input("max", StateMachineLib.dfeUInt(max_width)).cast(m_count_type_int);
             m_user_enable = io.input("enable", StateMachineLib.dfeBool());
             m_user_reset = io.input("userReset", StateMachineLib.dfeBool());
-            enable_i = m_user_enable.or(m_user_reset);
+            m_prewrap = io.input("preWrap", StateMachineLib.dfeBool());
             m_counter_values = new DFEsmStateValue[loopLength];
             m_counter_next_values = new DFEsmStateValue[loopLength];
             m_counter_onext_values = new DFEsmStateValue[loopLength];
             m_has_wrappeds = new DFEsmStateValue[loopLength];
+            m_next_wrap = new DFEsmStateValue[loopLength];
             for (int i = 0; i < loopLength; i++) {
                 m_counter_values[i] = state.value(m_count_type_int);
                 m_counter_next_values[i] = state.value(m_count_type_int);
                 m_counter_onext_values[i] = state.value(m_count_type_int);
                 m_has_wrappeds[i] = state.value(StateMachineLib.dfeBool()); //, false
+                m_next_wrap[i] = state.value(StateMachineLib.dfeBool());
             }
             for (int i = 0; i < m_loopLength-1; i++) {
                 m_counter_values[i+1].next.connect(m_counter_values[i]);
                 m_counter_next_values[i+1].next.connect(m_counter_next_values[i]);
                 m_counter_onext_values[i+1].next.connect(m_counter_onext_values[i]);
                 m_has_wrappeds[i+1].next.connect(m_has_wrappeds[i]);
+                m_next_wrap[i+1].next.connect(m_next_wrap[i]);
             }
             //wrap = m_counter_next_values[loopLength-1].gte(m_limit);
         }
@@ -2110,12 +2114,15 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 _IF(m_user_reset);
                 _IF(m_user_enable);
                 m_counter_values[0].next.connect(m_next_init_value);
-                m_counter_next_values[0].next.connect(m_next_init_value.add(m_inc));
+                DFEsmValue nextVal = m_next_init_value.add(m_inc);
+                m_counter_next_values[0].next.connect(nextVal);
                 m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc * 2));
+                m_next_wrap[0].next.connect(nextVal.gte(m_limit));
                 _ELSE();
                 m_counter_values[0].next.connect(m_init_value);
                 m_counter_next_values[0].next.connect(m_next_init_value);
                 m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc));
+                m_next_wrap[0].next.connect(m_next_init_value.gte(m_limit));
                 _END_IF();
                 m_has_wrappeds[0].next.connect(false);
                 _ELSE();
@@ -2137,6 +2144,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                     m_counter_next_values[0].next.connect(m_counter_next_values[m_loopLength-1]);
                     m_counter_onext_values[0].next.connect(m_counter_onext_values[m_loopLength-1]);
                     m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
+                    m_next_wrap[0].next.connect(m_next_wrap[m_loopLength-1]);
                 }
                 _END_IF();
             }
@@ -2147,20 +2155,24 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         
         private void genNextState() {
             m_counter_onext_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1].add(2L * m_inc));
-            wrap = m_counter_next_values[m_loopLength-1].gte(m_limit);
+            //wrap = m_counter_next_values[m_loopLength-1].gte(m_limit);
+            wrap = m_next_wrap[m_loopLength-1];
             _IF(wrap);
             m_has_wrappeds[0].next.connect(true);
             m_counter_values[0].next.connect(m_wrap_value);
+            m_next_wrap[0].next.connect(m_limit.lte(m_wrap_value + m_inc));            
             m_counter_next_values[0].next.connect(m_wrap_value + m_inc);
             _ELSE();
             _IF(m_has_wrappeds[m_loopLength-1]);
             m_has_wrappeds[0].next.connect(false);
             m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
+            m_next_wrap[0].next.connect(m_limit.lte(m_wrap_value + m_inc * 2));            
             m_counter_next_values[0].next.connect(m_wrap_value + m_inc * 2);
             _ELSE();
             if (m_loopLength != 1) m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
             m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
-            m_counter_next_values[0].next.connect((DFEsmExpr)m_counter_onext_values[m_loopLength-1]);
+            m_next_wrap[0].next.connect(m_counter_onext_values[m_loopLength-1].gte(m_limit));
+            m_counter_next_values[0].next.connect(m_counter_onext_values[m_loopLength-1]);
             _END_IF();
             _END_IF();
         }
@@ -2169,11 +2181,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         protected void outputFunction() {
             _IF(m_user_reset);
             m_count.connect((DFEsmExpr)m_init_value.cast(m_count_type));
-            if (m_needWrap) m_wrap.connect(m_next_init_value.gte(m_limit).and(enable_i));
+            //if (m_needWrap) m_wrap.connect(m_next_init_value.gte(m_limit));
             _ELSE();
             m_count.connect((DFEsmExpr)m_counter_values[m_loopLength-1].slice(0, m_bit_width));
-            if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(enable_i));
+            //if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(m_user_enable));
             _END_IF();
+            //formula: m_user_reset & m_prewrap | ~m_user_reset & m_user_enable & wrap
+            //gen_truth_mux(lambda a, b, c, d: a & d | ~a & b & c, 4)
+            if (m_needWrap) m_wrap.connect(control.mux(m_user_reset.cat(m_user_enable).cat(wrap).cat(m_prewrap), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(true), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true)));
         }
     }
     
@@ -2314,7 +2329,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return out.reinterpret(var.getType());
     }
-    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==4 bits, 16-bit multiplexers are efficient per Xilinx docs 
+    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
@@ -2330,11 +2345,11 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 }
             }
             values = nextValues;
-            sel = base.optimization.pipeline(sel.slice(bits + split, bitsToAddress - bits - split));
+            sel = base.optimization.pipeline(sel.slice(split, bitsToAddress - bits - split));
         }
         return null;
     }
-    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
+    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
         while (true) {
             if (split >= values.size()) return base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(sel), values));
@@ -2351,7 +2366,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
     }
     public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
-    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
+    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
         int innerSize = values[0].getSize();
         M returnVal = values[0].getType().newInstance(base);
