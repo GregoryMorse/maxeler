@@ -2341,7 +2341,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 if (curvals.size() == 1) {
                     nextValues.add(base.optimization.pipeline(curvals.get(0)));
                 } else {
-                    nextValues.add(base.control.mux(sels[i / 32], curvals));
+                    nextValues.add(base.control.mux(sels[i / 32].slice(0, MathUtils.bitsToAddress(curvals.size())), curvals));
                 }
             }
             values = nextValues;
