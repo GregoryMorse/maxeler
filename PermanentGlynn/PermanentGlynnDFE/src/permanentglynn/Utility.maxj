@@ -2334,7 +2334,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
             if (bits + split >= bitsToAddress) return base.control.mux(base.optimization.pipeline(sel), values); 
-            DFEVar[] sels = parallelFanout(sel.slice(bits, split), values.size() - (values.size() % (1 << split) == 1 ? 1 : 0), 32, base);
+            DFEVar[] sels = parallelFanout(sel.slice(0, split), values.size() - (values.size() % (1 << split) == 1 ? 1 : 0), 32, base);
             List<T> nextValues = new ArrayList<>();
             for (int i = 0; i < values.size(); i += (1 << split)) {
                 List<T> curvals = values.subList(i, i+Math.min(1 << split, values.size() - i));
