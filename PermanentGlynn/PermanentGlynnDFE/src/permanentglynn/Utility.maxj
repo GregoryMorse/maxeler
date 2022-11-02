@@ -689,6 +689,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar[] orderedVars = IntStream.of(idxsort).mapToObj(i -> shiftLeftFix(vars[i], shift[i], base)).toArray(DFEVar[]::new);
         boolean[] issub = addsub == null ? new boolean[vars.length] : booleanAdapter(IntStream.of(idxsort).mapToObj(i -> addsub[i]).toArray(Boolean[]::new));
         int[] orderedPipelineDelay = pipelineDelay == null ? new int[vars.length] : IntStream.of(idxsort).map(i -> pipelineDelay[i]).toArray();
+        //return binaryAdder(orderedVars, issub, orderedPipelineDelay, totalDelay, base);
         return ternaryAdder(orderedVars, issub, orderedPipelineDelay, totalDelay, base);
     }
     public static int getIntSplits(DFEFix aType, int bits, int signbits, KernelBase<?> base)
@@ -875,7 +876,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         HashMap<Object, DFEVar> extraProdMap = new HashMap<>(); //for 18 bit unsigned case
         HashMap<Object, Integer> prodMapDelay = new HashMap<>();
         for (Pair<Integer, Integer> sub : subs) {
-            if (sub.getFirst() < 0 || sub.getSecond() < 0) {
+            if (sub.getFirst() < 0 || sub.getSecond() < 0) { //for pre-adder inference use the larger b argument, convert to signed for maxcompiler recognition
                 subMap.put(sub, addExact(bSplit[-sub.getFirst()], bSplit[-sub.getSecond()], true, base));
             } else {
                 subMap.put(sub, addExact(aSplit[sub.getFirst()], aSplit[sub.getSecond()], true, base));
@@ -1331,6 +1332,19 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return chunks;
     }
+    public static void verifyTriAddExact(DFEVar verify, DFEVar a, DFEVar b, DFEVar c, boolean isBSub, boolean isCSub, KernelBase<?> base) {
+        DFEFix resultType = getTriAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), (DFEFix) c.getType(), isBSub, isCSub);
+        base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
+            Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
+        //base.optimization.pushEnableBitGrowth(true);
+        DFEVar result;
+        if (isBSub) result = isCSub ? (a - b - c) : (a - b + c);
+        else result = isCSub ? (a + b - c) : (a + b + c);
+        base.optimization.popFixOpMode(MathOps.ADD_SUB);
+        //base.optimization.popEnableBitGrowth();
+        result = (isBSub || isCSub) && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        base.debug.simPrintf(verify.cast(result.getType()) !== result, "%X %X " + isBSub + " " + isCSub + "\n", verify.reinterpret(KernelBase.dfeUInt(verify.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())));
+    }    
     public static DFEVar triAddExact(DFEVar a, DFEVar b, DFEVar c, boolean isBSub, boolean isCSub, KernelBase<?> base) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType(), cType = (DFEFix) c.getType();
         DFEFix resultType = getTriAddExactType(aType, bType, cType, isBSub, isCSub);        
@@ -1341,21 +1355,25 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             List<List<DFEVar>> chunks = getBitChunks128(b, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(bcType.getTotalBits()+aType.getTotalBits()-aType.getFractionBits() - bcType.getIntegerBits(), -bcType.getFractionBits(), resultType.getSignMode());
             DFEVar result = repeatPipeline(a, 1 + (chunks != null ? chunks.size() - 1 : 0), base).cat(base.constant.zero(KernelBase.dfeUInt(-aType.getFractionBits() - bcType.getIntegerBits()))).cat(addExact(b, c, isCSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         } else if (aType.getSignMode() == SignMode.UNSIGNED && cType.getSignMode() == SignMode.UNSIGNED && !isCSub && -bType.getFractionBits() > acType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, c, isCSub, true);
             resultType = KernelBase.dfeFixOffset(acType.getTotalBits()+bType.getTotalBits()-bType.getFractionBits() - acType.getIntegerBits(), -acType.getFractionBits(), resultType.getSignMode());
             DFEVar result = (isBSub ? -b : repeatPipeline(b, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-bType.getFractionBits() - acType.getIntegerBits()))).cat(addExact(a, c, isCSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         } else if (aType.getSignMode() == SignMode.UNSIGNED && bType.getSignMode() == SignMode.UNSIGNED && !isBSub && -cType.getFractionBits() > abType.getIntegerBits()) {
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isBSub, true);
             resultType = KernelBase.dfeFixOffset(abType.getTotalBits()+cType.getTotalBits()-cType.getFractionBits() - abType.getIntegerBits(), -abType.getFractionBits(), resultType.getSignMode());
             DFEVar result = (isCSub ? -c : repeatPipeline(c, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).cat(base.constant.zero(KernelBase.dfeUInt(-cType.getFractionBits() - abType.getIntegerBits()))).cat(addExact(a, b, isBSub, base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
             return result;
         }
         //first we splice off any trailing bits
         if (aType.getFractionBits() > bcType.getFractionBits()) { //isBSub isCSub in above calculation not relevant to fraction bits so we reuse...
             int bitDiff = aType.getFractionBits() - bcType.getFractionBits();
+            //DFEVar aOrig = a;
             if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && aType.getTotalBits() <= bitDiff+1) { //remembering that the smallest twos complement number is 2 bits
                 aType = KernelBase.dfeFixOffset(aType.getTotalBits()+bitDiff-aType.getTotalBits()+2, -aType.getFractionBits(), aType.getSignMode());
                 a = a.cast(aType);
@@ -1383,27 +1401,34 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             }
             result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, aOrig, b, c, isBSub, isCSub, base);
             return result;            
         } else if (!isBSub && bType.getFractionBits() > acType.getFractionBits()) {
             int bitDiff = bType.getFractionBits() - acType.getFractionBits();
+            //DFEVar bOrig = b;
             if (bitDiff > bType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar bsplice = b.slice(0, bitDiff);
             b = b.slice(bitDiff, bType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() - bitDiff, -(bType.getFractionBits() - bitDiff), bType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyTriAddExact(result, a, bOrig, c, isBSub, isCSub, base);
             return result;            
         } else if (!isCSub && cType.getFractionBits() > abType.getFractionBits()) {
             int bitDiff = cType.getFractionBits() - abType.getFractionBits();
+            //DFEVar cOrig = c;
             if (bitDiff > cType.getTotalBits()) throw new IllegalArgumentException(); //not yet handled case as above
             DFEVar csplice = c.slice(0, bitDiff);
             c = c.slice(bitDiff, cType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(cType.getTotalBits() - bitDiff, -(cType.getFractionBits() - bitDiff), cType.getSignMode()));
             List<List<DFEVar>> chunks = getTriBitChunks128(a, b, c, isBSub, isCSub, true);
             DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
             result = result.cat(repeatPipeline(csplice, 1 + (chunks != null ? chunks.size()-1 : 0), base)).reinterpret(resultType);
-	    return result;
+            //if (chunks != null) verifyTriAddExact(result, a, b, cOrig, isBSub, isCSub, base);
+	        return result;
+        } else {
+            DFEVar result = doTriAddExact(a, b, c, isBSub, isCSub, base);
+            return result;
         }
-        return doTriAddExact(a, b, c, isBSub, isCSub, base);
     }
     public static DFEFix getTriAddExactType(DFEFix aType, DFEFix bType, DFEFix cType, boolean isBSub, boolean isCSub) {
         int fracBits = Math.max(Math.max(aType.getFractionBits(), bType.getFractionBits()), cType.getFractionBits());
@@ -1447,7 +1472,9 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 chunks.get(i-1).get(0) == null && chunks.get(i-1).get(1) != null && chunks.get(i-1).get(2) != null && isBSub && isCSub) result = -result;
             //DFEVar realResult = doTriAddExact(a, b, c, isBSub, isCSub, base, false);
             //base.debug.simPrintf(result.cast(resultType) !== realResult, "%d %d %X %X %X %X %X\n", isBSub ? 1 : 0, isCSub ? 1 : 0, a.reinterpret(KernelBase.dfeUInt(a.getType().getTotalBits())), b.reinterpret(KernelBase.dfeUInt(b.getType().getTotalBits())), c.reinterpret(KernelBase.dfeUInt(c.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())), realResult.reinterpret(KernelBase.dfeUInt(realResult.getType().getTotalBits())));
-            return result.cast(resultType); //an extra bit can grow in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both 
+            result = result.cast(resultType); //an extra bit can grow in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both
+            //verifyTriAddExact(result, a, b, c, isBSub, isCSub, base);
+            return result; 
         }
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
@@ -1529,6 +1556,17 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return chunks;
     }
+    public static void verifyAddExact(DFEVar verify, DFEVar a, DFEVar b, boolean isSub, KernelBase<?> base) {
+        DFEFix resultType = getAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), isSub);
+        base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
+            Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
+        //base.optimization.pushEnableBitGrowth(true);
+        DFEVar result = isSub ? (a - b) : (a + b);
+        base.optimization.popFixOpMode(MathOps.ADD_SUB);
+        //base.optimization.popEnableBitGrowth();
+        result = isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        base.debug.simPrintf(verify.cast(result.getType()) !== result, "%X %X " + isSub + "\n", verify.reinterpret(KernelBase.dfeUInt(verify.getType().getTotalBits())), result.reinterpret(KernelBase.dfeUInt(result.getType().getTotalBits())));
+    }
     public static DFEVar addExact(DFEVar a, DFEVar b, boolean isSub, KernelBase<?> base) {
         DFEFix aType = (DFEFix) a.getType(), bType = (DFEFix) b.getType();
         DFEFix resultType = getAddExactType(aType, bType, isSub);
@@ -1544,19 +1582,23 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         int bitDiff = aType.getFractionBits() - bType.getFractionBits();
         if (bitDiff > 0) {
             if (aType.getTotalBits() <= bitDiff) throw new IllegalArgumentException();
-            DFEVar asplice = a.slice(0, bitDiff);            
+            DFEVar asplice = a.slice(0, bitDiff);
+            //DFEVar aOrig = a;
             a = a.slice(bitDiff, aType.getTotalBits() - bitDiff).reinterpret(KernelBase.dfeFixOffset(aType.getTotalBits() - bitDiff, -(aType.getFractionBits() - bitDiff), aType.getSignMode()));
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
             result = result.cat(repeatPipeline(asplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyAddExact(result, aOrig, b, isSub, base);
             return result;
         } else if (bitDiff < 0 && !isSub) {
             if (bType.getTotalBits() <= -bitDiff) throw new IllegalArgumentException();
             DFEVar bsplice = b.slice(0, -bitDiff);
-            b = b.slice(-bitDiff, bType.getTotalBits() + bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() + bitDiff, -(bType.getFractionBits() + bitDiff), bType.getSignMode()));
+            //DFEVar bOrig = b;
+            b = b.slice(-bitDiff, bType.getTotalBits() + bitDiff).reinterpret(KernelBase.dfeFixOffset(bType.getTotalBits() + bitDiff, -(bType.getFractionBits() + bitDiff), bType.getSignMode()));            
             List<List<DFEVar>> chunks = getBitChunks128(a, b, isSub, true);
             DFEVar result = doAddExact(a, b, isSub, base);
             result = result.cat(repeatPipeline(bsplice, 1 + (chunks != null ? chunks.size() - 1 : 0), base)).reinterpret(resultType);
+            //if (chunks != null) verifyAddExact(result, a, bOrig, isSub, base);
             return result;
         } else {
             DFEVar result = doAddExact(a, b, isSub, base);
@@ -1589,15 +1631,21 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             DFEVar result = results.get(0);
             int i;
             for (i = 1; i < results.size(); i++) result = addExact(repeatPipeline(results.get(i), i-1, base), result, false, base);
-            return result.cast(resultType); //an extra bit will occur in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both 
+            result = result.cast(resultType); //an extra bit will occur in chained operations, so it is eliminated here as we know the carry only occurred in the chunk add or chain stage, not both
+            //verifyAddExact(result, a, b, isSub, base);
+            return result; 
         }
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
         //base.optimization.pushEnableBitGrowth(true);
+        if (isSub && ((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED && ((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) {
+            a = uToSigned(a, base);
+            b = uToSigned(b, base);
+        }
         DFEVar result = isSub ? (a - b) : (a + b);
         base.optimization.popFixOpMode(MathOps.ADD_SUB);
         //base.optimization.popEnableBitGrowth();
-        return isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
+        return result; //isSub && ((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
     }
     public static DFEVar doAddExact(DFEVar a, DFEVar b, DFEVar isSub, KernelBase<?> base) {
         DFEFix resultType = getAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), true);
@@ -1950,6 +1998,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             new CounterWithInitValue(owner, bit_width, max.getType().isConcreteType() ? max.getType().getTotalBits() : bit_width + 1, wrap_value, inc, needWrap, loopLength));
         smio.connectInput("initValue", initValue);
         smio.connectInput("nextInitValue", nextInitValue);
+        smio.connectInput("preWrap", nextInitValue >= max);
         smio.connectInput("max", max);
         if (userReset != null) smio.connectInput("userReset", userReset);
         smio.connectInput("enable", enable);
@@ -2008,13 +2057,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         private final DFEsmStateValue[] m_counter_next_values;
         private final DFEsmStateValue[] m_counter_onext_values;
         private final DFEsmStateValue[] m_has_wrappeds;
-        private DFEsmValue m_user_enable;
+        private final DFEsmStateValue[] m_next_wrap;
+        private DFEsmInput m_user_enable;
         private DFEsmInput m_user_reset;
+        private DFEsmInput m_prewrap;
         private final DFEsmValue m_limit;
         private final DFEsmValue m_init_value;
         private final DFEsmValue m_next_init_value;
         private DFEsmValue wrap;
-        private DFEsmValue enable_i;
         public CounterWithInitValue(KernelLib owner, int bit_width, int max_width, long wrap_value, long inc, boolean needWrap, int loopLength)
         {
             super(owner);
@@ -2026,7 +2076,6 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             m_user_enable = null;
             m_user_reset = null;
             wrap = null;
-            enable_i = null;
             m_count_type = StateMachineLib.dfeUInt(m_bit_width);
             m_count_type_int = StateMachineLib.dfeUInt(m_bit_width + 1);
             m_init_value = io.input("initValue", m_count_type).cast(m_count_type_int);
@@ -2036,22 +2085,25 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             m_limit = io.input("max", StateMachineLib.dfeUInt(max_width)).cast(m_count_type_int);
             m_user_enable = io.input("enable", StateMachineLib.dfeBool());
             m_user_reset = io.input("userReset", StateMachineLib.dfeBool());
-            enable_i = m_user_enable.or(m_user_reset);
+            m_prewrap = io.input("preWrap", StateMachineLib.dfeBool());
             m_counter_values = new DFEsmStateValue[loopLength];
             m_counter_next_values = new DFEsmStateValue[loopLength];
             m_counter_onext_values = new DFEsmStateValue[loopLength];
             m_has_wrappeds = new DFEsmStateValue[loopLength];
+            m_next_wrap = new DFEsmStateValue[loopLength];
             for (int i = 0; i < loopLength; i++) {
                 m_counter_values[i] = state.value(m_count_type_int);
                 m_counter_next_values[i] = state.value(m_count_type_int);
                 m_counter_onext_values[i] = state.value(m_count_type_int);
                 m_has_wrappeds[i] = state.value(StateMachineLib.dfeBool()); //, false
+                m_next_wrap[i] = state.value(StateMachineLib.dfeBool());
             }
             for (int i = 0; i < m_loopLength-1; i++) {
                 m_counter_values[i+1].next.connect(m_counter_values[i]);
                 m_counter_next_values[i+1].next.connect(m_counter_next_values[i]);
                 m_counter_onext_values[i+1].next.connect(m_counter_onext_values[i]);
                 m_has_wrappeds[i+1].next.connect(m_has_wrappeds[i]);
+                m_next_wrap[i+1].next.connect(m_next_wrap[i]);
             }
             //wrap = m_counter_next_values[loopLength-1].gte(m_limit);
         }
@@ -2062,12 +2114,15 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 _IF(m_user_reset);
                 _IF(m_user_enable);
                 m_counter_values[0].next.connect(m_next_init_value);
-                m_counter_next_values[0].next.connect(m_next_init_value.add(m_inc));
+                DFEsmValue nextVal = m_next_init_value.add(m_inc);
+                m_counter_next_values[0].next.connect(nextVal);
                 m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc * 2));
+                m_next_wrap[0].next.connect(nextVal.gte(m_limit));
                 _ELSE();
                 m_counter_values[0].next.connect(m_init_value);
                 m_counter_next_values[0].next.connect(m_next_init_value);
                 m_counter_onext_values[0].next.connect(m_next_init_value.add(m_inc));
+                m_next_wrap[0].next.connect(m_next_init_value.gte(m_limit));
                 _END_IF();
                 m_has_wrappeds[0].next.connect(false);
                 _ELSE();
@@ -2089,6 +2144,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                     m_counter_next_values[0].next.connect(m_counter_next_values[m_loopLength-1]);
                     m_counter_onext_values[0].next.connect(m_counter_onext_values[m_loopLength-1]);
                     m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
+                    m_next_wrap[0].next.connect(m_next_wrap[m_loopLength-1]);
                 }
                 _END_IF();
             }
@@ -2099,20 +2155,24 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         
         private void genNextState() {
             m_counter_onext_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1].add(2L * m_inc));
-            wrap = m_counter_next_values[m_loopLength-1].gte(m_limit);
+            //wrap = m_counter_next_values[m_loopLength-1].gte(m_limit);
+            wrap = m_next_wrap[m_loopLength-1];
             _IF(wrap);
             m_has_wrappeds[0].next.connect(true);
             m_counter_values[0].next.connect(m_wrap_value);
+            m_next_wrap[0].next.connect(m_limit.lte(m_wrap_value + m_inc));            
             m_counter_next_values[0].next.connect(m_wrap_value + m_inc);
             _ELSE();
             _IF(m_has_wrappeds[m_loopLength-1]);
             m_has_wrappeds[0].next.connect(false);
             m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
+            m_next_wrap[0].next.connect(m_limit.lte(m_wrap_value + m_inc * 2));            
             m_counter_next_values[0].next.connect(m_wrap_value + m_inc * 2);
             _ELSE();
             if (m_loopLength != 1) m_has_wrappeds[0].next.connect(m_has_wrappeds[m_loopLength-1]);
             m_counter_values[0].next.connect((DFEsmExpr)m_counter_next_values[m_loopLength-1]);
-            m_counter_next_values[0].next.connect((DFEsmExpr)m_counter_onext_values[m_loopLength-1]);
+            m_next_wrap[0].next.connect(m_counter_onext_values[m_loopLength-1].gte(m_limit));
+            m_counter_next_values[0].next.connect(m_counter_onext_values[m_loopLength-1]);
             _END_IF();
             _END_IF();
         }
@@ -2121,11 +2181,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         protected void outputFunction() {
             _IF(m_user_reset);
             m_count.connect((DFEsmExpr)m_init_value.cast(m_count_type));
-            if (m_needWrap) m_wrap.connect(m_next_init_value.gte(m_limit).and(enable_i));
+            //if (m_needWrap) m_wrap.connect(m_next_init_value.gte(m_limit));
             _ELSE();
             m_count.connect((DFEsmExpr)m_counter_values[m_loopLength-1].slice(0, m_bit_width));
-            if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(enable_i));
+            //if (m_needWrap) m_wrap.connect((DFEsmExpr)wrap.and(m_user_enable));
             _END_IF();
+            //formula: m_user_reset & m_prewrap | ~m_user_reset & m_user_enable & wrap
+            //gen_truth_mux(lambda a, b, c, d: a & d | ~a & b & c, 4)
+            if (m_needWrap) m_wrap.connect(control.mux(m_user_reset.cat(m_user_enable).cat(wrap).cat(m_prewrap), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(false), constant.value(true), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true), constant.value(false), constant.value(true)));
         }
     }
     
@@ -2266,7 +2329,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return out.reinterpret(var.getType());
     }
-    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==4 bits, 16-bit multiplexers are efficient per Xilinx docs 
+    public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
@@ -2282,11 +2345,11 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 }
             }
             values = nextValues;
-            sel = base.optimization.pipeline(sel.slice(bits + split, bitsToAddress - bits - split));
+            sel = base.optimization.pipeline(sel.slice(split, bitsToAddress - bits - split));
         }
         return null;
     }
-    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
+    public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
         while (true) {
             if (split >= values.size()) return base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(sel), values));
@@ -2303,7 +2366,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
     }
     public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
-    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==16 one hot bits, 16-bit multiplexers are efficient per Xilinx docs
+    M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
         int innerSize = values[0].getSize();
         M returnVal = values[0].getType().newInstance(base);
