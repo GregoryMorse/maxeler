@@ -941,22 +941,30 @@ def num_to_bits(num, chunks):
     #else: assert np.allclose(num, bits_to_num(bits.transpose(), 0)), (num, bits_to_num(bits.transpose(), 0))
     #assert ((bits >=0) & (bits <= 127)).all()
     return bits
+from numba import jit #pip install -U numba=0.54.1
+@jit(nopython=True)
 def bits_to_num(num, offset=7):
     #assert ((num[:,-1] == 0) | (num[:,-1] == -1)).all()
-    if not (num[:,0:-1] >= 0).all(): print(num[:,0:-1] >= 0)
-    #assert (num[:,0:-1] >= 0).all(), num[:,0:-1] >= 0 
-    return np.sum(num.astype(np.int64) << np.arange(-offset, 7 * num.shape[-1]-offset, 7), axis=-1) #the high byte can be 0/-1 or this overflows...
+    #if not (num[:,0:-1] >= 0).all(): print(num[:,0:-1] >= 0)
+    #assert (num[:,0:-1] >= 0).all(), num[:,0:-1] >= 0
+    shifts = np.arange(-offset, 7 * num.shape[0]-offset, 7)
+    shifts[shifts < 0] = 0
+    return np.sum(num.astype(np.int64) << shifts.reshape(shifts.shape[0], 1), axis=0) #the high byte can be 0/-1 or this overflows...
 def normalize_doubles(num, dimension, fractionbits=63):
     mantissas, exponents = np.frexp(num)
     maxexp = np.amax(exponents, axis=dimension)
     mant = np.rint(np.ldexp(mantissas, exponents-(maxexp[:,np.newaxis] if dimension==1 else maxexp)+fractionbits)).astype(np.int64) #(64, -63) bit fixed point integers
     #assert np.allclose(num, renormalize_doubles(mant, maxexp+fractionbits)), maxexp #, (num, renormalize_doubles(mant, maxexp+fractionbits))
     return maxexp, mant
+@jit(nopython=True)
 def renormalize_doubles(num, exp):
-    return num.astype(np.float64) / (2 ** exp.astype(np.float64))
+    return np.ldexp(num.astype(np.float64), -exp)
+@jit(nopython=True)
 def vector_complex_to_real(cplx):
-    dim = cplx.shape[1]//2 #len(cplx)//2
-    return cplx[:,:dim] + cplx[:,dim:]*1j #return cplx[:dim] + cplx[dim:]*1j
+    dim = cplx.shape[-1]//2 #len(cplx)//2
+    result = cplx[...,dim:] * 1j
+    result += cplx[...,:dim]
+    return result #return cplx[:dim] + cplx[dim:]*1j
 def vector_real_to_complex(vec):
     return np.hstack((vec.real, vec.imag))
 def matrix_real_to_complex(mtx):
@@ -1021,14 +1029,14 @@ def compile_unit_test(name):
     print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
     g.check_stream_conflicts(json_file)
     return iop_file, json_file
-def invoke(device, iop, pgm_num, ep_num, tensors):
+def invoke(device, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
     """Low level interface to the device driver to access multiple programs. A higher level abstraction
     will be provided in a future release that offers access to multiple programs and entry points."""
 
     pgm = iop[pgm_num]
     ep = pgm.entry_points[ep_num]
-    input_buffer = runtime.BufferArray(ep.input, 1)[0]
-    output_buffer = runtime.BufferArray(ep.output, 1)[0]
+    input_buffer = runtime.BufferArray(ep.input, 1)[0] if buffers is None else buffers[0]
+    output_buffer = runtime.BufferArray(ep.output, 1)[0] if buffers is None else buffers[1]
     if ep.input.tensors:
         for input_tensor in ep.input.tensors:
             if input_tensor.name not in tensors:
@@ -1038,10 +1046,10 @@ def invoke(device, iop, pgm_num, ep_num, tensors):
     outs = {}
     if ep.output.tensors:
         for output_tensor in ep.output.tensors:
-            result_tensor = output_tensor.allocate_numpy_array()
+            result_tensor = lastouts[output_tensor.name] if not lastouts is None else output_tensor.allocate_numpy_array()
             output_tensor.to_host(output_buffer, result_tensor)
             outs[output_tensor.name] = result_tensor
-    return outs
+    return outs, [input_buffer, output_buffer]
 class VecNormalize(g.Component):
     def __init__(self, chunks, dim, lastvn=None, **kwargs):
         super().__init__(**kwargs)
@@ -1199,8 +1207,7 @@ class VecNormalize(g.Component):
             #print(inputs)
             res = runner(**inputs)
             for i in range(parallel//2):
-                bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
-                nums = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                nums = bits_to_num(res[result_mt[i].name], 7)
                 results.append((vector_complex_to_real(
                     renormalize_doubles(nums[:dim*2], 63 - 7 - exp_inpvecs[i*2]).reshape(1, dim*2)),
                     res[resnorm_mt[i].name][0, :dim*2].reshape(dim*2)))
@@ -1415,11 +1422,11 @@ class VecMatMul(g.Component):
                 res = runner(**inputs)
                 results[0] = []
                 for i in range(parallel//2):
-                    result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                    result = bits_to_num(res[result_mt[i].name], 7)
                     norm = res[resnorm[i].name].reshape(dim*2*2)
                     #the results come back truncating the lower 7*(chunks-1) bits
-                    results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2] - norm[:dim*2]).reshape(1, dim*2)).reshape(dim))
-                    results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1] - norm[dim*2:]).reshape(1, dim*2)).reshape(dim))
+                    results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2] - norm[:dim*2].astype(np.int32)).reshape(1, dim*2)).reshape(dim))
+                    results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1] - norm[dim*2:].astype(np.int32)).reshape(1, dim*2)).reshape(dim))
             runner = g.create_tsp_runner(iop_file)
             actual()
             oracleres, results = oracleres[0], results[0]
@@ -1895,7 +1902,7 @@ class AdvanceGrayCode(g.Component):
             device.load(iop[1], unsafe_keep_entry_points=True)
             invoke(device, iop, 0, 0, None)
         tloaddata = timeit.timeit(runnerinit, number=1)/1
-        runner = lambda: invoke(device, iop, 1, 0, None)
+        runner = lambda: invoke(device, iop, 1, 0, None)[0]
         origcounter = [agc.origcounter for _ in range(parallel)]
         origgcode = [agc.origgcode for _ in range(parallel)]        
         oracleres, result = [], []
@@ -2020,13 +2027,13 @@ class LoopCorrections(g.Component):
         #VectorsToComplexMatrix(results_mt, results_norm)
         #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
-        with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
-            self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
+        #with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
+        #    self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
     def chain_test(chunks, dim):
-        import timeit
+        import timeit        
         worstCase, useCplx = False, True
         matpow = dim//2-1
         pgm_pkg = g.ProgramPackage(name="mm", output_dir="mm")
@@ -2045,7 +2052,7 @@ class LoopCorrections(g.Component):
         iops = pgm_pkg.assemble()
         iop = runtime.IOProgram(iops[0])
         device = runtime.devices[0]
-            
+        
         if worstCase:
             if useCplx:
                 originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
@@ -2062,26 +2069,34 @@ class LoopCorrections(g.Component):
     
         oracleres = [None]
         def oracle():
-            B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
+            #export OMP_NUM_THREADS=64
+            floattype = np.cdouble # np.clongdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
+            B = [originpmat[i].transpose().astype(floattype) for i in range(parallel)]
             oracleres[0] = []
             for i in range(parallel):
-                w = originpvec[i].astype(np.clongdouble)
+                w = originpvec[i].astype(floattype)
                 for _ in range(matpow):
                     w = w @ B[i]
                 oracleres[0].append(w.astype(np.cdouble))
-        toracle = timeit.timeit(oracle, number=10)/10
+        batchsize = 30000
+        toracle = timeit.timeit(oracle, number=batchsize)/batchsize
         print_utils.infoc("\nRunning on HW ...")
         np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
-        # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
+        # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".        
+        #from GroqBatch_wrapper import GroqBatch_wrapper
+        #GroqBatch_wrapper(iop_file=iops[0])
         
-        results, runfunc = [None], [None]   
+        #import threading
+        #max_workers = 8
+        #lock, buflock = [threading.Lock(), 0], [threading.Lock() for _ in range(max_workers)]
+        results, runfunc = [None], [None]
         def loaddata():
             device.open()
             device.load(iop[0], unsafe_keep_entry_points=True)
             device.load(iop[1], unsafe_keep_entry_points=True)
             fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
             inputs = {}
-            exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+            exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
             for i in range(parallel//2):
                 exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
                 inpvec0 = num_to_bits(normals, chunks)
@@ -2094,27 +2109,39 @@ class LoopCorrections(g.Component):
                 inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
                 inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
                 inputs[cx_diag[i].name] = np.hstack((inpvec0, inpvec1)) #colswap
-                exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
-            runner(inputs)
+                exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
+            invoke(device, iop, 0, 0, inputs)
             def actual():
-                res = runner()
-                results[0] = []
+                #buflock[c].acquire()
+                res, buffers[0] = invoke(device, iop, 1, 0, None, lastouts[0], buffers[0])
+                lastouts[0] = res
+                newres = []
                 for i in range(parallel//2):
-                    result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                    result = bits_to_num(res[result_mt[i].name], 7)
                     norm = res[resnorm[i].name].reshape(dim*2*2)
                     #the results come back truncating the lower 7*(chunks-1) bits
-                    results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2] - norm[:dim*2]).reshape(1, dim*2)).reshape(dim))
-                    results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1] - norm[dim*2:]).reshape(1, dim*2)).reshape(dim))
+                    normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
+                    newres.append(vector_complex_to_real(normed[:dim*2]))
+                    newres.append(vector_complex_to_real(normed[dim*2:]))
+                    
+                results[0] = newres
+                #buflock[c].release()
             runfunc[0] = actual
-        runner = lambda inp: invoke(device, iop, 0, 0, inp) #runner = g.create_tsp_runner(init_iop_file)
         tloaddata = timeit.timeit(loaddata, number=1)/1
         actual = runfunc[0]
-        runner = lambda: invoke(device, iop, 1, 0, None) #g.create_tsp_runner(iop_file)
+        buffers, lastouts = [None], [None] #* max_workers
         tactual = timeit.timeit(actual, number=1)/1
-        batchsize = 30000
+        def actualbatch():
+            for _ in range(batchsize): actual()
+        perf_pro(actualbatch)        
+        #def actualpool():
+        #    from concurrent.futures import ThreadPoolExecutor
+        #    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        #        for i in range(batchsize): executor.submit(actual, i % max_workers)
+        #tactualpool = timeit.timeit(actualpool, setup='gc.enable()', number=1)/batchsize
         tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
         print("Matrix Power", matpow, "File Sizes", iops[0], os.path.getsize(iops[0]))
-        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x)", tactualbatch)
+        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Init Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x)", tactualbatch) #, "Groq Time Avg. " + str(max_workers) + " Worker Thread Pool " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualpool) + "x)", tactualpool)
         oracleres, results = oracleres[0], results[0]
         for i in range(parallel):
             print_utils.infoc("\nComparing results with oracle ...")
@@ -2164,28 +2191,29 @@ class LoopCorrections(g.Component):
         def actual():
             fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
             inputs = {}
-            exp_inpvecs, exp_inpmats, Z = [], [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+            exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
             for i in range(parallel//2):
                 exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
                 inpvec0 = num_to_bits(normals, chunks)
-                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), 1, fractionbits) #dimension 1 will cause chaining issues without shift corrections
                 inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
                 exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
                 inpvec1 = num_to_bits(normals, chunks)
-                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), 1, fractionbits) #dimension 1 will cause chaining issues without shift corrections
                 inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
                 inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
                 inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
                 inputs[cx_diag[i].name] = np.hstack((inpvec0, inpvec1)) #colswap
-                exp_inpvecs.extend([exp_inpvec0, exp_inpvec1]); exp_inpmats.extend([exp_inpmat0, exp_inpmat1])
+                exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - exp_inpmat0, 2*fractionbits-63 - 7 - exp_inpvec1 - exp_inpmat1)))
             res = runner(**inputs)
             results[0] = []
             for i in range(parallel//2):
-                result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+                result = bits_to_num(res[result_mt[i].name], 7)
                 norm = res[resnorm[i].name].reshape(dim*2*2)
                 #the results come back truncating the lower 7*(chunks-1) bits
-                results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2] - norm[:dim*2]).reshape(1, dim*2)).reshape(dim))
-                results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1] - norm[dim*2:]).reshape(1, dim*2)).reshape(dim))
+                normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
+                results[0].append(vector_complex_to_real(normed[:dim*2]))
+                results[0].append(vector_complex_to_real(normed[dim*2:]))
         print_utils.infoc("\nRunning on HW ...")
         oracle()
         actual()
@@ -2225,6 +2253,18 @@ class LoopCorrectionsInit(g.Component):
         with g.ResourceScope(name="gcodeinit", is_buffered=True, time=None, predecessors=[pred]) as pred:
             result_mt, resdiag_mt, rescxdiag_mt = GrayCodeInitVectorMatrix(self.chunks, self.dim).build(full_mt, diag_mt, cx_diag_mt)
         return result_mt[0]
+def perf_pro(f):
+    import cProfile, pstats, io
+    from pstats import SortKey
+    pr = cProfile.Profile()
+    pr.enable()
+    f()
+    pr.disable()
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
 def tf_mm(chunks, dim):
     import os, shutil
     import tensorflow as tf #pip install -U tensorflow-cpu==2.7 #pip install -U onnx #pip install -U onnxruntime #pip install -U tf2onnx #pip install -U flatbuffers==1.12
@@ -2299,9 +2339,9 @@ def main():
     #VecMatMul.unit_test(chunks, dim)
     #AdvanceGrayCode.unit_test(chunks, dim)
     #AdvanceGrayCode.chain_test(chunks, dim)
-    VectorsToComplexMatrix.unit_test(chunks, dim)
+    #VectorsToComplexMatrix.unit_test(chunks, dim)
     #LoopCorrections.unit_test(chunks, dim)
-    #LoopCorrections.chain_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim)
     #tf_mm(chunks, dim)
     #pt_mm(chunks, dim)
     return
@@ -2423,7 +2463,7 @@ def main():
         res = runner(**inputs)
         results[0] = []
         for i in range(parallel//2):
-            result = bits_to_num(res[result_mt[i].name].reshape(chunks, dim*2*2).transpose(), 7)
+            result = bits_to_num(res[result_mt[i].name], 7)
             #the results come back truncating the lower 7*(chunks-1) bits
             results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], fractionbits - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2]*matpow).reshape(1, dim*2)).reshape(dim))
             results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], fractionbits - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1]*matpow).reshape(1, dim*2)).reshape(dim))
