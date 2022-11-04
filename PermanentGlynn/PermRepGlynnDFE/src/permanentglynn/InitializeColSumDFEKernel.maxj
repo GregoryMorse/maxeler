@@ -253,6 +253,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         rowChangeMask = rowChangeMask === 0 ? 1 : rowChangeMask;
         
         DFEVar changePos = isInit ? storeRowIndex : rowChangeMask;
+        DFEVar changePosIsZero = changePos === 0;
+        changePos = Bitops.onehotDecode(changePos);
                
         DFEVectorType<DFEVar> curMplicityType = new DFEVectorType<DFEVar>(dfeUInt(dimBits+1), mplicityRows);
         DFEVector<DFEVar> curMultiplicities = curMplicityType.newInstance(this);
@@ -267,12 +269,11 @@ public class InitializeColSumDFEKernel extends Kernel {
             //curMultiplicities[i] <== control.count.makeCounter(control.count.makeParams(dimBits+1).withMax((rowMultiplicities[i]+1).cast(dfeUInt(dimBits+1))<<1).withEnable(nextRowIdxFanout[i < mplicityRows/2 || mplicityRows <= 32 ? 0 : 1] & nextEnable.get(i))).getCount();
         }
         //if (kernNum == 0 && !dual) debug.simPrintf(isCalc, "%d %KObj% %KObj%\n", mainCount, curMultiplicities, curMultiplicitiesTest);
-        inpmp = Utility.oneHotMux32to64(optimization.pipeline(changePos), rowMultiplicities.getElementsAsList(), 3, this).cast(dfeUInt(dimBits+1))-1;
-        DFEVar curmp = Utility.oneHotMux32to64(optimization.pipeline(changePos), curMultiplicities.getElementsAsList(), 3, this);
+        inpmp = Utility.mux32to64(optimization.pipeline(changePos), rowMultiplicities.getElementsAsList(), 2, this).cast(dfeUInt(dimBits+1))-1;
+        DFEVar curmp = Utility.mux32to64(optimization.pipeline(changePos), curMultiplicities.getElementsAsList(), 2, this);
         DFEVar changeValue = curmp < inpmp;
         
-        //if (kernNum == 0) debug.simPrintf("%d %d %d\n", notIsInit, changePos, changeValue); 
-        DFEVar changePosIsZero = changePos === 0;
+        //if (kernNum == 0) debug.simPrintf("%d %d %d\n", notIsInit, changePos, changeValue);         
         if (dual) changePosIsZero = isLocal & changePosIsZero;
         DFEVar isNeg = (changePosIsZero ^ changeValue) & notIsInit;
         DFEVar isNegEven = dual ? null : changeValue & notIsInit;
@@ -293,9 +294,9 @@ public class InitializeColSumDFEKernel extends Kernel {
             //cpInitGrayCode = Utility.repeatPipeline(cpInitGrayCode, 7+(dual ? 1 : 0), this);
             countersZero = ~cpChain[1]; //cpInitGrayCode !== rowMultiplicities-1;
             rowChangeMask = Bitops.trailing1Detect(countersZero.reinterpret(dfeUInt(mplicityRows)));
-            DFEVar rowIndex = rowChangeMask;
-            inpmp = Utility.oneHotMux32to64(rowIndex, rowMultiplicities.getElementsAsList(), 3, this).cast(dfeUInt(dimBits+1))-1;
-            curmp = Utility.oneHotMux32to64(rowIndex, curMultiplicities.getElementsAsList(), 3, this)+(notIsInit & (rowIndex <= changePos)).cast(dfeUInt(dimBits+1)); //curMultiplicities lags by 1 except on transition
+            DFEVar rowIndex = Bitops.onehotDecode(rowChangeMask);
+            inpmp = Utility.mux32to64(rowIndex, rowMultiplicities.getElementsAsList(), 2, this).cast(dfeUInt(dimBits+1))-1;
+            curmp = Utility.mux32to64(rowIndex, curMultiplicities.getElementsAsList(), 2, this)+(notIsInit & (rowIndex <= changePos)).cast(dfeUInt(dimBits+1)); //curMultiplicities lags by 1 except on transition
             //curmp can never have just wrapped to 0 or inpmp+1 which is why adding is okay
             curmp = curmp === ((inpmp+1)<<1) ? constant.zero(dfeUInt(dimBits+1)) : ((curmp === inpmp) ? curmp+1 : curmp);
             DFEVar initParities = io.scalarInput("initParities", dfeUInt(32)).cast(dfeUInt(loopLength));
@@ -329,9 +330,9 @@ public class InitializeColSumDFEKernel extends Kernel {
             }
             DFEVar cur_multiplicity = dfeUInt(bincoeffbits).newInstance(this);
             DFEVar lastMultiplicity = isInit ? initBinCoeff : stream.offset(cur_multiplicity, -loopLength);
-            DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 2, this), maxbits+1+dimBits, maxbits+1+dimBits, this), bincoeffbits+maxbits+1+dimBits, bincoeffbits+maxbits+1+dimBits, this); //38 bits * 49 bits is 8 latency, 45 bits * 56 bits is 9 latency
+            DFEVar mplied = Utility.mulKaratsubaRectangularExact(lastMultiplicity, Utility.mulExact(num, Utility.mux32to64(denom, magicDivisionMpliers.getElementsAsList(), 6, this), maxbits+1+dimBits, maxbits+1+dimBits, this), bincoeffbits+maxbits+1+dimBits, bincoeffbits+maxbits+1+dimBits, this); //38 bits * 49 bits is 8 latency, 45 bits * 56 bits is 9 latency
             DFEVectorType<DFEVar> divisionShiftType = new DFEVectorType<DFEVar>(dfeUInt(bincoeffbits), shiftToIndex.size());
-            DFEVar shiftIndex = Utility.mux32to64(denom, shiftIndices, 2, this);
+            DFEVar shiftIndex = Utility.mux32to64(denom, shiftIndices, 6, this);
             DFEVector<DFEVar> magicDivisionShifts = divisionShiftType.newInstance(this);
             for (Character shift : shiftToIndex.keySet()) {
                 magicDivisionShifts[shiftToIndex.get(shift)] <== (mplied >> shift).cast(dfeUInt(bincoeffbits));
@@ -347,14 +348,14 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
 
         //read row from input matrix
-        //DFEVector < DFEVar > useRow = Utility.mux32to64(Utility.repeatPipeline(changePos, (dual ? 2 : 0), this), allRows.getElementsAsList(), 2, this);
+        //DFEVector < DFEVar > useRow = Utility.mux32to64(optimization.pipeline(changePos), allRows.getElementsAsList(), 2, this);
         //DFEVector < DFEVar > useRow = Utility.oneHotMuxVector32to64(optimization.pipeline(changePos), allRows.getElementsAsList(), 3, this);
         DFEVector < DFEVar > useRow = oneRowType.newInstance(this);
         DFEVar changePosSel = null;
         for (int j = 0; j < 2 * cols; j++) {
             if (j % (cols / 2) == 0) changePosSel = optimization.pipeline(changePos);
             final int finalj = j;
-            useRow[j] <== Utility.oneHotMux32to64(changePosSel, allRows.getElementsAsList().stream().map(x -> x[finalj]).collect(Collectors.toList()), 3, this);
+            useRow[j] <== Utility.mux32to64(changePosSel, allRows.getElementsAsList().stream().map(x -> x[finalj]).collect(Collectors.toList()), 2, this);
         }
          
         DFEVector < DFEComplex > rowToAdd;
@@ -377,7 +378,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
         selRow.add(oneRow.cast(oneRowFixType).reinterpret(colSumType));
         selRow.add(rowToAdd);
-        rowToAdd = Utility.oneHotMuxVector32to64(notIsInit.cat(isInit), selRow, 3, this);
+        rowToAdd = Utility.muxVector32to64(notIsInit, selRow, 2, this);
         DFEVector < DFEComplex > negRowToAdd = -rowToAdd;
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
