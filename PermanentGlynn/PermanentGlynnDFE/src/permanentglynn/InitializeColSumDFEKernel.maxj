@@ -120,8 +120,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         //read row from input matrix
         DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);       
         DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
-        //DFEVector < DFEVar > useRow = Utility.mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), 4, this);
-        DFEVector < DFEVar > useRow = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 3, this);
+        DFEVector < DFEVar > useRow = Utility.mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), 2, this);
+        //DFEVector < DFEVar > useRow = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 3, this);
         DFEVector < DFEComplex > rowToAdd;
         if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
             int expBits = ((DFEFloat)dataTypeFix64).getExponentBits();
@@ -135,7 +135,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
         selRow.add(oneRow.cast(oneRowFixType).reinterpret(colSumType));
         selRow.add(rowToAdd);
-        rowToAdd = Utility.oneHotMuxVector32to64(notIsInit.cat(isInit), selRow, 3, this);
+        rowToAdd = Utility.muxVector32to64(notIsInit, selRow, 2, this);
         
         DFEVector < DFEComplex > negRowToAdd = -rowToAdd;
         //update sum vector
