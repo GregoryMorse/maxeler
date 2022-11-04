@@ -2332,10 +2332,11 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
         final int muxPipeliningLimit = 3;
+        int limit = Math.max(32, 1 << split);
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
             if (bits + split >= bitsToAddress) return base.control.mux(base.optimization.pipeline(sel), values); 
-            DFEVar[] sels = parallelFanout(sel.slice(0, split), values.size() - (values.size() % (1 << split) == 1 ? 1 : 0), 32, base);
+            DFEVar[] sels = parallelFanout(sel.slice(0, split), values.size() - (values.size() % (1 << split) == 1 ? 1 : 0), limit, base);
             List<T> nextValues = new ArrayList<>();
             boolean doPipelining = ((bits / split) % muxPipeliningLimit) == (muxPipeliningLimit-1);
             for (int i = 0; i < values.size(); i += (1 << split)) {
@@ -2344,7 +2345,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                     nextValues.add(doPipelining ? base.optimization.pipeline(curvals.get(0)) : curvals.get(0));
                 } else {
                     if (!doPipelining) base.optimization.pushNoPipelining();
-                    nextValues.add(base.control.mux(sels[i / 32].slice(0, MathUtils.bitsToAddress(curvals.size())), curvals));
+                    nextValues.add(base.control.mux(sels[i / limit].slice(0, MathUtils.bitsToAddress(curvals.size())), curvals));
                     if (!doPipelining) base.optimization.popNoPipelining();
                 }
             }
