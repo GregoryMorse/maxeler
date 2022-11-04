@@ -1973,7 +1973,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     public static class GrayCounter {
         public DFEVar changeValue;
         public DFEVar bitDiffMask;
-        //public DFEVar changePosition;
+        public DFEVar changePosition;
 
         GrayCounter(DFEVar inCounter, KernelBase<?> owner) {
             //grayCount = dfeUInt(64).newInstance(owner);
@@ -1986,7 +1986,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             //bitDiffMask = Bitops.trailing1Detect(inCounter);
 
             changeValue = grayCount > owner.stream.offset(newGrayCount, -1); //(grayCount & bitDiffMask) !== 0;
-            //changePosition = Bitops.onehotDecode(bitDiffMask);
+            changePosition = Bitops.onehotDecode(bitDiffMask);
         }
     }    
 
@@ -2331,40 +2331,65 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
+        final int muxPipeliningLimit = 3;
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
             if (bits + split >= bitsToAddress) return base.control.mux(base.optimization.pipeline(sel), values); 
             DFEVar[] sels = parallelFanout(sel.slice(0, split), values.size() - (values.size() % (1 << split) == 1 ? 1 : 0), 32, base);
             List<T> nextValues = new ArrayList<>();
+            boolean doPipelining = ((bits / split) % muxPipeliningLimit) == (muxPipeliningLimit-1);
             for (int i = 0; i < values.size(); i += (1 << split)) {
                 List<T> curvals = values.subList(i, i+Math.min(1 << split, values.size() - i));
                 if (curvals.size() == 1) {
-                    nextValues.add(base.optimization.pipeline(curvals.get(0)));
+                    nextValues.add(doPipelining ? base.optimization.pipeline(curvals.get(0)) : curvals.get(0));
                 } else {
+                    if (!doPipelining) base.optimization.pushNoPipelining();
                     nextValues.add(base.control.mux(sels[i / 32].slice(0, MathUtils.bitsToAddress(curvals.size())), curvals));
+                    if (!doPipelining) base.optimization.popNoPipelining();
                 }
             }
             values = nextValues;
-            sel = base.optimization.pipeline(sel.slice(split, bitsToAddress - bits - split));
+            sel = sel.slice(split, bitsToAddress - bits - split);
+            if (doPipelining) sel = base.optimization.pipeline(sel);
         }
         return null;
     }
     public static <T extends KernelObject<T>> T oneHotMux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
+        final int muxPipeliningLimit = 3;
+        int iterations = 0;
         while (true) {
-            if (split >= values.size()) return base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(sel), values));
+            if (split >= values.size()) return base.optimization.pipeline(base.control.oneHotMux(iterations == 0 ? base.optimization.pipeline(sel) : sel, values));
             List<T> nextValues = new ArrayList<>();
             DFEVar nextSel = null;
+            boolean doPipelining = (iterations % muxPipeliningLimit) == (muxPipeliningLimit-1);
             for (int i = 0; i < values.size(); i += split) {
                 DFEVar s = sel.slice(i, Math.min(split, values.size() - i));
+                if (iterations == 0) s = base.optimization.pipeline(s);                
+                if (!doPipelining) base.optimization.pushNoPipelining();
                 if (nextSel == null) nextSel = s !== 0;
                 else nextSel = (s !== 0).cat(nextSel);
-                nextValues.add(base.optimization.pipeline(base.control.oneHotMux(base.optimization.pipeline(s), values.subList(i, i+Math.min(split, values.size() - i)))));
+                if (!doPipelining) base.optimization.popNoPipelining();
+                T nextVal = base.control.oneHotMux(s, values.subList(i, i+Math.min(split, values.size() - i)));
+                nextValues.add(doPipelining ? base.optimization.pipeline(nextVal) : nextVal);
             }
             values = nextValues;
             sel = nextSel;
+            iterations++;
         }
     }
+    public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
+    M muxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs
+    {
+        int innerSize = values[0].getSize();
+        M returnVal = values[0].getType().newInstance(base);
+        for (int i = 0; i < innerSize; i++) {
+            final int j = i;
+            List<P> curVals = values.stream().map(x -> x[j]).collect(Collectors.toList());
+            returnVal[i] <== mux32to64(base.optimization.pipeline(sel), curVals, split, base);
+        }
+        return returnVal;
+    }    
     public static <P extends KernelObjectVectorizable<P,?>,M extends DFEVectorBase<P,M,C,T>,C extends DFEVectorBase<DFEVar,C,?,?>,T extends DFEVectorTypeBase<P,M,C>,S extends DFEVectorBase<DFEVar,S,?,?>>
     M oneHotMuxVector32to64(DFEVar sel, List<M> values, int split, KernelBase<?> base) //split==3 one hot bits, 6-LUT 3 selection bits + 3 selections per Xilinx docs
     {
@@ -2376,19 +2401,6 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             returnVal[i] <== oneHotMux32to64(base.optimization.pipeline(sel), curVals, split, base);
         }
         return returnVal;
-        /*DFEVar upper = sel.slice(split, values.size()-split);
-        DFEVar isUpper = upper !== 0;
-        DFEVar[] sels = new DFEVar[] { base.optimization.pipeline(sel.slice(0, split)), base.optimization.pipeline(upper) };
-        int innerSize = values[0].getSize();
-        M returnVal = values[0].getType().newInstance(base);
-        for (int i = 0; i < innerSize; i++) {
-            final int j = i;
-            List<P> curVals = values.stream().map(x -> x[j]).collect(Collectors.toList());
-            returnVal[i] <== base.optimization.pipeline(isUpper) ?
-                base.control.oneHotMux(base.optimization.pipeline(sels[1]), curVals.subList(split, curVals.size())) :
-                base.control.oneHotMux(base.optimization.pipeline(sels[0]), curVals.subList(0, split));
-        }
-        return returnVal;*/
     }
     public static DFEVector<DFEVar> oneHotEncode(DFEVar shift, int bits, int limit, KernelBase<?> base) //limit==32, at 1024 we would need 2 stage pipeline tree...
     {
