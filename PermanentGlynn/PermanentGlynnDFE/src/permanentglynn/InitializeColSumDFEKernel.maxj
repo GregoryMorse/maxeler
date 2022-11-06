@@ -13,8 +13,6 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFloat;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEFix.SignMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
-import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.VectorMemory;
@@ -30,17 +28,10 @@ public class InitializeColSumDFEKernel extends Kernel {
     public InitializeColSumDFEKernel(final KernelParameters parameters, int rows, int cols, boolean dual, int basekernpow2, int initKerns, int kernNum, int maxdim, boolean useFloat) {
         super(parameters);
         //int CEPipelining = getKernelConfig().optimization.getCEPipelining();
-        DFEType IntType = dfeInt(64);
         DFEType dataTypeFix64 = useFloat ? dfeFloat(11, 53) : dfeFixOffset(64, -62, SignMode.TWOSCOMPLEMENT);
-        DFEType dataTypeFixCommonAdd = useFloat ? dfeFloat(15, 64) : dfeFixOffset(65, -62, SignMode.TWOSCOMPLEMENT);
-        DFEComplexType cplxFix64Type = new DFEComplexType(dataTypeFix64);
-        DFEComplexType cplxFixCommonAddType = new DFEComplexType(dataTypeFixCommonAdd);
-        DFEVectorType < DFEComplex > colSumType = new DFEVectorType < DFEComplex > (cplxFixCommonAddType, cols);
-        DFEVectorType < DFEComplex > colTransferType = new DFEVectorType < DFEComplex > (useFloat ? cplxFixCommonAddType : cplxFix64Type, cols);
         int gcodeRows = rows - (basekernpow2 + (dual ? 1 : 0)) - 1;
 
-        DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFix64 : IntType, 2 * cols);
-        DFEVectorType < DFEVar > oneRowFixType = new DFEVectorType < DFEVar > (useFloat ? dataTypeFixCommonAdd : dfeInt(64 + 1), 2 * cols);
+        DFEVectorType < DFEVar > oneRowType = new DFEVectorType < DFEVar > (dataTypeFix64, 2 * cols);
         DFEVectorType < DFEVector < DFEVar >> allRowsType = new DFEVectorType < DFEVector < DFEVar >> (oneRowType, gcodeRows);
         int kerns = 1 << basekernpow2;
         DFEVar rowpow2 = io.scalarInput("msizeadj", dfeUInt(8)).cast(dfeUInt(6));
@@ -102,8 +93,8 @@ public class InitializeColSumDFEKernel extends Kernel {
         oneHotInit = Utility.pipelineBits(oneHotInit, this);
         DFEVector<DFEVar> initOneHot = oneHotInit.reinterpret(initOneHotType);
         if (kernNum != 0) {
-            DFEVar c0 = useFloat ? constant.var(dataTypeFix64, 0.0) : constant.zero(IntType),
-                    c1 = useFloat ? constant.var(dataTypeFix64, 1.0) : constant.var(IntType, 1L << 62);
+            DFEVar c0 = constant.zero(dataTypeFix64),
+                    c1 = constant.var(dataTypeFix64, 1);
             List < DFEVector < DFEVar >> initChoices = new ArrayList < > ();
             initChoices.add(constant.zero(oneRowType));
             List<DFEVar> allOnes = new ArrayList<>(); 
@@ -122,11 +113,28 @@ public class InitializeColSumDFEKernel extends Kernel {
                 fixRow[j] <== control.oneHotMux(oneHotSel, new DFEVar[] { initChoices.get(0)[j], initChoices.get(1)[j], initChoices.get(2)[j] });
             }
             oneRow = fixRow;            
+        } else {
+            DFEVector < DFEVar > fixRow = oneRowType.newInstance(this);
+            for (int j = 0; j < 2 * cols; j++) {
+                fixRow[j] <== optimization.pipeline(oneRow[j]);
+            }
+            oneRow = fixRow;
         }
+        
+        DFEVector < DFEVar > useRow;
+        if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
+            int expBits = ((DFEFloat)dataTypeFix64).getExponentBits();
+            int mantBits = ((DFEFloat)dataTypeFix64).getMantissaBits();
+            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(expBits), 2 * cols);
+            DFEVector<DFEVar> exponent = oneRow.slice(mantBits-1, expBits);
+            useRow = (oneRow.slice(expBits+mantBits-1, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<expBits)-1)).cast(expType)).cat(oneRow.slice(0, mantBits-1))).reinterpret(oneRowType);
+            //useRow = oneRow*2;
+        } else useRow = oneRow.slice(0, dataTypeFix64.getTotalBits()-1).cat(constant.var(dfeBool(), 0)).reinterpret(oneRowType); //same row always changes in all kernels by design
+                
         //debug.simPrintf(isInit, "%d %d %KObj%\n", kernNum, needData, oneRow);
         DFEVector < DFEVector < DFEVar >> allRows = allRowsType.newInstance(this);
-        DFEVector < DFEVar > onerow0 = optimization.pipeline(oneRow);
-        DFEVector < DFEVar > onerow1 = optimization.pipeline(oneRow);
+        DFEVector < DFEVar > onerow0 = optimization.pipeline(useRow);
+        DFEVector < DFEVar > onerow1 = optimization.pipeline(useRow);
         for (int i = 0; i < gcodeRows; i++) {
             DFEVar sel = null;
             int division = (cols * 2 + 32-1) / 32; //ceiling gives optimal division, the remainder portion could be further divided but not necessary
@@ -137,70 +145,53 @@ public class InitializeColSumDFEKernel extends Kernel {
         }
         
         //read row from input matrix
-        DFEVectorType < DFEVector < DFEComplex >> allKernsType = new DFEVectorType < DFEVector < DFEComplex >> (colSumType, kerns);       
-        DFEVector < DFEVector < DFEComplex >> allColSums = allKernsType.newInstance(this);
+        DFEVectorType < DFEVector < DFEVar >> allKernsType = new DFEVectorType < DFEVector < DFEVar >> (oneRowType, kerns);       
+        DFEVector < DFEVector < DFEVar >> allColSums = allKernsType.newInstance(this);
         
-        //DFEVector < DFEVar > useRow = Utility.mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), 4, this);
-        //DFEVector < DFEVar > useRow = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 3, this);
+        //DFEVector < DFEVar > rowToAdd = Utility.mux32to64(grayCounter.changePosition, allRows.getElementsAsList(), 4, this);
+        //DFEVector < DFEVar > rowToAdd = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 3, this);
         
-        DFEVector < DFEVar > useRow = oneRowType.newInstance(this);
+        DFEVector < DFEVar > rowToAdd = oneRowType.newInstance(this);
+        DFEVar bigMuxSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : grayCounter.changePosition, 2*cols*4, 32, this);
+        List<DFEVector<DFEVar>> rowList = new ArrayList<>();
+        rowList.addAll(allRows.getElementsAsList());
+        rowList.add(oneRow);
         DFEVar changePosSel = null;
-        int divis = (cols * 2 + 32-1) / 32;
         for (int j = 0; j < 2 * cols; j++) {
-            if ((j % divis) == 0) changePosSel = optimization.pipeline(grayCounter.changePosition);
             final int finalj = j;
-            useRow[j] <== Utility.mux32to64(changePosSel, allRows.getElementsAsList().stream().map(x -> x[finalj]).collect(Collectors.toList()), 4, this);
+            DFEVar rowChunks = null;
+            for (int k = 0; k < 4; k++) {
+                final int finalk = k;
+                changePosSel = optimization.pipeline(bigMuxSels[(j*4+k)/32]);
+                DFEVar newChunk = Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj].slice(finalk*16, 16)).collect(Collectors.toList()), 4, this);
+                rowChunks = k == 0 ? newChunk : newChunk.cat(rowChunks);
+            }
+            rowToAdd[j] <== rowChunks.reinterpret(dataTypeFix64);
         }
 
-        DFEVector < DFEComplex > rowToAdd;
-        if (useFloat) { //multiply by 2 by adding 1 to exponent if not 0, inf or NaN
-            int expBits = ((DFEFloat)dataTypeFix64).getExponentBits();
-            int mantBits = ((DFEFloat)dataTypeFix64).getMantissaBits();
-            DFEVectorType<DFEVar> expType = new DFEVectorType<DFEVar>(dfeUInt(expBits), 2 * cols);
-            DFEVector<DFEVar> exponent = useRow.slice(mantBits-1, expBits);
-            DFEVectorType < DFEComplex > cplxRowType = new DFEVectorType < DFEComplex > (cplxFix64Type, cols);
-            rowToAdd = (useRow.slice(expBits+mantBits-1, 1).cat(exponent.reinterpret(expType) + (exponent !== 0 & exponent !== ((1<<expBits)-1)).cast(expType)).cat(useRow.slice(0, mantBits-1))).reinterpret(cplxRowType).cast(colSumType);
-            //rowToAdd = (useRow.reinterpret(cplxRowType)*2).cast(colSumType);
-        } else rowToAdd = useRow.cat(constant.var(dfeBool(), 0)).reinterpret(colSumType); //same row always changes in all kernels by design
-        List<DFEVector<DFEComplex>> selRow = new ArrayList<>();
-        selRow.add(oneRow.cast(oneRowFixType).reinterpret(colSumType));
-        selRow.add(rowToAdd);
-        notIsInit = optimization.pipeline(notIsInit);
-        //rowToAdd = Utility.muxVector32to64(notIsInit, selRow, 4, this);
-        divis = (cols + 32-1) / 32;
-        DFEVar notIsInitSel = null;
-        rowToAdd = colSumType.newInstance(this);
-        for (int j = 0; j < cols; j++) {
-            if ((j % divis) == 0) notIsInitSel = optimization.pipeline(notIsInit);
-            final int finalj = j;
-            rowToAdd[j] <== Utility.mux32to64(notIsInitSel, selRow.stream().map(x -> x[finalj]).collect(Collectors.toList()), 4, this);
-        }
-        
-        
-        DFEVector < DFEComplex > negRowToAdd = -rowToAdd;
+        DFEVector < DFEVar > negRowToAdd = -rowToAdd;
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
-            DFEVector < DFEComplex > prevColmnSumVector = colSumType.newInstance(this);
+            DFEVector < DFEVar > prevColmnSumVector = oneRowType.newInstance(this);
             if (useFloat) optimization.pushNoPipelining();
             DFEVar firstTickCopy = optimization.pipeline(firstTick), firstSel = null, negSel = null;
-            int division = (cols + 32-1) / 32;
-            for (int j = 0; j < cols; j++) {
+            int division = (cols*2 + 32-1) / 32;
+            for (int j = 0; j < cols*2; j++) {
                 if ((j % division) == 0) {
                     firstSel = optimization.pipeline(firstTickCopy);
                     negSel = optimization.pipeline(negations[kern]);
                 }
-                prevColmnSumVector[j] <== firstSel ? constant.zero(cplxFixCommonAddType) : stream.offset(allColSums[kern][j], -1);
+                prevColmnSumVector[j] <== firstSel ? constant.zero(dataTypeFix64) : stream.offset(allColSums[kern][j], -1);
                 if (useFloat) allColSums[kern][j] <== Utility.doFloatAdd(prevColmnSumVector[j], (negSel ? optimization.pipeline(negRowToAdd[j]) : optimization.pipeline(rowToAdd[j])), false, this);
                 else allColSums[kern][j] <== prevColmnSumVector[j] + (negSel ? optimization.pipeline(negRowToAdd[j]) : optimization.pipeline(rowToAdd[j])); 
             }
             
             if (useFloat) optimization.popNoPipelining();
-        }
-       
+        }       
 
         //if (!dual) debug.simPrintf(ticksMax===3, "%d %d %d\n%KObj%\n%KObj%\n%KObj%\n%KObj%\n", kernNum, tickCount, msizem1, allColSums[0], allColSums[1], allColSums[2], allColSums[3]);
         for (int i = 0; i < kerns; i++) {
-            io.output("colSums" + i, allColSums[i].cast(colTransferType), colTransferType, isCalc);
+            io.output("colSums" + i, allColSums[i], oneRowType, isCalc);
         }
     }
 
