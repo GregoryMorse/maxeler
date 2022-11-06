@@ -942,7 +942,7 @@ def num_to_bits(num, chunks):
     #assert ((bits >=0) & (bits <= 127)).all()
     return bits
 from numba import jit #pip install -U numba=0.54.1
-#@jit(nopython=True)
+@jit(nopython=True)
 def bits_to_num(num, offset=7):
     #assert ((num[:,-1] == 0) | (num[:,-1] == -1)).all()
     #if not (num[:,0:-1] >= 0).all(): print(num[:,0:-1] >= 0)
@@ -956,10 +956,10 @@ def normalize_doubles(num, dimension, fractionbits=63):
     mant = np.rint(np.ldexp(mantissas, exponents-(maxexp[:,np.newaxis] if dimension==1 else maxexp)+fractionbits)).astype(np.int64) #(64, -63) bit fixed point integers
     #assert np.allclose(num, renormalize_doubles(mant, maxexp+fractionbits)), maxexp #, (num, renormalize_doubles(mant, maxexp+fractionbits))
     return maxexp, mant
-#@jit(nopython=True)
+@jit(nopython=True)
 def renormalize_doubles(num, exp):
     return np.ldexp(num.astype(np.float64), -exp)
-#@jit(nopython=True)
+@jit(nopython=True)
 def vector_complex_to_real(cplx):
     dim = cplx.shape[-1]//2 #len(cplx)//2
     result = cplx[...,dim:] * 1j
@@ -1044,13 +1044,14 @@ def invoke(devices, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
                     raise ValueError(f"Missing input tensor named {input_tensor.name}")
                 input_tensor.from_host(tensors[i][input_tensor.name], input_buffers[i])
         device.invoke_nonblocking(input_buffers[i], output_buffers[i])
-    outs = [{} for _ in range(len(devices))]
-    i, checks = -1, list(range(len(devices)))
-    while len(checks) != 0:
-        i = (i + 1) % len(checks)
+    l = len(devices)
+    outs = [{} for _ in range(l)]
+    i, checks = -1, list(range(l))
+    while l != 0:
+        i = (i + 1) % l
         idx = checks[i]
         if not output_buffers[idx].ready(): continue
-        del checks[i]
+        del checks[i]; l -= 1
         if ep.output.tensors:
             for output_tensor in ep.output.tensors:
                 result_tensor = lastouts[idx][output_tensor.name] if not lastouts is None else output_tensor.allocate_numpy_array()
@@ -2122,20 +2123,20 @@ class LoopCorrections(g.Component):
                 inputs[devidx][cx_diag[oidx].name] = np.hstack((inpvec0, inpvec1)) #colswap
                 exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
             invoke(devices, iop, 0, 0, inputs)
+            @jit(nopython=True)
+            def bits_to_vector(bits, inpvecnorm, norm):
+                normed = renormalize_doubles(bits_to_num(bits, 7), inpvecnorm - norm.reshape(dim*2*2).astype(np.int32))
+                return vector_complex_to_real(normed[:dim*2]), vector_complex_to_real(normed[dim*2:])
             def actual():
                 #buflock[c].acquire()
                 res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
                 lastouts[0] = res
-                newres = []
+                newres = []                
                 for i in range(parallel//2):
                     devidx = 1 if i >= osz else 0
                     oidx = i % osz
-                    result = bits_to_num(res[devidx][result_mt[oidx].name], 7)
-                    norm = res[devidx][resnorm[oidx].name].reshape(dim*2*2)
                     #the results come back truncating the lower 7*(chunks-1) bits
-                    normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
-                    newres.append(vector_complex_to_real(normed[:dim*2]))
-                    newres.append(vector_complex_to_real(normed[dim*2:]))
+                    newres.extend(bits_to_vector(res[devidx][result_mt[oidx].name], exp_inpvecs[i], res[devidx][resnorm[oidx].name]))
                 results[0] = newres
                 #buflock[c].release()
             runfunc[0] = actual
