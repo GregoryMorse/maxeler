@@ -942,7 +942,7 @@ def num_to_bits(num, chunks):
     #assert ((bits >=0) & (bits <= 127)).all()
     return bits
 from numba import jit #pip install -U numba=0.54.1
-@jit(nopython=True)
+#@jit(nopython=True)
 def bits_to_num(num, offset=7):
     #assert ((num[:,-1] == 0) | (num[:,-1] == -1)).all()
     #if not (num[:,0:-1] >= 0).all(): print(num[:,0:-1] >= 0)
@@ -956,10 +956,10 @@ def normalize_doubles(num, dimension, fractionbits=63):
     mant = np.rint(np.ldexp(mantissas, exponents-(maxexp[:,np.newaxis] if dimension==1 else maxexp)+fractionbits)).astype(np.int64) #(64, -63) bit fixed point integers
     #assert np.allclose(num, renormalize_doubles(mant, maxexp+fractionbits)), maxexp #, (num, renormalize_doubles(mant, maxexp+fractionbits))
     return maxexp, mant
-@jit(nopython=True)
+#@jit(nopython=True)
 def renormalize_doubles(num, exp):
     return np.ldexp(num.astype(np.float64), -exp)
-@jit(nopython=True)
+#@jit(nopython=True)
 def vector_complex_to_real(cplx):
     dim = cplx.shape[-1]//2 #len(cplx)//2
     result = cplx[...,dim:] * 1j
@@ -1029,27 +1029,34 @@ def compile_unit_test(name):
     print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
     g.check_stream_conflicts(json_file)
     return iop_file, json_file
-def invoke(device, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
+def invoke(devices, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
     """Low level interface to the device driver to access multiple programs. A higher level abstraction
     will be provided in a future release that offers access to multiple programs and entry points."""
-
     pgm = iop[pgm_num]
     ep = pgm.entry_points[ep_num]
-    input_buffer = runtime.BufferArray(ep.input, 1)[0] if buffers is None else buffers[0]
-    output_buffer = runtime.BufferArray(ep.output, 1)[0] if buffers is None else buffers[1]
-    if ep.input.tensors:
-        for input_tensor in ep.input.tensors:
-            if input_tensor.name not in tensors:
-                raise ValueError(f"Missing input tensor named {input_tensor.name}")
-            input_tensor.from_host(tensors[input_tensor.name], input_buffer)
-    device.invoke(input_buffer, output_buffer)
-    outs = {}
-    if ep.output.tensors:
-        for output_tensor in ep.output.tensors:
-            result_tensor = lastouts[output_tensor.name] if not lastouts is None else output_tensor.allocate_numpy_array()
-            output_tensor.to_host(output_buffer, result_tensor)
-            outs[output_tensor.name] = result_tensor
-    return outs, [input_buffer, output_buffer]
+    input_buffers, output_buffers = [], []
+    for i, device in enumerate(devices):
+        input_buffers.append(runtime.BufferArray(ep.input, 1)[0] if buffers is None else buffers[0][i])
+        output_buffers.append(runtime.BufferArray(ep.output, 1)[0] if buffers is None else buffers[1][i])
+        if ep.input.tensors:
+            for input_tensor in ep.input.tensors:
+                if input_tensor.name not in tensors[i]:
+                    raise ValueError(f"Missing input tensor named {input_tensor.name}")
+                input_tensor.from_host(tensors[i][input_tensor.name], input_buffers[i])
+        device.invoke_nonblocking(input_buffers[i], output_buffers[i])
+    outs = [{} for _ in range(len(devices))]
+    i, checks = -1, list(range(len(devices)))
+    while len(checks) != 0:
+        i = (i + 1) % len(checks)
+        idx = checks[i]
+        if not output_buffers[idx].ready(): continue
+        del checks[i]
+        if ep.output.tensors:
+            for output_tensor in ep.output.tensors:
+                result_tensor = lastouts[idx][output_tensor.name] if not lastouts is None else output_tensor.allocate_numpy_array()
+                output_tensor.to_host(output_buffers[idx], result_tensor)
+                outs[idx][output_tensor.name] = result_tensor
+    return outs, [input_buffers, output_buffers]
 class VecNormalize(g.Component):
     def __init__(self, chunks, dim, lastvn=None, **kwargs):
         super().__init__(**kwargs)
@@ -1900,9 +1907,9 @@ class AdvanceGrayCode(g.Component):
             device.open()
             device.load(iop[0], unsafe_keep_entry_points=True)
             device.load(iop[1], unsafe_keep_entry_points=True)
-            invoke(device, iop, 0, 0, None)
+            invoke([device], iop, 0, 0, None)
         tloaddata = timeit.timeit(runnerinit, number=1)/1
-        runner = lambda: invoke(device, iop, 1, 0, None)[0]
+        runner = lambda: invoke([device], iop, 1, 0, None)[0][0]
         origcounter = [agc.origcounter for _ in range(parallel)]
         origgcode = [agc.origgcode for _ in range(parallel)]        
         oracleres, result = [], []
@@ -2032,7 +2039,7 @@ class LoopCorrections(g.Component):
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
-    def chain_test(chunks, dim):
+    def chain_test(chunks, dim, dual=False):
         import timeit        
         worstCase, useCplx = False, True
         matpow = dim//2-1
@@ -2040,7 +2047,7 @@ class LoopCorrections(g.Component):
         with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
             lc = LoopCorrections(chunks, dim, matpow)
             tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
-            parallel = len(tvec)*2
+            parallel = len(tvec)*2*(1 if not dual else 2)
         with pgm_pkg.create_program_context("mm_fp") as pc:
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 g.reserve_tensor(pcinit, pc, lc.tvec[drctn*2+plane])
@@ -2051,7 +2058,7 @@ class LoopCorrections(g.Component):
         print_utils.infoc("\nAssembling model ...")
         iops = pgm_pkg.assemble()
         iop = runtime.IOProgram(iops[0])
-        device = runtime.devices[0]
+        devices = [runtime.devices[0]] if not dual else runtime.devices
         
         if worstCase:
             if useCplx:
@@ -2091,12 +2098,14 @@ class LoopCorrections(g.Component):
         #lock, buflock = [threading.Lock(), 0], [threading.Lock() for _ in range(max_workers)]
         results, runfunc = [None], [None]
         def loaddata():
-            device.open()
-            device.load(iop[0], unsafe_keep_entry_points=True)
-            device.load(iop[1], unsafe_keep_entry_points=True)
             fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
-            inputs = {}
+            inputs, osz = [], parallel//2//len(devices)
             exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+            for device in devices:
+                inputs.append({})
+                device.open()
+                device.load(iop[0], unsafe_keep_entry_points=True)
+                device.load(iop[1], unsafe_keep_entry_points=True)
             for i in range(parallel//2):
                 exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
                 inpvec0 = num_to_bits(normals, chunks)
@@ -2106,24 +2115,27 @@ class LoopCorrections(g.Component):
                 inpvec1 = num_to_bits(normals, chunks)
                 exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
                 inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
-                inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
-                inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
-                inputs[cx_diag[i].name] = np.hstack((inpvec0, inpvec1)) #colswap
+                devidx = 1 if i >= osz else 0
+                oidx = i % osz
+                inputs[devidx][tvec[oidx].name] = np.hstack((inpvec0, inpvec1))
+                inputs[devidx][tmat[oidx].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+                inputs[devidx][cx_diag[oidx].name] = np.hstack((inpvec0, inpvec1)) #colswap
                 exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
-            invoke(device, iop, 0, 0, inputs)
+            invoke(devices, iop, 0, 0, inputs)
             def actual():
                 #buflock[c].acquire()
-                res, buffers[0] = invoke(device, iop, 1, 0, None, lastouts[0], buffers[0])
+                res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
                 lastouts[0] = res
                 newres = []
                 for i in range(parallel//2):
-                    result = bits_to_num(res[result_mt[i].name], 7)
-                    norm = res[resnorm[i].name].reshape(dim*2*2)
+                    devidx = 1 if i >= osz else 0
+                    oidx = i % osz
+                    result = bits_to_num(res[devidx][result_mt[oidx].name], 7)
+                    norm = res[devidx][resnorm[oidx].name].reshape(dim*2*2)
                     #the results come back truncating the lower 7*(chunks-1) bits
                     normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
                     newres.append(vector_complex_to_real(normed[:dim*2]))
                     newres.append(vector_complex_to_real(normed[dim*2:]))
-                    
                 results[0] = newres
                 #buflock[c].release()
             runfunc[0] = actual
@@ -2153,7 +2165,7 @@ class LoopCorrections(g.Component):
                 print_utils.err(
                     f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
                 )
-        device.close()
+        for device in devices: device.close()
     def unit_test(chunks, dim):
         import timeit
         worstCase, useCplx = False, True
@@ -2341,7 +2353,8 @@ def main():
     #AdvanceGrayCode.chain_test(chunks, dim)
     #VectorsToComplexMatrix.unit_test(chunks, dim)
     #LoopCorrections.unit_test(chunks, dim)
-    LoopCorrections.chain_test(chunks, dim)
+    #LoopCorrections.chain_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim, True)
     #tf_mm(chunks, dim)
     #pt_mm(chunks, dim)
     return
