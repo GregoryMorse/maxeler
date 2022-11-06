@@ -1703,6 +1703,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar barrelShifter(DFEVar value, DFEVar shift, boolean isLeft, KernelBase<?> base)
     {
+        //final int muxPipeliningLimit = 3;
         value = base.optimization.pipeline(value);
         //LUT6 allows 4:1 MUX, LUT6_2 allows 2-bit 2:1 MUX
         //base.optimization.pushNoPipelining();
@@ -2317,7 +2318,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return stagger;
     }
-     public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
+    public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
     {
         DFEVar v = var.reinterpret(KernelBase.dfeUInt(var.getType().getTotalBits()));
         int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();        
@@ -2329,9 +2330,18 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return out.reinterpret(var.getType());
     }
+    public static DFEVar pipelineBits(DFEVar var, KernelBase<?> base)
+    {
+        int size = var.getType().getTotalBits();
+        DFEVar res = base.optimization.pipeline(var.get(--size));
+        while (size != 0) {
+            res = res.cat(base.optimization.pipeline(var.get(--size)));
+        }
+        return res;
+    }
     public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
-        final int muxPipeliningLimit = 3;
+        final int muxPipeliningLimit = split >= 4 ? 1 : (split == 3 ? 2 : 3);
         int limit = Math.max(32, 1 << split);
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
