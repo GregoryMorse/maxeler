@@ -1945,8 +1945,8 @@ class AdvanceGrayCode(g.Component):
         toracle = timeit.timeit(oracle, number=1000)/1000
         batchsize = 100000
         tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
-        print("File Sizes", iops[0], os.path.getsize(iops[0]))
-        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch", tactualbatch)
+        print_utils.cprint("File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
+        print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
         device.close()
     
     def unit_test(chunks, dim): #verify accuracy
