@@ -796,9 +796,13 @@ class LoopCorrections(g.Component):
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
         with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
             self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
-        for x in results_mt[-1]: x.set_program_output()
-        for x in results_norm[-1]: x.set_program_output()
-        return results_mt[-1], results_norm[-1]
+        result_combined = g.concat_vectors(results_mt[-1], (4, self.chunks, self.dim*2*2))
+        norm_combined = g.concat_vectors(results_norm[-1], (4, self.dim*2*2))
+        result_combined.name = "result_combined"
+        norm_combined.name = "norm_combined"
+        result_combined.set_program_output()
+        norm_combined.set_program_output()
+        return result_combined, norm_combined
     def chain_test(chunks, dim, dual=False):
         import timeit        
         worstCase, useCplx, longDoubleOracle, matpow = False, True, False, dim//2-1
@@ -837,23 +841,35 @@ class LoopCorrections(g.Component):
         def makeOracle():
             #export OMP_NUM_THREADS=64
             floattype = np.clongdouble if longDoubleOracle else np.cdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
-            B = [originpmat[i].transpose().astype(floattype) for i in range(parallel)]
-            w = [originpvec[i].astype(floattype) for i in range(parallel)]
+            B = [np.stack([originpmat[i].transpose().astype(floattype) for i in range(parallel)], axis=0)]
+            w = np.vstack([originpvec[i].astype(floattype) for i in range(parallel)]) #.reshape(parallel, 1, dim)
             gcodeCounter, lastgcode = [0], [0]
-            def oracle():
-                oracleres[0] = []
+            @jit(nopython=True)
+            def fastoracle(B, gcodeCounter, lastgcode):
+                #v = w #3D-version, not supported by numba, but numba appears to be faster
+                #for _ in range(matpow):
+                #    v = v @ B
+                #l = [x.reshape(dim) for x in np.split(v, parallel, axis=0)]
+                l = []
                 for i in range(parallel):
                     v = w[i]
                     for _ in range(matpow):
                         v = v @ B[i]
-                    oracleres[0].append(v.astype(np.cdouble))
-                gcodeCounter[0] += 1
-                gcode = gcodeCounter[0] ^ (gcodeCounter[0] >> 1)
-                change = (gcode ^ lastgcode[0]).bit_length()-1 + 1+3 #bitLength()-1==oneHotDecode, first 1 + 3 (or 4 for dual) rows are reserved for anchor plus parallelism 2^3/2^4
-                for mat in B:
-                    mat[change*2, :] = -mat[change*2, :]
-                    mat[change*2+1, :] = -mat[change*2+1, :]                
-                lastgcode[0] = gcode
+                    l.append(v.astype(np.cdouble))
+                gcodeCounter += 1
+                gcode = gcodeCounter ^ (gcodeCounter >> 1)
+                v = gcode ^ lastgcode
+                r =     (v > 0xFFFF) << 4; v >>= r
+                shift = (v > 0xFF  ) << 3; v >>= shift; r |= shift
+                shift = (v > 0xF   ) << 2; v >>= shift; r |= shift
+                shift = (v > 0x3   ) << 1; v >>= shift; r |= shift
+                r |= (v >> 1) #r = v.bit_length()-1
+                change = r + 1+3 #bit_length()-1==oneHotDecode, first 1 + 3 (or 4 for dual) rows are reserved for anchor plus parallelism 2^3/2^4
+                B[:,change*2, :] = -B[:,change*2, :]
+                B[:,change*2+1, :] = -B[:,change*2+1, :]                
+                return l, gcodeCounter, gcode
+            def oracle():
+                oracleres[0], gcodeCounter[0], lastgcode[0] = fastoracle(B[0], gcodeCounter[0], lastgcode[0])
             return oracle
         oracle = makeOracle()
         batchsize = 30000
@@ -892,17 +908,20 @@ class LoopCorrections(g.Component):
             invoke(devices, iop, 0, 0, inputs)
             @jit(nopython=True)
             def bits_to_vector(bits, inpvecnorm, norm):
-                normed = renormalize_doubles(bits_to_num(bits, 7), inpvecnorm - norm.reshape(dim*2*2).astype(np.int32))
-                return vector_complex_to_real(normed[:dim*2]), vector_complex_to_real(normed[dim*2:])
+                l = []
+                for i in range(parallel//2):
+                    devidx = 1 if i >= osz else 0
+                    oidx = i % osz
+                    normed = renormalize_doubles(bits_to_num(bits[oidx], 7), inpvecnorm - norm[oidx].reshape(dim*2*2).astype(np.int32))
+                    l.append(vector_complex_to_real(normed[:dim*2])); l.append(vector_complex_to_real(normed[dim*2:]))
+                return l
             def actual():
                 res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
                 lastouts[0] = res
                 newres = []                
-                for i in range(parallel//2):
-                    devidx = 1 if i >= osz else 0
-                    oidx = i % osz
+                for i in range(len(devices)):
                     #the results come back truncating the lower 7*(chunks-1) bits
-                    newres.extend(bits_to_vector(res[devidx][result_mt[oidx].name], exp_inpvecs[i], res[devidx][resnorm[oidx].name]))
+                    newres.extend(bits_to_vector(res[devidx][result_mt.name], exp_inpvecs[i], res[devidx][resnorm.name]))
                 results[0] = newres
             runfunc[0] = actual
         tloaddata = timeit.timeit(loaddata, number=1)/1
@@ -986,8 +1005,8 @@ class LoopCorrections(g.Component):
             res = runner(**inputs)
             results[0] = []
             for i in range(parallel//2):
-                result = bits_to_num(res[result_mt[i].name], 7)
-                norm = res[resnorm[i].name].reshape(dim*2*2)
+                result = bits_to_num(res[result_mt.name][i], 7)
+                norm = res[resnorm.name][i].reshape(dim*2*2)
                 #the results come back truncating the lower 7*(chunks-1) bits
                 normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
                 results[0].append(vector_complex_to_real(normed[:dim*2]))
