@@ -804,7 +804,7 @@ class LoopCorrections(g.Component):
         norm_combined.set_program_output()
         return result_combined, norm_combined
     def chain_test(chunks, dim, dual=False):
-        #1200 cycles or nanoseconds – 1x80 * 80x80 complex matrix multiplication uses 80*(80*(4M+2A)+2*79A)=160*(160M+159A) – parallelism 8
+        #1200 cycles or nanoseconds - 1x80 * 80x80 complex matrix multiplication uses 80*(80*(4M+2A)+2*79A)=160*(160M+159A) - parallelism 8
         #160*(160M+159A)*8*10^9/1200 OPS or 160*(160+159)*8/1200 ~=340 GOPS
         import timeit        
         worstCase, useCplx, longDoubleOracle, matpow = False, True, False, dim//2-1
