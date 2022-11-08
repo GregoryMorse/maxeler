@@ -58,6 +58,19 @@ def extract_uint8(var):
 def flatten_zip(z): return [item for sublist in z for item in sublist]
 def flatten_unzip(z, interleave=2): return list(zip(*zip(*([iter(z)] * interleave))))
 
+def perf_pro(f):
+    import cProfile, pstats, io
+    from pstats import SortKey
+    pr = cProfile.Profile()
+    pr.enable()
+    f()
+    pr.disable()
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
+
 WEST, EAST = 0, 1
 def get_slice8(drctn, start, end, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S8(" + str(start) + "-" + str(end) + "), B1(" + str(bank) + ")"
