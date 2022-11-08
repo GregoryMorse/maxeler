@@ -2146,14 +2146,13 @@ class LoopCorrections(g.Component):
                 inputs[devidx][tmat[oidx].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
                 inputs[devidx][cx_diag[oidx].name] = np.hstack((inpvec0, inpvec1)) #colswap
                 exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
+            inpnormvecs = [np.stack(exp_inpvecs[i*osz:(i+1)*osz]) for i in range(len(devices))]
             invoke(devices, iop, 0, 0, inputs)
             @jit(nopython=True)
             def bits_to_vector(bits, inpvecnorm, norm):
                 l = []
-                for i in range(parallel//2):
-                    devidx = 1 if i >= osz else 0
-                    oidx = i % osz
-                    normed = renormalize_doubles(bits_to_num(bits[oidx], 7), inpvecnorm - norm[oidx].reshape(dim*2*2).astype(np.int32))
+                for i in range(osz):
+                    normed = renormalize_doubles(bits_to_num(bits[i], 7), inpvecnorm[i] - norm[i].reshape(dim*2*2).astype(np.int32))
                     l.append(vector_complex_to_real(normed[:dim*2])); l.append(vector_complex_to_real(normed[dim*2:]))
                 return l
             def actual():
@@ -2162,7 +2161,7 @@ class LoopCorrections(g.Component):
                 newres = []                
                 for i in range(len(devices)):
                     #the results come back truncating the lower 7*(chunks-1) bits
-                    newres.extend(bits_to_vector(res[devidx][result_mt.name], exp_inpvecs[i], res[devidx][resnorm.name]))
+                    newres.extend(bits_to_vector(res[i][result_mt.name], inpnormvecs[i], res[i][resnorm.name]))
                 results[0] = newres
             runfunc[0] = actual
         tloaddata = timeit.timeit(loaddata, number=1)/1
