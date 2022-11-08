@@ -2035,15 +2035,14 @@ class LoopCorrections(g.Component):
         #VectorsToComplexMatrix(results_mt, results_norm)
         #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
         #    finresult_mt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, results_mt)
-        #with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
-        #    self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
+        with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
+            self.cx_diag, self.tmat, curt = self.agc.build(self.cx_diag, self.tmat, curt)
         for x in results_mt[-1]: x.set_program_output()
         for x in results_norm[-1]: x.set_program_output()
         return results_mt[-1], results_norm[-1]
     def chain_test(chunks, dim, dual=False):
         import timeit        
-        worstCase, useCplx = False, True
-        matpow = dim//2-1
+        worstCase, useCplx, longDoubleOracle, matpow = False, True, False, 3 #dim//2-1
         pgm_pkg = g.ProgramPackage(name="mm", output_dir="mm")
         with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
             lc = LoopCorrections(chunks, dim, matpow)
@@ -2076,16 +2075,28 @@ class LoopCorrections(g.Component):
             originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)]
     
         oracleres = [None]
-        def oracle():
+        def makeOracle():
             #export OMP_NUM_THREADS=64
-            floattype = np.cdouble # np.clongdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
+            floattype = np.clongdouble if longDoubleOracle else np.cdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
             B = [originpmat[i].transpose().astype(floattype) for i in range(parallel)]
-            oracleres[0] = []
-            for i in range(parallel):
-                w = originpvec[i].astype(floattype)
-                for _ in range(matpow):
-                    w = w @ B[i]
-                oracleres[0].append(w.astype(np.cdouble))
+            w = [originpvec[i].astype(floattype) for i in range(parallel)]
+            gcodeCounter, lastgcode = [0], [0]
+            def oracle():
+                oracleres[0] = []
+                for i in range(parallel):
+                    v = w[i]
+                    for _ in range(matpow):
+                        v = v @ B[i]
+                    oracleres[0].append(v.astype(np.cdouble))
+                gcodeCounter[0] += 1
+                gcode = gcodeCounter[0] ^ (gcodeCounter[0] >> 1)
+                change = (gcode ^ lastgcode[0]).bit_length()-1 + 1+3 #bitLength()-1==oneHotDecode, first 1 + 3 (or 4 for dual) rows are reserved for anchor plus parallelism 2^3/2^4
+                for mat in B:
+                    mat[change*2, :] = -mat[change*2, :]
+                    mat[change*2+1, :] = -mat[change*2+1, :]                
+                lastgcode[0] = gcode
+            return oracle
+        oracle = makeOracle()
         batchsize = 30000
         toracle = timeit.timeit(oracle, number=batchsize)/batchsize
         print_utils.infoc("\nRunning on HW ...")
@@ -2094,9 +2105,6 @@ class LoopCorrections(g.Component):
         #from GroqBatch_wrapper import GroqBatch_wrapper
         #GroqBatch_wrapper(iop_file=iops[0])
         
-        #import threading
-        #max_workers = 8
-        #lock, buflock = [threading.Lock(), 0], [threading.Lock() for _ in range(max_workers)]
         results, runfunc = [None], [None]
         def loaddata():
             fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
@@ -2128,7 +2136,6 @@ class LoopCorrections(g.Component):
                 normed = renormalize_doubles(bits_to_num(bits, 7), inpvecnorm - norm.reshape(dim*2*2).astype(np.int32))
                 return vector_complex_to_real(normed[:dim*2]), vector_complex_to_real(normed[dim*2:])
             def actual():
-                #buflock[c].acquire()
                 res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
                 lastouts[0] = res
                 newres = []                
@@ -2138,23 +2145,18 @@ class LoopCorrections(g.Component):
                     #the results come back truncating the lower 7*(chunks-1) bits
                     newres.extend(bits_to_vector(res[devidx][result_mt[oidx].name], exp_inpvecs[i], res[devidx][resnorm[oidx].name]))
                 results[0] = newres
-                #buflock[c].release()
             runfunc[0] = actual
         tloaddata = timeit.timeit(loaddata, number=1)/1
         actual = runfunc[0]
         buffers, lastouts = [None], [None] #* max_workers
-        tactual = timeit.timeit(actual, number=1)/1
+        tactual = timeit.timeit(actual, number=1)/1; oracle()
         def actualbatch():
             for _ in range(batchsize): actual()
-        perf_pro(actualbatch)        
-        #def actualpool():
-        #    from concurrent.futures import ThreadPoolExecutor
-        #    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        #        for i in range(batchsize): executor.submit(actual, i % max_workers)
-        #tactualpool = timeit.timeit(actualpool, setup='gc.enable()', number=1)/batchsize
+        perf_pro(actualbatch)
+        for _ in range(batchsize): oracle()
         tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
-        print("Matrix Power", matpow, "File Sizes", iops[0], os.path.getsize(iops[0]))
-        print("CPU Time", toracle, "Groq Load Time", tloaddata, "Groq Init Time", tactual, "Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x)", tactualbatch) #, "Groq Time Avg. " + str(max_workers) + " Worker Thread Pool " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualpool) + "x)", tactualpool)
+        print_utils.cprint(("Dual" if dual else "Single") + " Groq Chip Parallelism: " + str(parallel) + " Double precision " + ("Complex" if useCplx else "Real") + " (" + str(dim) + ") Vector multiplied by (" + str(dim) + "x" + str(dim) + ") Matrix raised to power " + str(matpow) + " Oracle intermediate precision: " + ("LongDouble" if longDoubleOracle else "Double") + " Program File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
+        print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
         oracleres, results = oracleres[0], results[0]
         for i in range(parallel):
             print_utils.infoc("\nComparing results with oracle ...")
@@ -2169,8 +2171,7 @@ class LoopCorrections(g.Component):
         for device in devices: device.close()
     def unit_test(chunks, dim):
         import timeit
-        worstCase, useCplx = False, True
-        matpow = 1 #dim//2-1
+        worstCase, useCplx, longDoubleOracle, matpow = False, True, False, 2 #dim//2-1
         with g.ProgramContext() as pc:
             lc = LoopCorrections(chunks, dim, matpow, True)
             tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
@@ -2193,14 +2194,20 @@ class LoopCorrections(g.Component):
             originpmat = [np.random.rand(dim, dim)*2-1 for _ in range(parallel)]
     
         oracleres, results = [None], [None]
-        def oracle():
-            B = [originpmat[i].transpose().astype(np.clongdouble) for i in range(parallel)]
-            oracleres[0] = []
-            for i in range(parallel):
-                w = originpvec[i].astype(np.clongdouble)
-                for _ in range(matpow):
-                    w = w @ B[i]
-                oracleres[0].append(w.astype(np.cdouble))
+        def makeOracle():
+            #export OMP_NUM_THREADS=64
+            floattype = np.clongdouble if longDoubleOracle else np.cdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
+            B = [originpmat[i].transpose().astype(floattype) for i in range(parallel)]
+            w = [originpvec[i].astype(floattype) for i in range(parallel)]
+            def oracle():
+                oracleres[0] = []
+                for i in range(parallel):
+                    v = w[i]
+                    for _ in range(matpow):
+                        v = v @ B[i]
+                    oracleres[0].append(v.astype(np.cdouble))
+            return oracle
+        oracle = makeOracle()
         def actual():
             fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
             inputs = {}
@@ -2208,16 +2215,16 @@ class LoopCorrections(g.Component):
             for i in range(parallel//2):
                 exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
                 inpvec0 = num_to_bits(normals, chunks)
-                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), 1, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), 1 if matpow==1 else None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
                 inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
                 exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
                 inpvec1 = num_to_bits(normals, chunks)
-                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), 1, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), 1 if matpow==1 else None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
                 inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
                 inputs[tvec[i].name] = np.hstack((inpvec0, inpvec1))
                 inputs[tmat[i].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
                 inputs[cx_diag[i].name] = np.hstack((inpvec0, inpvec1)) #colswap
-                exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - exp_inpmat0, 2*fractionbits-63 - 7 - exp_inpvec1 - exp_inpmat1)))
+                exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
             res = runner(**inputs)
             results[0] = []
             for i in range(parallel//2):
@@ -2228,6 +2235,7 @@ class LoopCorrections(g.Component):
                 results[0].append(vector_complex_to_real(normed[:dim*2]))
                 results[0].append(vector_complex_to_real(normed[dim*2:]))
         print_utils.infoc("\nRunning on HW ...")
+        print_utils.cprint("Single Groq Chip Parallelism: " + str(parallel) + " Double precision " + ("Complex" if useCplx else "Real") + " (" + str(dim) + ") Vector multiplied by (" + str(dim) + "x" + str(dim) + ") Matrix raised to power " + str(matpow) + " Oracle intermediate precision: " + ("LongDouble" if longDoubleOracle else "Double") + " Program File Size for " + iop_file + ": " + str(os.path.getsize(iop_file)), "")
         oracle()
         actual()
         oracleres, results = oracleres[0], results[0]
@@ -2344,7 +2352,6 @@ def pt_mm(chunks, dim):
     runner = g.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})["res"])
 def main():
-    import timeit
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
@@ -2353,13 +2360,14 @@ def main():
     #AdvanceGrayCode.unit_test(chunks, dim)
     #AdvanceGrayCode.chain_test(chunks, dim)
     #VectorsToComplexMatrix.unit_test(chunks, dim)
-    #LoopCorrections.unit_test(chunks, dim)
-    #LoopCorrections.chain_test(chunks, dim)
-    LoopCorrections.chain_test(chunks, dim, True)
+    LoopCorrections.unit_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim)
+    #LoopCorrections.chain_test(chunks, dim, True)
     #tf_mm(chunks, dim)
     #pt_mm(chunks, dim)
     return
 
+    import timeit
     max_dim_bits = (dim*2).bit_length() #complex domain
     #64 signed bits * 64 signed bits = 63 unsigned bits * 63 unsigned bits + sign bit = 127 bits...
     signedhighbit = bitsize * 2 - 1 + max_dim_bits
