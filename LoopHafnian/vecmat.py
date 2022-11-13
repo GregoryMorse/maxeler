@@ -14,9 +14,10 @@ import groq.api as g
 import groq.api.instruction as inst
 import groq.api.nn as nn
 import groq.tensor as tensor
+import groq.runner.tsp as tsp
 from groq.common import print_utils
 try:
-    import groq.runtime.driver as runtime
+    import groq.runtime as runtime
 except ImportError:
     # raise ModuleNotFoundError("groq.runtime")
     print('Error: ModuleNotFoundError("groq.runtime")')
@@ -835,7 +836,7 @@ def add64(tensors1, tensors2, issub=False):
     res = []
     maskadd = g.constant_tensor(shape=(1, dim), dtype=g.uint32)
     maskadd.data = np.array([[(1<<31)-1]*dim], dtype=np.uint32)
-    if issub: res.append(g.sub(tensors1[0], tensors2[0]))
+    if issub: res.append(g.sub(tensors1[0], tensors2[0], overflow_mode=g.OverflowMode.MODULAR))
     else: res.append(g.add(tensors1[0], tensors2[0]))
     carry1 = tensors1[0].greater(maskadd)
     carry2 = tensors2[0].greater(maskadd)
@@ -884,54 +885,67 @@ def karatsuba_mul32(tensor1, tensor2, dim):
     with g.ResourceScope(name="add1", is_buffered=True, predecessors=[mul3], time=None) as add1:
         res1 = g.add(g.add(g.add(g.left_shift(z2, shiftqrt), z0), z1), ex1).write(name="res1")
     with g.ResourceScope(name="add2", is_buffered=True, predecessors=[add1], time=None) as add2:
-        res2 = g.sub(g.add(res1, ex2), z2).write(name="res2")
+        res2 = g.sub(g.add(res1, ex2, overflow_mode=g.OverflowMode.MODULAR), z2, overflow_mode=g.OverflowMode.MODULAR).write(name="res2")
     with g.ResourceScope(name="s1", is_buffered=True, predecessors=[add2], time=None) as s1:
         z0s = g.left_shift(z0, shiftqrt).write(name="z0s")
     with g.ResourceScope(name="add3", is_buffered=True, predecessors=[s1], time=None) as add3:
-        res = g.sub(res2, z0s).write(name="res")
+        res = g.sub(res2, z0s, overflow_mode=g.OverflowMode.MODULAR).write(name="res")
     return res
     
-def karatsuba_mul16(tensor1, tensor2, dim):
+def karatsuba_mul16(tensor1, tensor2, dim, signed=False):
     #if tensor1.tensor_type == g.uint16:
-    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.uint8)
-    shiftqrt.data = np.array([[8]*dim], dtype=np.uint8)
-    shifthalf = g.constant_tensor(shape=(1, dim), dtype=g.uint8)
-    shifthalf.data = np.array([[16]*dim], dtype=np.uint8)
-    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.uint16)
-    maskqrt.data = np.array([[(1<<8)-1]*dim], dtype=np.uint16)
+    shiftqrt = g.constant_tensor(shape=(1, dim), dtype=g.int32 if signed else g.uint32)
+    shiftqrt.data = np.array([[8]*dim], dtype=np.int32 if signed else np.uint32)
+    shiftqrt16 = shiftqrt.reinterpret(g.int16 if signed else g.uint16).split_vectors([1]*2)[0]
+    shifthalf = g.constant_tensor(shape=(1, dim), dtype=g.int32 if signed else g.uint32)
+    shifthalf.data = np.array([[16]*dim], dtype=np.int32 if signed else np.uint32)
+    maskqrt = g.constant_tensor(shape=(1, dim), dtype=g.int16 if signed else g.uint16)
+    maskqrt.data = np.array([[(1<<8)-1]*dim], dtype=np.int16 if signed else np.uint16)
     with g.ResourceScope(name="mask1", is_buffered=True, time=0) as mask1:
-        tl1 = g.bitwise_and(tensor1, maskqrt, alus=[0]).write(name="tl1")
-        tu2 = g.right_shift(tensor2, shiftqrt, alus=[4]).write(name="tu2")
-    with g.ResourceScope(name="mask2", is_buffered=True, time=1) as mask2:
-        tl2 = g.bitwise_and(tensor2, maskqrt, alus=[0]).write(name="tl2")
-        tu1 = g.right_shift(tensor1, shiftqrt, alus=[4]).write(name="tu1")
+        tl1 = g.bitwise_and(tensor1.read(streams=g.SG2[1*2]), maskqrt.read(streams=g.SG2[0*2]), alus=[0], time=0).write(name="tl1")
+        tu2 = g.right_shift(tensor2.read(streams=g.SG2[3*2]), shiftqrt16.read(streams=g.SG2[2*2]), alus=[4], time=0).write(name="tu2")
+    with g.ResourceScope(name="mask2", is_buffered=True, time=2) as mask2:
+        tl2 = g.bitwise_and(tensor2.read(streams=g.SG2[1*2]), maskqrt.read(streams=g.SG2[0*2]), alus=[0], time=0).write(name="tl2")
+        tu1 = g.right_shift(tensor1.read(streams=g.SG2[3*2]), shiftqrt16.read(streams=g.SG2[2*2]), alus=[4], time=1).write(name="tu1")
     with g.ResourceScope(name="sub1", is_buffered=True, predecessors=[mask2], time=None) as sub1:
-        diff1 = g.add(tu1, tl1, alus=[0]).write(name="diff1")
+        diff1 = g.add(tu1, tl1, alus=[0], time=0).write(name="diff1")
     with g.ResourceScope(name="sub2", is_buffered=True, predecessors=[sub1], time=None) as sub2:
-        diff2 = g.add(tu2, tl2, alus=[4]).write(name="diff2")
+        diff2 = g.add(tu2, tl2, alus=[4], time=0).write(name="diff2")
     with g.ResourceScope(name="subfix1", is_buffered=True, predecessors=[sub2], time=None) as subfix1:
-        difffix1 = g.bitwise_and(diff1, maskqrt).write(name="difffix1")
+        difffix1 = g.bitwise_and(diff1, maskqrt, time=0).reinterpret(g.uint16).write(name="difffix1")
     with g.ResourceScope(name="subfix2", is_buffered=True, predecessors=[subfix1], time=None) as subfix2:        
-        difffix2 = g.bitwise_and(diff2, maskqrt).write(name="difffix2")
+        difffix2 = g.bitwise_and(diff2, maskqrt, time=0).reinterpret(g.uint16).write(name="difffix2")
     #9 bits * 9 bits = all([i*j==((i&255)*(j&255)+(i&256)*j+(j&256)*(i&255)) for i in range(512) for j in range(512)])
+    #all([i*j==((i&255)*(j&255)+(((i>>8)*j)<<8)+(((j>>8)*(i&255))<<8)) for i in range(-128, 382) for j in range(-128,382)])
     with g.ResourceScope(name="extra1", is_buffered=True, predecessors=[subfix2], time=None) as extra1:
-        ex1 = g.left_shift(g.mask(g.greater(diff1, maskqrt), diff2).cast(g.uint32), shifthalf).write(name="ex1")
+        ex1 = g.left_shift(g.mask(g.greater(diff1.reinterpret(g.uint16), maskqrt.reinterpret(g.uint16), time=0), diff2).cast(g.int32 if signed else g.uint32), shifthalf).write(name="ex1")
     with g.ResourceScope(name="extra2", is_buffered=True, predecessors=[extra1], time=None) as extra2:
-        ex2 = g.left_shift(g.mask(g.greater(diff2, maskqrt), difffix1).cast(g.uint32), shifthalf).write(name="ex2")
+        ex2 = g.left_shift(g.mask(g.greater(diff2.reinterpret(g.uint16), maskqrt.reinterpret(g.uint16), time=0), difffix1).cast(g.uint32).reinterpret(g.int32 if signed else g.uint32), shifthalf).write(name="ex2")
+    if signed: #conditionally negate by XOR by sign bit extended and add the sign bit
+        shift9 = g.constant_tensor(shape=(1, dim), dtype=g.int32)
+        shift9.data = np.array([[9]*dim], dtype=np.int32)
+        const1 = g.constant_tensor(shape=(1, dim), dtype=g.int32)
+        const1.data = np.array([[1]*dim], dtype=np.int32)
+        with g.ResourceScope(name="extra1adj", is_buffered=True, predecessors=[extra2], time=None) as extra1:
+            sh = g.right_shift(diff1.read(streams=g.SG2[0]).cast(g.int32), shift9.read(streams=g.SG4[2]), alus=[1], time=0, output_streams=g.SG4[2])
+            ex1 = g.add(g.bitwise_xor(sh, ex1, alus=[2]), g.bitwise_and(sh, const1, alus=[6])).write(name="ex1adj")
+        with g.ResourceScope(name="extra2adj", is_buffered=True, predecessors=[extra1], time=None) as extra2:
+            sh = g.right_shift(diff2.read(streams=g.SG2[0]).cast(g.int32), shift9.read(streams=g.SG4[2]), alus=[1], time=0, output_streams=g.SG4[2])
+            ex2 = g.add(g.bitwise_xor(sh, ex2, alus=[2]), g.bitwise_and(sh, const1, alus=[6])).write(name="ex2adj")
     with g.ResourceScope(name="mul1", is_buffered=True, predecessors=[extra2], time=None) as mul1:
-        z0 = g.mul(tl1, tl2, time=0).cast(g.uint32).write(name="z0")
+        z0 = g.mul(tl1.reinterpret(g.uint16), tl2.reinterpret(g.uint16), time=0).cast(g.uint32).reinterpret(g.int32 if signed else g.uint32).write(name="z0")
     with g.ResourceScope(name="mul2", is_buffered=True, predecessors=[mul1], time=None) as mul2:
-        z2 = g.left_shift(g.mul(tu1, tu2, time=0).cast(g.uint32), shiftqrt).write(name="z2")
+        z2 = g.left_shift(g.mul(tu1, tu2, time=0).cast(g.int32 if signed else g.uint32), shiftqrt).write(name="z2")
     with g.ResourceScope(name="mul3", is_buffered=True, predecessors=[mul2], time=None) as mul3:
-        z1 = g.left_shift(g.mul(difffix1, difffix2, time=0).cast(g.uint32), shiftqrt).write(name="z1")
+        z1 = g.left_shift(g.mul(difffix1, difffix2, time=0).cast(g.uint32).reinterpret(g.int32 if signed else g.uint32), shiftqrt).write(name="z1")
     with g.ResourceScope(name="add1", is_buffered=True, predecessors=[mul3], time=None) as add1:
-        res1 = g.add(g.add(g.add(g.left_shift(z2, shiftqrt), z0), z1), ex1).write(name="res1")
+        res1 = g.add(g.add(g.add(g.left_shift(z2, shiftqrt, time=0), z0), z1), ex1, overflow_mode=g.OverflowMode.MODULAR).write(name="res1")
     with g.ResourceScope(name="add2", is_buffered=True, predecessors=[add1], time=None) as add2:
-        res2 = g.sub(g.add(res1, ex2), z2).write(name="res2")
+        res2 = g.sub(g.add(res1, ex2, overflow_mode=g.OverflowMode.MODULAR, time=0), z2, overflow_mode=g.OverflowMode.MODULAR).write(name="res2")
     with g.ResourceScope(name="s1", is_buffered=True, predecessors=[add2], time=None) as s1:
-        z0s = g.left_shift(z0, shiftqrt).write(name="z0s")
+        z0s = g.left_shift(z0, shiftqrt, time=0).write(name="z0s")
     with g.ResourceScope(name="add3", is_buffered=True, predecessors=[s1], time=None) as add3:
-        res = g.sub(res2, z0s).write(name="res")
+        res = g.sub(res2, z0s, overflow_mode=g.OverflowMode.MODULAR, time=0).write(name="res")
     return res
     
 def num_to_bits(num, chunks):
@@ -1006,6 +1020,7 @@ def dump_groq_doc():
             try:
                 results[full_name] = importlib.import_module(full_name)
             except ModuleNotFoundError: continue
+            except FileNotFoundError: continue
             if recursive and is_pkg:
                 results.update(import_submodules(full_name))
         return results    
@@ -1023,11 +1038,11 @@ def compile_unit_test(name):
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name=name, gen_vis_data=True, check_stream_conflicts=False, #tree_conflicts=True, inspect_raw=True
+        base_name=name, gen_vis_data=True, check_stream_conflicts=True, #tree_conflicts=True, inspect_raw=True
     )
-    json_file = g.write_visualizer_data(name)
+    g.write_visualizer_data(name)
+    json_file = name + "/visdata.json"
     print_utils.cprint("Have a GroqView:\n    % " + print_utils.Colors.GREEN + "groqview --port 8888 " + json_file + print_utils.Colors.RESET, "")
-    g.check_stream_conflicts(json_file)
     return iop_file, json_file
 def invoke(devices, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
     """Low level interface to the device driver to access multiple programs. A higher level abstraction
@@ -1078,7 +1093,7 @@ class VecNormalize(g.Component):
                     "maps": g.concat_inner_splits([g.from_data(np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 43, drctn)) for i in range(16)]),
                     "perms": g.concat_inner_splits([g.from_data(np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 42, drctn)) for i in range(10)]),
                 })                
-            else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvn.consts[drctn][key], name="post" + lastvn.consts[drctn][key].name) for key in lastvn.consts[drctn]})
+            else: self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvn.consts[drctn][key], name="post" + lastvn.consts[drctn][key].name) for key in lastvn.consts[drctn]})
             g.add_mem_constraints(list(self.consts[drctn].values()), list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.logtworeqs, self.biasreqs, self.shftreqs, self.shiftedreqs, self.selreqs, self.cmpreqs, self.permreqs = [], [], [], [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
@@ -1113,9 +1128,9 @@ class VecNormalize(g.Component):
                         g.right_shift(
                             g.sub(
                                 g.bitwise_or(x, self.consts[drctn]["initexp"].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.float32),
-                                self.consts[drctn]["subval"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.uint32),
+                                self.consts[drctn]["subval"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), overflow_mode=g.OverflowMode.MODULAR, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]).reinterpret(g.uint32),
                             self.consts[drctn]["shiftexp"].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
-                        biases[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                        biases[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]), overflow_mode=g.OverflowMode.MODULAR, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
                 logtworesult.append(x.write(name="logtwo" + dirstr, storage_req=self.logtworeqs[drctn*2+plane]))
             with g.ResourceScope(name="maxlogtwo" + dirstr, is_buffered=True, time=t+52, predecessors=None) as pred:
                 #reduce_max inner dimension requires  Distributor x 16 -> VXM reduce_max outer -> Shifter -> reduce_max outer
@@ -1131,7 +1146,7 @@ class VecNormalize(g.Component):
                 x = g.permute_inner(x, permute_map=self.consts[drctn]["perms"], permutor_req=drctn, input_streams=[g.SG1[0], g.SG1[24]], output_streams=g.SG1[0], time=0)
                 x = g.concat_vectors(g.split_inner_splits(x), (10, 320))
                 x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0])
-                cmpr = g.greater_equal(x, self.consts[drctn]["shiftcomp"].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
+                cmpr = g.greater_equal(x, self.consts[drctn]["shiftcomp"].read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 x = g.vxm_identity(x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
                 maxfinresult.append(x.write(name="maxlogtwofin" + dirstr, storage_req=self.shftreqs[drctn*2+plane]))
                 compared = cmpr.write(name="maxlogcompare" + dirstr, storage_req=self.cmpreqs[drctn*2+plane])
@@ -1140,18 +1155,18 @@ class VecNormalize(g.Component):
                 nextmask = g.bitwise_and(g.concat_inner_splits(g.split_inner_splits(curvec_st)[:-1]),
                     g.concat_inner_splits([self.consts[drctn]["shiftmask"]]*(self.chunks-1)).read(streams=g.SG4[sg4_for_hemi(5, drctn)]),
                     alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(5, drctn)])
-                topmask = g.right_shift(g.split_inner_splits(curvec_st)[-1],self.consts[drctn]["shiftcomp"].read(streams=g.SG4[sg4_for_hemi(6, drctn)]),
+                topmask = g.right_shift(g.split_inner_splits(curvec_st)[-1],self.consts[drctn]["shiftcomp"].read(streams=g.SG1[4*sg4_for_hemi(6, drctn)]),
                     alus=[alu_for_hemi(8, drctn)], output_streams=g.SG4[sg4_for_hemi(6, drctn)])                
-                norm = g.add(tnorm[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0), maxfinresult[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(1, drctn)]),
+                norm = g.add(tnorm[drctn*2+plane].read(streams=g.SG1[4*sg4_for_hemi(0, drctn)], time=0), maxfinresult[drctn*2+plane].read(streams=g.SG1[4*sg4_for_hemi(1, drctn)]),
                     alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
                 resnorm.append(norm.write(name="norm"+dirstr, layout=get_slice1(drctn, 1, plane)))
                 nextmasks.append(g.concat_inner_splits(g.split_vectors(extract_int8(g.split_inner_splits(nextmask) + [topmask]), [1]*self.chunks)).write(name="nextmask"+dirstr, storage_req=self.selreqs[drctn*2+plane]))
             with g.ResourceScope(name="firstshift" + dirstr, is_buffered=True, time=t+280, predecessors=None) as pred:
                 cmpr = g.concat_inner_splits([compared]*self.chunks).read(streams=g.SG4[sg4_for_hemi(2, drctn)])
-                selected = g.bitwise_or(g.mask(cmpr, nextmasks[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)]),
-                    g.mask_bar(cmpr, g.concat_inner_splits(g.split_vectors(extract_int8(curvec), [1]*self.chunks)).read(streams=g.SG4[sg4_for_hemi(4, drctn)]), alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(4, drctn)]),
+                selected = g.bitwise_or(g.mask(cmpr, nextmasks[drctn*2+plane].read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)]),
+                    g.mask_bar(cmpr, g.concat_inner_splits(g.split_vectors(extract_int8(curvec), [1]*self.chunks)).read(streams=g.SG1[4*sg4_for_hemi(4, drctn)]), alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(4, drctn)]),
                     alus=[alu_for_hemi(5, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
-                remain = g.sub(g.concat_inner_splits([maxfinresult[drctn*2+plane]]*self.chunks).read(streams=g.SG4[sg4_for_hemi(1, drctn)]), g.mask(cmpr, g.concat_inner_splits([self.consts[drctn]["shiftcomp"]]*self.chunks).read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0), alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]),
+                remain = g.sub(g.concat_inner_splits([maxfinresult[drctn*2+plane]]*self.chunks).read(streams=g.SG4[sg4_for_hemi(1, drctn)]), g.mask(cmpr, g.concat_inner_splits([self.consts[drctn]["shiftcomp"]]*self.chunks).read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0), alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]), overflow_mode=g.OverflowMode.MODULAR,
                     alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 nextshifts = g.right_shift(selected, remain, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
                 allsels.append(selected.write(name="selected" + dirstr, storage_req=self.shiftedreqs[(1-drctn)*2+plane]))
@@ -1159,11 +1174,11 @@ class VecNormalize(g.Component):
                 nextshifts = nextshifts.write(name="nextshift" + dirstr, storage_req=self.selreqs[drctn*2+plane])
             with g.ResourceScope(name="lastshift" + dirstr, is_buffered=True, time=t+325, predecessors=None) as pred:
                 diff = g.sub(g.concat_inner_splits([self.consts[1-drctn]["shiftcomp"]]*self.chunks).read(streams=g.SG4[sg4_for_hemi(0, drctn)]),
-                    g.concat_inner_splits([remain]*self.chunks).read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0),
+                    g.concat_inner_splits([remain]*self.chunks).read(streams=g.SG4[sg4_for_hemi(1, drctn)], time=0), overflow_mode=g.OverflowMode.MODULAR,
                     alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])                
                 lshifts = g.left_shift(g.concat_inner_splits(g.split_inner_splits(allsels[drctn*2+plane])[1:]+[self.consts[drctn]["zeros"]]).read(streams=g.SG4[sg4_for_hemi(2, drctn)]), diff, alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 maskedshifts = g.bitwise_and(lshifts, g.concat_inner_splits(g.split_vectors(extract_int8([self.consts[drctn]["shiftmask"]]*self.chunks), [1]*self.chunks)).read(streams=g.SG4[sg4_for_hemi(4, drctn)]), alus=[alu_for_hemi(5, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
-                res = g.bitwise_or(maskedshifts, nextshifts.read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
+                res = g.bitwise_or(maskedshifts, nextshifts.read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
                 result.append(g.concat_vectors(g.split_inner_splits(res), (self.chunks, self.dim)).write(name="finalres" + dirstr, layout=get_slice1(drctn, 43, plane)))
         g.add_mem_constraints(resnorm + maxfinresult + allsels, resnorm + maxfinresult + allsels, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(absresult + logtworesult, absresult + logtworesult + tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1187,7 +1202,7 @@ class VecNormalize(g.Component):
             for x in result_mt: x.set_program_output()
             for x in resnorm_mt: x.set_program_output()
             iop_file, json_file = compile_unit_test("vecnorm")
-        runner = g.create_tsp_runner(iop_file)
+        runner = tsp.create_tsp_runner(iop_file)
         originpvec = [np.full((dim,), ((1 << 53)-1)/(1<<53)+((1 << 53)-1)/(1<<53)*1j) for _ in range(parallel)]
        
         np.set_printoptions(threshold=sys.maxsize)
@@ -1246,7 +1261,7 @@ class VecMatMul(g.Component):
                     "zerospre": g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 0), name="zerospre" + dirstr),
                     "zeros": g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 1), name="zeros" + dirstr)
                 })
-            else: self.consts.append({key: tensor.create_shared_memory_tensor(memory_tensor=lastvmm.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
+            else: self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvmm.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
             g.add_mem_constraints([self.consts[drctn]["maskqrttop"]], [self.consts[drctn]["maskqrttoppre"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["shiftqrt"]], [self.consts[drctn]["maskqrt"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["zerospre"]], [self.consts[drctn]["zeros"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1303,7 +1318,7 @@ class VecMatMul(g.Component):
                 with g.ResourceScope(name="matmul" + dirstr + str(i), is_buffered=True, time=t) as pred: #mm.end_time==20 #for plane 0 returns on SG4_E[sg4_for_hemi(4, drctn)] #for nn.matmul time=plane*21+(20+12+9+1)*i due to SXM DIST
                     #result_mt[i] = mm.build(tvec[drctn*2+plane], result_mt[i])
                     #g.clear_mxm(planes=[plane], time=0)
-                    mxm_rq = tensor.create_mxm_request(planes=[drctn*2+plane], num_planes=1)
+                    mxm_rq = tensor.create_mxm_request(signed=True, planes=[drctn*2+plane], num_planes=1)
                     iw = g.install_weights(result_mt[i], planes=mxm_rq, time=0) #.read(streams=g.SG16_W[plane] if drctn == WEST else g.SG16_E[plane]), time=0 if plane==0 else -18)
                     #iw = g.load_weight_buffer(result_mt[i], planes=mxm_rq, time=0)
                     #print(tvec[drctn*2+plane].shape, tvec[drctn*2+plane].physical_shape, result_mt[i].shape, result_mt[i].physical_shape)
@@ -1381,7 +1396,7 @@ class VecMatMul(g.Component):
             for x in resnorm: x.set_program_output()
             iop_file, json_file = compile_unit_test("vecmatmul")
         np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
-        runner = g.create_tsp_runner(iop_file)
+        runner = tsp.create_tsp_runner(iop_file)
         print_utils.infoc("\nRunning on HW ...")
         worstCase, useCplx = False, False
         for _ in range(1):
@@ -1435,7 +1450,7 @@ class VecMatMul(g.Component):
                     #the results come back truncating the lower 7*(chunks-1) bits
                     results[0].append(vector_complex_to_real(renormalize_doubles(result[:dim*2], 2*fractionbits-63 - 7 - exp_inpvecs[i*2] - exp_inpmats[i*2] - norm[:dim*2].astype(np.int32)).reshape(1, dim*2)).reshape(dim))
                     results[0].append(vector_complex_to_real(renormalize_doubles(result[dim*2:], 2*fractionbits-63 - 7 - exp_inpvecs[i*2+1] - exp_inpmats[i*2+1] - norm[dim*2:].astype(np.int32)).reshape(1, dim*2)).reshape(dim))
-            runner = g.create_tsp_runner(iop_file)
+            runner = tsp.create_tsp_runner(iop_file)
             actual()
             oracleres, results = oracleres[0], results[0]
             for i in range(parallel):
@@ -1536,7 +1551,7 @@ class GrayCodeInitVectorMatrix(g.Component):
                     rows = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(tmatsplit[hemi], [1]*(self.chunks*self.dim*2)), 16)), (self.chunks*self.dim*2, 320)).read(g.SG4[2 if hemi==WEST else 5], time=0)
                     #rows = tmatsplit[hemi].read(g.SG4[2 if hemi==WEST else 5], time=0)
                     f = g.add #g.sub if (gcode & 1) != 0 else g.add
-                    rows = f(g.concat_vectors([self.zeros[hemi]]*(self.chunks*self.dim*2//4), (self.dim*self.chunks*2, 320)).read(streams=g.SG4[3 if hemi==WEST else 4]), rows, alus=[0 if hemi==WEST else 7], output_streams=g.SG4[3 if hemi==WEST else 4])
+                    rows = f(g.concat_vectors([self.zeros[hemi]]*(self.chunks*self.dim*2//4), (self.dim*self.chunks*2, 320)).read(streams=g.SG4[3 if hemi==WEST else 4]), rows, overflow_mode=g.OverflowMode.MODULAR, alus=[0 if hemi==WEST else 7], output_streams=g.SG4[3 if hemi==WEST else 4])
                     rows = g.concat_vectors(flatten_zip(flatten_unzip(g.split_vectors(rows, [1]*(self.chunks*self.dim*2)), self.chunks*self.dim*2//16)), (self.chunks*self.dim*2, 320))
                     rowres.append(rows)
                 result.append(g.concat_vectors(rowres, (self.chunks*self.dim*2*2, self.dim*2*2)).write(name="initmat" + dirstr, layout=get_slice16(drctn, s16rangeW if drctn==WEST else s16rangeE, plane)))
@@ -1664,6 +1679,9 @@ class VectorsToComplexMatrix(g.Component):
                 perm = g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[hemi*2+0] + tvec[hemi*2+1]), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0))
                 vecmatperm.append(g.concat_inner_splits(perm[:self.dim//2]).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][0]))
                 vecmatperm.append(g.concat_inner_splits(perm[self.dim//2:]).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][0]))
+                #perm = g.split_vectors(g.permute_inner(g.concat_vectors(tvec[hemi*2+0] + tvec[hemi*2+1], (self.chunks*self.dim, self.dim*2*2)), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0), [self.chunks]*self.dim)
+                #vecmatperm.append(g.concat_vectors(perm[:self.dim//2], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][0]))
+                #vecmatperm.append(g.concat_vectors(perm[self.dim//2:], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][0]))
         g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         for j in range(2):
             with g.ResourceScope(name="distmask" + str(j), is_buffered=True, time=None, predecessors=[pred]) as pred:
@@ -1709,14 +1727,14 @@ class VectorsToComplexMatrix(g.Component):
                     for plane in range(2):
                         matres.append(g.concat_vectors(np.vstack([rows[i][plane].reshape(4, 200) for i in range(4)]).transpose().flatten().tolist(), (self.chunks*self.dim*2*2, 320))
                             .write(name="adjmat" + ("W" if drctn == WEST else "E") + "p" + str(plane), storage_req=tmat[drctn*2+plane].storage_request))
-        """
+        """        
         normres = []
         for plane in range(2):
             with g.ResourceScope(name="normcombine" + str(plane), is_buffered=True, time=None, predecessors=[pred]) as pred:                
                 for drctn in (WEST, EAST):
                     normvec = g.concat_vectors(tnorm[drctn*2+plane], (self.dim//2-1, self.dim*2*2)).read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
-                    normvec = g.sum(g.mask(self.normmask[drctn].read(streams=g.SG4[sg4_for_hemi(1, drctn)]), normvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]), dims=0, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])
-                    normres.append(normvec.write(name="normfin" + ("W" if drctn==WEST else "E") + str(plane), layout=get_slice1(1, drctn))) 
+                    normvec = g.sum(g.mask(self.normmask[drctn].read(streams=g.SG1[4*sg4_for_hemi(1, drctn)]), normvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]), dims=0, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])
+                    normres.append(normvec.write(name="normfin" + ("W" if drctn==WEST else "E") + str(plane), layout=get_slice1(1, drctn)))
         g.add_mem_constraints(normres, normres + self.normmask + self.negate_tensor, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             g.add_mem_constraints(tnorm[drctn*2+plane], normres, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1742,7 +1760,7 @@ class VectorsToComplexMatrix(g.Component):
             for x in resmat: x.set_program_output()
             for x in resnorm: x.set_program_output()
             iop_file, json_file = compile_unit_test("vecstomatcplx")
-        runner = g.create_tsp_runner(iop_file)
+        runner = tsp.create_tsp_runner(iop_file)
         #origvecs = [[np.random.randint(-128, 128, (chunks, dim*2*2), dtype=np.int8) for _ in range(dim//2)] for _ in range(parallel)]
         origvecs = [[np.array([range(dim*2*2)]*chunks, dtype=np.int8) for i in range(dim//2)] for _ in range(parallel)]
         orignorms = [[np.full((1, dim*2*2), i, dtype=np.uint8) for i in range(1, dim//2)] for _ in range(parallel)]
@@ -1802,11 +1820,11 @@ class AdvanceGrayCode(g.Component):
             else:
                 self.counterreqs.append(lastagc.counterreqs[drctn*2+plane])
                 self.gcodereqs.append(lastagc.gcodereqs[drctn*2+plane])
-                self.allones.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allones[drctn*2+plane], name="postallones" + dirstr))
-                self.allzeros.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.allzeros[drctn*2+plane], name="postallzeros" + dirstr))
-                self.shiftleft.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.shiftleft[drctn*2+plane], name="postshiftleft" + dirstr))
-                self.gcodemasks.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.gcodemasks[drctn*2+plane], name="postgcodemask" + dirstr))
-                self.negtwo.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.negtwo[drctn*2+plane], name="postnegtwo" + dirstr))
+                self.allones.append(tensor.shared_memory_tensor(mem_tensor=lastagc.allones[drctn*2+plane], name="postallones" + dirstr))
+                self.allzeros.append(tensor.shared_memory_tensor(mem_tensor=lastagc.allzeros[drctn*2+plane], name="postallzeros" + dirstr))
+                self.shiftleft.append(tensor.shared_memory_tensor(mem_tensor=lastagc.shiftleft[drctn*2+plane], name="postshiftleft" + dirstr))
+                self.gcodemasks.append(tensor.shared_memory_tensor(mem_tensor=lastagc.gcodemasks[drctn*2+plane], name="postgcodemask" + dirstr))
+                self.negtwo.append(tensor.shared_memory_tensor(mem_tensor=lastagc.negtwo[drctn*2+plane], name="postnegtwo" + dirstr))
             if lastagc == True:
                 self.tcounter.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initcounter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
                 self.tgcode.append(g.input_tensor(shape=(2, dim*2*2), dtype=g.uint32, name="initgcode" + dirstr, storage_req=self.gcodereqs[drctn*2+plane]))
@@ -1814,8 +1832,8 @@ class AdvanceGrayCode(g.Component):
                 self.tcounter.append(g.from_data(self.origcounter, name="initcounter" + dirstr, storage_req=self.counterreqs[drctn*2+plane]))
                 self.tgcode.append(g.from_data(self.origgcode, name="initgcode" + dirstr, storage_req=self.gcodereqs[drctn*2+plane]))
             else:
-                self.tcounter.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.tcounter[drctn*2+plane], name="postinitcounter" + dirstr))
-                self.tgcode.append(tensor.create_shared_memory_tensor(memory_tensor=lastagc.tgcode[drctn*2+plane], name="postgcode" + dirstr))  
+                self.tcounter.append(tensor.shared_memory_tensor(mem_tensor=lastagc.tcounter[drctn*2+plane], name="postinitcounter" + dirstr))
+                self.tgcode.append(tensor.shared_memory_tensor(mem_tensor=lastagc.tgcode[drctn*2+plane], name="postgcode" + dirstr))  
         g.add_mem_constraints(self.tcounter + self.tgcode, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(self.allones + self.allzeros + self.gcodemasks, self.allones + self.allzeros + self.gcodemasks, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(self.shiftleft + self.gcodemasks + self.negtwo, self.shiftleft + self.gcodemasks + self.negtwo, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)               
@@ -1839,7 +1857,7 @@ class AdvanceGrayCode(g.Component):
                 ones = self.allones[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(3, drctn)])
                 low = counter[0].read(streams=g.SG4[sg4_for_hemi(2, drctn)])
                 high = counter[1].read(streams=g.SG4[sg4_for_hemi(0, drctn)])
-                shl = self.shiftleft[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(6, drctn)])
+                shl = self.shiftleft[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(6, drctn)], time=0)
                 y = g.right_shift(high, ones, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])                                
                 x = g.bitwise_or(g.left_shift(high, shl, alus=[alu_for_hemi(12, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)]),
                     g.right_shift(low, ones, alus=[alu_for_hemi(4, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)]),
@@ -1925,52 +1943,53 @@ class AdvanceGrayCode(g.Component):
         print_utils.infoc("\nAssembling model ...")
         iops = pgm_pkg.assemble()
         iop = runtime.IOProgram(iops[0])
-        device = runtime.devices[0]
-        print_utils.infoc("\nRunning on HW ...")    
-        def runnerinit():
-            device.open()
-            device.load(iop[0], unsafe_keep_entry_points=True)
-            device.load(iop[1], unsafe_keep_entry_points=True)
-            invoke([device], iop, 0, 0, None)
-        tloaddata = timeit.timeit(runnerinit, number=1)/1
-        runner = lambda: invoke([device], iop, 1, 0, None)[0][0]
-        origcounter = [agc.origcounter for _ in range(parallel)]
-        origgcode = [agc.origgcode for _ in range(parallel)]        
-        oracleres, result = [], []
-        def oracle():
-            oracleres.clear(); oracleres.append([])
-            for i in range(parallel):
-                x = np.vstack((origcounter[i][0,:] + 1, origcounter[i][1,:] + np.where(origcounter[i][0,:]==0xFFFFFFFF, np.ones((1,), dtype=np.uint32), np.zeros((1,), dtype=np.uint32))))
-                newgcode = np.vstack((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1)))
-                changegcodemask = (origgcode[i] ^ newgcode) & agc.gcodemaskarr
-                changegcode = np.where((changegcodemask[0,:] | changegcodemask[1,:]) != 0, np.ones((1,), dtype=np.int8) * -1, np.ones((1,), dtype=np.int8)).reshape(1, dim*2*2)   
-                oracleres[0].append((x, newgcode, changegcode))
-                origcounter[i], origgcode[i] = x, newgcode                
-        def actual():
-            res = runner()
-            result.clear(); result.append([])
-            for i in range(parallel):
-                result[0].append((res[counters_mt[i].name], res[gcodes_mt[i].name], res[negmulvecs[i].name]))        
-        np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
-        for i in range(1024): #first verify accuracy
-            oracle()
-            actual()
-            oracleres, result = oracleres[0], result[0]
-            if not all(all(np.all(oracleres[i][j] == result[i][j]) for i in range(parallel)) for j in range(3)):
-                print_utils.err("\nAdvance Gray Code Chain Test Failure at " + str(i))
-                print_utils.infoc(str([[(oracleres[i][j][oracleres[i][j] != result[i][j]], result[i][j][oracleres[i][j] != result[i][j]]) for i in range(parallel)] for j in range(3)]))
-                break
-        else:
-            print_utils.success("\nAdvance Gray Code Chain Test Success ...")
-                        
-        #now measure performance
-        tactual = timeit.timeit(actual, number=1)/1
-        toracle = timeit.timeit(oracle, number=1000)/1000
-        batchsize = 100000
-        tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
-        print_utils.cprint("File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
-        print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
-        device.close()
+        #device = runtime.devices[0]
+        driver = runtime.Driver()
+        device = driver.next_available_device()
+        with device:
+            print_utils.infoc("\nRunning on HW ...")    
+            def runnerinit():
+                device.load(iop[0], unsafe_keep_entry_points=True)
+                device.load(iop[1], unsafe_keep_entry_points=True)
+                invoke([device], iop, 0, 0, None)
+            tloaddata = timeit.timeit(runnerinit, number=1)/1
+            runner = lambda: invoke([device], iop, 1, 0, None)[0][0]
+            origcounter = [agc.origcounter for _ in range(parallel)]
+            origgcode = [agc.origgcode for _ in range(parallel)]        
+            oracleres, result = [], []
+            def oracle():
+                oracleres.clear(); oracleres.append([])
+                for i in range(parallel):
+                    x = np.vstack((origcounter[i][0,:] + 1, origcounter[i][1,:] + np.where(origcounter[i][0,:]==0xFFFFFFFF, np.ones((1,), dtype=np.uint32), np.zeros((1,), dtype=np.uint32))))
+                    newgcode = np.vstack((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1)))
+                    changegcodemask = (origgcode[i] ^ newgcode) & agc.gcodemaskarr
+                    changegcode = np.where((changegcodemask[0,:] | changegcodemask[1,:]) != 0, np.ones((1,), dtype=np.int8) * -1, np.ones((1,), dtype=np.int8)).reshape(1, dim*2*2)   
+                    oracleres[0].append((x, newgcode, changegcode))
+                    origcounter[i], origgcode[i] = x, newgcode                
+            def actual():
+                res = runner()
+                result.clear(); result.append([])
+                for i in range(parallel):
+                    result[0].append((res[counters_mt[i].name], res[gcodes_mt[i].name], res[negmulvecs[i].name]))        
+            np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
+            for i in range(1024): #first verify accuracy
+                oracle()
+                actual()
+                oracleres, result = oracleres[0], result[0]
+                if not all(all(np.all(oracleres[i][j] == result[i][j]) for i in range(parallel)) for j in range(3)):
+                    print_utils.err("\nAdvance Gray Code Chain Test Failure at " + str(i))
+                    print_utils.infoc(str([[(oracleres[i][j][oracleres[i][j] != result[i][j]], result[i][j][oracleres[i][j] != result[i][j]]) for i in range(parallel)] for j in range(3)]))
+                    break
+            else:
+                print_utils.success("\nAdvance Gray Code Chain Test Success ...")
+                            
+            #now measure performance
+            tactual = timeit.timeit(actual, number=1)/1
+            toracle = timeit.timeit(oracle, number=1000)/1000
+            batchsize = 100000
+            tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
+            print_utils.cprint("File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
+            print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
     
     def unit_test(chunks, dim): #verify accuracy
         with g.ProgramContext() as pc:
@@ -1981,7 +2000,7 @@ class AdvanceGrayCode(g.Component):
             for x in gcodes_mt: x.set_program_output()
             for x in negmulvecs: x.set_program_output()
             iop_file, json_file = compile_unit_test("advgraycode")
-        runner = g.create_tsp_runner(iop_file)
+        runner = tsp.create_tsp_runner(iop_file)
         origcounter = [np.random.randint(0, 1<<32, (2, dim*2*2), dtype=np.uint32)] * parallel
         origgcode = [np.array((x[0,:] ^ ((x[1,:] << 31) | (x[0,:] >> 1)), x[1,:] ^ (x[1,:] >> 1))) for x in origcounter]
         oracleres, result = [], []
@@ -2026,10 +2045,10 @@ class LoopCorrections(g.Component):
                 self.tnorm.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr, layout=get_slice1(drctn, 1, plane)))
                 self.cx_diag.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="C" + dirstr, layout=get_slice1(drctn, 43, plane)))        
             else:
-                self.tvec.append(tensor.create_shared_memory_tensor(memory_tensor=lastlc.tvec[drctn*2+plane], name="postA" + dirstr))
-                self.tmat.append(tensor.create_shared_memory_tensor(memory_tensor=lastlc.tmat[drctn*2+plane], name="postB" + dirstr))
-                self.tnorm.append(tensor.create_shared_memory_tensor(memory_tensor=lastlc.tnorm[drctn*2+plane], name="postnorm" + dirstr))
-                self.cx_diag.append(tensor.create_shared_memory_tensor(memory_tensor=lastlc.cx_diag[drctn*2+plane], name="postC" + dirstr))
+                self.tvec.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tvec[drctn*2+plane], name="postA" + dirstr))
+                self.tmat.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tmat[drctn*2+plane], name="postB" + dirstr))
+                self.tnorm.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tnorm[drctn*2+plane], name="postnorm" + dirstr))
+                self.cx_diag.append(tensor.shared_memory_tensor(mem_tensor=lastlc.cx_diag[drctn*2+plane], name="postC" + dirstr))
             g.add_mem_constraints(self.tvec + self.cx_diag, self.tvec + self.cx_diag, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(self.tmat, self.tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(self.tnorm, self.tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -2166,73 +2185,74 @@ class LoopCorrections(g.Component):
         # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".        
         #from GroqBatch_wrapper import GroqBatch_wrapper
         #GroqBatch_wrapper(iop_file=iops[0])
-        
-        results, runfunc = [None], [None]
-        def loaddata():
-            fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
-            inputs, osz = [], parallel//2//len(devices)
-            exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
-            for device in devices:
-                inputs.append({})
-                device.open()
-                device.load(iop[0], unsafe_keep_entry_points=True)
-                device.load(iop[1], unsafe_keep_entry_points=True)
-            for i in range(parallel//2):
-                exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
-                inpvec0 = num_to_bits(normals, chunks)
-                exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
-                inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
-                exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
-                inpvec1 = num_to_bits(normals, chunks)
-                exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
-                inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
-                devidx = 1 if i >= osz else 0
-                oidx = i % osz
-                inputs[devidx][tvec[oidx].name] = np.hstack((inpvec0, inpvec1))
-                inputs[devidx][tmat[oidx].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
-                inputs[devidx][cx_diag[oidx].name] = np.hstack((inpvec0, inpvec1)) #colswap
-                exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
-            inpnormvecs = [np.stack(exp_inpvecs[i*osz:(i+1)*osz]) for i in range(len(devices))]
-            invoke(devices, iop, 0, 0, inputs)
-            @jit(nopython=True)
-            def bits_to_vector(bits, inpvecnorm, norm):
-                l = []
-                for i in range(osz):
-                    normed = renormalize_doubles(bits_to_num(bits[i], 7), inpvecnorm[i] - norm[i].reshape(dim*2*2).astype(np.int32))
-                    l.append(vector_complex_to_real(normed[:dim*2])); l.append(vector_complex_to_real(normed[dim*2:]))
-                return l
-            def actual():
-                res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
-                lastouts[0] = res
-                newres = []                
-                for i in range(len(devices)):
-                    #the results come back truncating the lower 7*(chunks-1) bits
-                    newres.extend(bits_to_vector(res[i][result_mt.name], inpnormvecs[i], res[i][resnorm.name]))
-                results[0] = newres
-            runfunc[0] = actual
-        tloaddata = timeit.timeit(loaddata, number=1)/1
-        actual = runfunc[0]
-        buffers, lastouts = [None], [None] #* max_workers
-        tactual = timeit.timeit(actual, number=1)/1; oracle()
-        def actualbatch():
-            for _ in range(batchsize): actual()
-        perf_pro(actualbatch)
-        for _ in range(batchsize): oracle()
-        tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
-        print_utils.cprint(("Dual" if dual else "Single") + " Groq Chip Parallelism: " + str(parallel) + " Double precision " + ("Complex" if useCplx else "Real") + " (" + str(dim) + ") Vector multiplied by (" + str(dim) + "x" + str(dim) + ") Matrix raised to power " + str(matpow) + " Oracle intermediate precision: " + ("LongDouble" if longDoubleOracle else "Double") + " Program File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
-        print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
-        oracleres, results = oracleres[0], results[0]
-        for i in range(parallel):
-            print_utils.infoc("\nComparing results with oracle ...")
-            print(oracleres[i][0], results[i][0])
-            max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
-            if max_atol <= 0.001:
-                print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
-            else:
-                print_utils.err(
-                    f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
-                )
-        for device in devices: device.close()
+        import contextlib
+        with ExitStack() as exitstack:
+            devices = [exitstack.enter_context(device) for device in devices]
+            results, runfunc = [None], [None]
+            def loaddata():
+                fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
+                inputs, osz = [], parallel//2//len(devices)
+                exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
+                for device in devices:
+                    inputs.append({})
+                    device.open()
+                    device.load(iop[0], unsafe_keep_entry_points=True)
+                    device.load(iop[1], unsafe_keep_entry_points=True)
+                for i in range(parallel//2):
+                    exp_inpvec0, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2]), 0, fractionbits)
+                    inpvec0 = num_to_bits(normals, chunks)
+                    exp_inpmat0, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                    inpmat0 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+                    exp_inpvec1, normals = normalize_doubles(vector_real_to_complex(originpvec[i*2+1]), 0, fractionbits)
+                    inpvec1 = num_to_bits(normals, chunks)
+                    exp_inpmat1, normals = normalize_doubles(matrix_real_to_complex(originpmat[i*2+1]), None, fractionbits) #dimension 1 will cause chaining issues without shift corrections
+                    inpmat1 = num_to_bits(normals, chunks).reshape((chunks, dim*2, dim*2))
+                    devidx = 1 if i >= osz else 0
+                    oidx = i % osz
+                    inputs[devidx][tvec[oidx].name] = np.hstack((inpvec0, inpvec1))
+                    inputs[devidx][tmat[oidx].name] = np.concatenate((np.concatenate((inpmat0, Z), axis=2), np.concatenate((Z, inpmat1), axis=2)), axis=1).reshape((chunks*dim*2*2, dim*2*2))
+                    inputs[devidx][cx_diag[oidx].name] = np.hstack((inpvec0, inpvec1)) #colswap
+                    exp_inpvecs.append(np.concatenate((2*fractionbits-63 - 7 - exp_inpvec0 - np.full((dim*2), exp_inpmat0), 2*fractionbits-63 - 7 - exp_inpvec1 - np.full((dim*2), exp_inpmat1))))
+                inpnormvecs = [np.stack(exp_inpvecs[i*osz:(i+1)*osz]) for i in range(len(devices))]
+                invoke(devices, iop, 0, 0, inputs)
+                @jit(nopython=True)
+                def bits_to_vector(bits, inpvecnorm, norm):
+                    l = []
+                    for i in range(osz):
+                        normed = renormalize_doubles(bits_to_num(bits[i], 7), inpvecnorm[i] - norm[i].reshape(dim*2*2).astype(np.int32))
+                        l.append(vector_complex_to_real(normed[:dim*2])); l.append(vector_complex_to_real(normed[dim*2:]))
+                    return l
+                def actual():
+                    res, buffers[0] = invoke(devices, iop, 1, 0, None, lastouts[0], buffers[0])
+                    lastouts[0] = res
+                    newres = []                
+                    for i in range(len(devices)):
+                        #the results come back truncating the lower 7*(chunks-1) bits
+                        newres.extend(bits_to_vector(res[i][result_mt.name], inpnormvecs[i], res[i][resnorm.name]))
+                    results[0] = newres
+                runfunc[0] = actual
+            tloaddata = timeit.timeit(loaddata, number=1)/1
+            actual = runfunc[0]
+            buffers, lastouts = [None], [None] #* max_workers
+            tactual = timeit.timeit(actual, number=1)/1; oracle()
+            def actualbatch():
+                for _ in range(batchsize): actual()
+            perf_pro(actualbatch)
+            for _ in range(batchsize): oracle()
+            tactualbatch = timeit.timeit(actual, setup='gc.enable()', number=batchsize)/batchsize
+            print_utils.cprint(("Dual" if dual else "Single") + " Groq Chip Parallelism: " + str(parallel) + " Double precision " + ("Complex" if useCplx else "Real") + " (" + str(dim) + ") Vector multiplied by (" + str(dim) + "x" + str(dim) + ") Matrix raised to power " + str(matpow) + " Oracle intermediate precision: " + ("LongDouble" if longDoubleOracle else "Double") + " Program File Size for " + iops[0] + ": " + str(os.path.getsize(iops[0])), "")
+            print_utils.cprint("CPU Time: " + str(toracle) + " Groq Load Time: " + str(tloaddata) + " Groq Init Time: " + str(tactual) + " Groq Time Avg. " + str(batchsize) + " Batch (Speed-up " + str(toracle/tactualbatch) + "x): " + str(tactualbatch), "")
+            oracleres, results = oracleres[0], results[0]
+            for i in range(parallel):
+                print_utils.infoc("\nComparing results with oracle ...")
+                print(oracleres[i][0], results[i][0])
+                max_atol = max(abs(oracleres[i].reshape(-1) - results[i].reshape(-1)))
+                if max_atol <= 0.001:
+                    print_utils.success(f"Test PASSED with a max tolerance of {max_atol}")
+                else:
+                    print_utils.err(
+                        f"Test FAILED with a max tolerance of {max_atol} (should be <= 0.001)"
+                    )
     def unit_test(chunks, dim):
         import timeit
         loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, 1 #dim//2-1
@@ -2242,7 +2262,7 @@ class LoopCorrections(g.Component):
             parallel = len(tvec)*2
             result_mt, resnorm = lc.build()
             iop_file, json_file = compile_unit_test("lc")
-        runner = g.create_tsp_runner(iop_file)
+        runner = tsp.create_tsp_runner(iop_file)
         if loopCorrection:
             if useCplx:
                 mat = unitary_group.rvs(dim)
@@ -2405,7 +2425,7 @@ def tf_mm(chunks, dim):
     assert np.all(res == ort_sess.run(None, {'tvec': vecdata, 'tmat': matdata})[0])
     os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --GroqView")
     os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
-    runner = g.create_tsp_runner(model_iop)
+    runner = tsp.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})['Identity:0'])
 def pt_mm(chunks, dim):
     import torch
@@ -2432,9 +2452,10 @@ def pt_mm(chunks, dim):
     assert np.all(res == ort_sess.run(None, {'tvec': vecdata, 'tmat': matdata})[0])
     os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --GroqView")
     os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
-    runner = g.create_tsp_runner(model_iop)
+    runner = tsp.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})["res"])
 def main():
+    #dump_groq_doc()
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
@@ -2545,7 +2566,7 @@ def main():
     print_utils.infoc("\nRunning on HW ...")
     np.set_printoptions(formatter={'int':hex}, threshold=sys.maxsize, floatmode='unique')
     # Create TSP runner and pass input dictionary of "tensor name" : "tensor data".
-    runner = g.create_tsp_runner(iop_file)
+    runner = tsp.create_tsp_runner(iop_file)
     #inputs = {t1.name: inp1, t2.name: inp2}
     results = [None]
     def actual():
