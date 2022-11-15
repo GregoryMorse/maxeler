@@ -1,0 +1,127 @@
+package permanenttest;
+
+import com.maxeler.platform.max5.manager.ImplementationStrategy;
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
+import com.maxeler.photon.configuration.PhotonKernelConfiguration;
+import com.maxeler.conf.base.MaxCompilerBuildConf;
+
+import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
+import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Arrays;
+import java.util.stream.Collectors;
+import java.lang.reflect.Field;
+
+class PermanentTestEngineParameters extends EngineParameters {
+    public PermanentTestEngineParameters(String[] args) {
+        super(args);
+    }
+    protected void declarations() {
+        declareParam("inpX", EngineParameters.DataType.INT, 64);
+        declareParam("inpY", EngineParameters.DataType.INT, 64);
+        declareParam("strategy", EngineParameters.DataType.INT, 1);
+        declareParam("frequency", EngineParameters.DataType.INT, 330);
+        declareParam("useFloat", EngineParameters.DataType.BOOL, false);
+        declareParam("isComplex", EngineParameters.DataType.BOOL, false);
+        declareParam("addSubMul", EngineParameters.DataType.INT, 2);
+    }
+    public int getInpX() {
+        return getParam("inpX");
+    }
+    public int getInpY() {
+        return getParam("inpY");
+    }
+    public int getStrategy() {
+        return getParam("strategy");
+    }
+    public boolean getUseFloat() {
+        return getParam("useFloat");
+    }
+    public boolean getIsComplex() {
+        return getParam("isComplex");
+    }
+    public int getAddSubMul() {
+        return getParam("addSubMul");
+    }
+    public boolean isSim() {
+        return getTarget() != EngineParameters.Target.DFE;
+    }
+    public int getFrequency() {
+        return getParam("frequency");
+    }
+}
+
+
+public class PermanentTestManager extends XilinxAlveoU250Manager {
+
+	public static final String kernelName = "PermanentTestKernel";
+    public class XilinxAlveoU250BoardCustomMux extends XilinxAlveoU250Board
+    {
+        public XilinxAlveoU250BoardCustomMux()
+        {
+            super(XilinxAlveoU250Board.U250BoardCapabilities.XILINX_ALVEO_U250);
+        }
+        public int getMaxMuxSelWidth() {
+            return 6;
+        }    
+    }
+    
+	public PermanentTestManager(PermanentTestEngineParameters params) {
+		super(params);
+        getBuildManager().setPlatform(new XilinxAlveoU250BoardCustomMux());
+        getBuildManager().setParameter(MaxCompilerBuildConf.build.clean_build_directory, false);
+        //System.out.println(getCurrentKernelConfig().debug.getHWHierarchyMode()); //default is UNSET 
+        getCurrentKernelConfig().debug.setHWHierarchyMode(KernelConfiguration.DebugOptions.HWHierarchyMode.HARD);
+        //getCurrentKernelConfig().debug.setHWHierarchyMode(KernelConfiguration.DebugOptions.HWHierarchyMode.SOFT);
+        getCurrentKernelConfig().debug.setEnabledDebugIOControlRegs(false); //default is true
+        getCurrentKernelConfig().optimization.setCEPipelining(1);
+        getCurrentKernelConfig().optimization.setUseGlobalClockBuffer(true);
+        //Utility.getLowJitterClockFrequency(12, this);
+        //getCurrentKernelConfig().m_configuration.setAddChainMaxPreadderFanout(1); //default is 1
+        List<Field> find = Arrays.stream(KernelConfiguration.class.getDeclaredFields()).filter(f -> f.getType().equals(PhotonKernelConfiguration.class)).collect(Collectors.toCollection(ArrayList::new));
+        try {
+            Field fld = getCurrentKernelConfig().getClass().getDeclaredField(find.get(0).getName());
+            fld.setAccessible(true);
+            ((PhotonKernelConfiguration)fld.get(getCurrentKernelConfig())).setAddChainMaxPreadderFanout(16);
+            fld.setAccessible(false);
+        } catch (NoSuchFieldException|IllegalAccessException e) {
+            throw new IllegalArgumentException("Toolchain field not found or accessible");
+        }
+
+
+        setDefaultStreamClockFrequency(params.getFrequency());
+		final KernelBlock kernel = addKernel(new PermanentTestKernel(makeKernelParameters(kernelName), params.getInpX(), params.getInpY(), params.getStrategy(), params.getUseFloat(), params.getIsComplex(), params.getAddSubMul()));
+        kernel.setClock(generateStaticClock("MainClock", params.getFrequency()));
+		final DFELink inp1 = addStreamFromCPU("inp1");
+		kernel.getInput("inp1") <== inp1;
+		final DFELink inp2 = addStreamFromCPU("inp2");
+		kernel.getInput("inp2") <== inp2;
+
+		final DFELink outp = addStreamToCPU("outp");
+		outp <== kernel.getOutput("outp");
+        //Utility.printKernelConfigurationOptimizationDefaults(this);
+        //System.out.println(getPhotonPlatform());
+        addMaxFileConstant("FREQ", params.getFrequency());
+        addMaxFileConstant("INPXBITS", params.getInpX());
+        addMaxFileConstant("INPYBITS", params.getInpY());
+        addMaxFileConstant("USEFLOAT", params.getUseFloat() ? 1 : 0);
+        addMaxFileConstant("ISCOMPLEX", params.getIsComplex() ? 1 : 0);
+        addMaxFileConstant("ADDSUBMUL", params.getAddSubMul());
+	}
+
+	public static void main(final String[] argv) {
+        final PermanentTestEngineParameters params = new PermanentTestEngineParameters(argv);
+		final PermanentTestManager manager = new PermanentTestManager(params);
+        manager.getBuildConfig().setSynthesisStrategy(Utility.getHighPerfSynthStrategy());
+        manager.getBuildConfig().setImplementationStrategies(new ImplementationStrategy[] { Utility.chooseImplementationStrategies(true, false)[4] });
+        
+		manager.build();
+	}
+
+}
