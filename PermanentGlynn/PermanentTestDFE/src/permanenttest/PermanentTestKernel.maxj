@@ -1,0 +1,107 @@
+package permanenttest;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.Kernel;
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+
+public class PermanentTestKernel extends Kernel {
+
+	public PermanentTestKernel(final KernelParameters parameters, int inpX, int inpY, int strategy, boolean useFloat, boolean isComplex, int addSubMul) {
+		super(parameters);
+
+		// Input
+        boolean signedX = inpX < 0, signedY = inpY < 0;
+        if (inpX < 0) inpX = -inpX;
+        if (inpY < 0) inpY = -inpY;
+        int outbits = useFloat ? Math.max(inpX, inpY) : (addSubMul == 2 ? (inpX + inpY) : inpX + inpY + 1);
+        int inpAdjX = (inpX + 128-1) / 128 * 128;
+        int inpAdjY = (inpY + 128-1) / 128 * 128;
+        int outpAdj = (outbits + 128-1) / 128 * 128;
+        int mantSizeX = 0, mantSizeY = 0;
+        if (useFloat) { //32 for float/single, 64 for double, 79 for long double which requires adaptation for the non-implicit bit
+            mantSizeX = inpX - (inpX <= 16 ? 5 : (inpX <= 32 ? 8 : (inpX <= 64 ? 11 : (inpX <= 128 ? 15 : 19))));
+            mantSizeY = inpY - (inpY <= 16 ? 5 : (inpY <= 32 ? 8 : (inpY <= 64 ? 11 : (inpY <= 128 ? 15 : 19))));
+        }
+        DFEType xType = useFloat ? dfeFloat(inpX-mantSizeX, mantSizeX) : (signedX ? dfeInt(inpX) : dfeUInt(inpX));
+        DFEType yType = useFloat ? dfeFloat(inpY-mantSizeY, mantSizeY) : (signedY ? dfeInt(inpY) : dfeUInt(inpY)); 
+        DFEVar outp = null;
+        if (isComplex) {
+            DFEComplexType xCplxType = new DFEComplexType(xType);
+            DFEComplexType yCplxType = new DFEComplexType(yType);
+            inpAdjX *= 2; inpAdjY *= 2;
+            final DFEComplex inp1 = io.input("inp1", dfeUInt(inpAdjX)).slice(0, xCplxType.getTotalBits()).reinterpret(xCplxType);
+            final DFEComplex inp2 = io.input("inp2", dfeUInt(inpAdjY)).slice(0, yCplxType.getTotalBits()).reinterpret(yCplxType);
+            DFEComplex outpCplx = null;
+            if (addSubMul == 2) {
+                if (strategy == 0) {
+                    outpCplx = inp1 * inp2;
+                } else if (strategy == 1) {
+                    outpCplx = Utility.doMult(inp1, inp2, outbits, true, useFloat, this);
+                }
+            } else {
+                if (strategy == 0) {
+                    outpCplx = addSubMul == 1 ? inp1 - inp2 : inp1 + inp2;
+                } else if (strategy == 1) {
+                    if (useFloat) {
+                        outpCplx = Utility.doFloatAdd(inp1, inp2, addSubMul == 1, this);  
+                    } else {
+                        outpCplx = DFEComplexType.newInstance(this, Utility.addExact(inp1.getReal(), inp2.getReal(), addSubMul == 1, this),
+                            Utility.addExact(inp1.getImaginary(), inp2.getImaginary(), addSubMul == 1, this));
+                    }
+                }
+            }
+            outp = (useFloat ?
+                DFEComplexType.newInstance(this,
+                    outpCplx.getReal().cat(constant.zero(dfeUInt(outpAdj - outpCplx.getType().getRealType().getTotalBits()))).reinterpret(dfeRawBits(outpAdj)),
+                    outpCplx.getImaginary().cat(constant.zero(dfeUInt(outpAdj - outpCplx.getType().getImaginaryType().getTotalBits()))).reinterpret(dfeRawBits(outpAdj))) :
+                outpCplx.cast(new DFEComplexType(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj)))).reinterpret(dfeRawBits(outpAdj*2));
+        } else {
+    		final DFEVar inp1 = io.input("inp1", dfeUInt(inpAdjX)).slice(0, xType.getTotalBits()).reinterpret(xType);
+            final DFEVar inp2 = io.input("inp2", dfeUInt(inpAdjY)).slice(0, yType.getTotalBits()).reinterpret(yType);
+            if (addSubMul == 2) {
+                if (useFloat) {
+                    if (strategy == 0) {
+                        outp = inp1 * inp2; 
+                    } else if (strategy == 1) {
+                        outp = Utility.doFloatMult(inp1, inp2, this);
+                    }
+                } else {
+                    if (strategy == -1) {
+                        outp = inp1.cat(inp2).cast(signedX || signedY ? dfeInt(outbits) : dfeUInt(outbits)); //baseline calculation
+                    } else if (strategy == 0) {
+                        outp = Utility.mulExact(inp1, inp2, outbits, outbits, this);
+                    } else if (strategy == 1) {
+                        outp = Utility.mulKaratsubaRectangularExact(inp1, inp2, outbits, outbits, false, this);
+                    } else if (strategy == 2) {
+                        optimization.pushFanoutLimit(Integer.MAX_VALUE);
+                        outp = Utility.mulKaratsubaRectangularExact(inp1, inp2, outbits, outbits, true, this);
+                        optimization.popFanoutLimit();                
+                    }
+                }
+            } else {
+                if (useFloat) {
+                    if (strategy == 0) {
+                        outp = addSubMul == 1 ? inp1 - inp2 : inp1 + inp2;
+                    } else if (strategy == 1) {
+                        outp = Utility.doFloatAdd(inp1, inp2, addSubMul == 1, this);
+                    }
+                } else {
+                    if (strategy == 0) {
+                        optimization.pushEnableBitGrowth(true);
+                        outp = addSubMul == 1 ? inp1 - inp2 : inp1 + inp2;
+                        optimization.popEnableBitGrowth();
+                    } else if (strategy == 1) {
+                        Utility.addExact(inp1, inp2, addSubMul == 1, this);
+                    }
+                }
+            }
+    		// Output
+            outp = useFloat ? outp.cat(constant.zero(dfeUInt(outpAdj - outp.getType().getTotalBits()))) : outp.cast(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj));
+        }
+		io.output("outp", outp, outp.getType());
+	}
+
+}
