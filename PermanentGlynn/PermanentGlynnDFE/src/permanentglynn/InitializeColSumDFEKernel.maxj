@@ -81,7 +81,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar notNeedData = kernNum == 0 ? null : colsm1 < (kernNum * maxdim / initKerns);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
         DFEVar initNeedData = isInit & needData;
-        if (oneRowType.getTotalBits() > 32*32) initNeedData = optimization.pipeline(initNeedData); //plan for high fanout
+        if (oneRowType.getTotalBits() > 32*32) initNeedData = optimization.limitFanout(initNeedData, 32); //plan for high fanout
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, initNeedData);
 
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), gcodeRows);
