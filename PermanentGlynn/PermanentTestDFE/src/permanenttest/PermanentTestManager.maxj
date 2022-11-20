@@ -79,6 +79,7 @@ public class PermanentTestManager extends XilinxAlveoU250Manager {
         //System.out.println(getCurrentKernelConfig().debug.getHWHierarchyMode()); //default is UNSET 
         getCurrentKernelConfig().debug.setHWHierarchyMode(KernelConfiguration.DebugOptions.HWHierarchyMode.HARD);
         //getCurrentKernelConfig().debug.setHWHierarchyMode(KernelConfiguration.DebugOptions.HWHierarchyMode.SOFT);
+        getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
         getCurrentKernelConfig().debug.setEnabledDebugIOControlRegs(false); //default is true
         getCurrentKernelConfig().optimization.setCEPipelining(1);
         getCurrentKernelConfig().optimization.setUseGlobalClockBuffer(true);
