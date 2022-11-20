@@ -81,6 +81,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar notNeedData = kernNum == 0 ? null : colsm1 < (kernNum * maxdim / initKerns);
         DFEVector < DFEVar > oneRow = oneRowType.newInstance(this);
         DFEVar initNeedData = isInit & needData;
+        if (oneRowType.getTotalBits() > 32*32) initNeedData = optimization.pipeline(initNeedData); //plan for high fanout
         oneRow <== io.input("mappedInputMtx_Rows", oneRowType, initNeedData);
 
         DFEVectorType<DFEVar> initOneHotType = new DFEVectorType<DFEVar>(dfeBool(), gcodeRows);
@@ -112,7 +113,7 @@ public class InitializeColSumDFEKernel extends Kernel {
                 if ((j % division) == 0) oneHotSel = optimization.pipeline(oneHot);
                 fixRow[j] <== control.oneHotMux(oneHotSel, new DFEVar[] { initChoices.get(0)[j], initChoices.get(1)[j], initChoices.get(2)[j] });
             }
-            oneRow = fixRow;            
+            oneRow = fixRow;
         } else {
             DFEVector < DFEVar > fixRow = oneRowType.newInstance(this);
             for (int j = 0; j < 2 * cols; j++) {
@@ -140,7 +141,9 @@ public class InitializeColSumDFEKernel extends Kernel {
             int division = (cols * 2 + 32-1) / 32; //ceiling gives optimal division, the remainder portion could be further divided but not necessary
             for (int j = 0; j < cols * 2; j++) {
                 if ((j % division) == 0) sel = optimization.pipeline(initOneHot[i]);
-                allRows[i][j] <== sel ? (i < gcodeRows/2 ? onerow0 : onerow1)[j] : stream.offset(allRows[i][j], -1); 
+                optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.TREE);
+                allRows[i][j] <== sel ? (i < gcodeRows/2 ? onerow0 : onerow1)[j] : stream.offset(allRows[i][j], -1);
+                optimization.popFanoutLimit(); 
             }
         }
         
@@ -152,21 +155,19 @@ public class InitializeColSumDFEKernel extends Kernel {
         //DFEVector < DFEVar > rowToAdd = Utility.oneHotMuxVector32to64(grayCounter.bitDiffMask, allRows.getElementsAsList(), 3, this);
         
         DFEVector < DFEVar > rowToAdd = oneRowType.newInstance(this);
-        DFEVar bigMuxSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : grayCounter.changePosition, 2*cols*4, 32, this);
+        DFEVar bigMuxPreSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : grayCounter.changePosition, 2*cols, 32, this);
+        DFEVar bigMuxSels[] = new DFEVar[2*cols];
+        for (int j = 0; j < 2*cols; j++) {
+            bigMuxSels[j] = optimization.pipeline(bigMuxPreSels[j/32]);
+        }
         List<DFEVector<DFEVar>> rowList = new ArrayList<>();
         rowList.addAll(allRows.getElementsAsList());
         rowList.add(oneRow);
         DFEVar changePosSel = null;
         for (int j = 0; j < 2 * cols; j++) {
             final int finalj = j;
-            DFEVar rowChunks = null;
-            for (int k = 0; k < 4; k++) {
-                final int finalk = k;
-                changePosSel = optimization.pipeline(bigMuxSels[(j*4+k)/32]);
-                DFEVar newChunk = Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj].slice(finalk*16, 16)).collect(Collectors.toList()), 4, this);
-                rowChunks = k == 0 ? newChunk : newChunk.cat(rowChunks);
-            }
-            rowToAdd[j] <== rowChunks.reinterpret(dataTypeFix64);
+            changePosSel = optimization.pipeline(bigMuxSels[j]);
+            rowToAdd[j] <== Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj]).collect(Collectors.toList()), 4, this);
         }
 
         DFEVector < DFEVar > negRowToAdd = -rowToAdd;
