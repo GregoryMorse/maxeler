@@ -1,6 +1,8 @@
 package permanentglynn;
 
 import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
+import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
+
 import com.maxeler.maxcompiler.v2.build.EngineParameters;
 import com.maxeler.platform.max5.manager.BuildConfig;
 
@@ -25,7 +27,6 @@ import com.maxeler.maxdc.BuildPass;
 import com.maxeler.maxdc.Toolchain;
 import com.maxeler.maxdc.proc_management.ProcResult;
 import com.maxeler.maxdc.proc_management.ProcSpec;
-import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
 import com.maxeler.platform.max5.toolchain.cache.VivadoCacheManager;
 import com.maxeler.platform.max5.toolchain.build.VivadoBuildConfiguration;
 import com.maxeler.platform.max5.toolchain.build.VivadoImplementationStrategy;
@@ -49,7 +50,7 @@ class PermanentGlynnEngineParameters extends EngineParameters {
         declareParam("dual", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("useFloat", EngineParameters.DataType.BOOL, Boolean.FALSE);
         declareParam("frequency", EngineParameters.DataType.INT, 330);
-        declareParam("maxDim", EngineParameters.DataType.INT, 40);        
+        declareParam("maxDim", EngineParameters.DataType.INT, 40);
     }
     public boolean dual() {
         return getParam("dual");
@@ -69,6 +70,17 @@ class PermanentGlynnEngineParameters extends EngineParameters {
 }
 
 public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager implements PermanentGlynnDFEManager {
+    public class XilinxAlveoU250BoardCustomMux extends XilinxAlveoU250Board
+    {
+        public XilinxAlveoU250BoardCustomMux()
+        {
+            super(XilinxAlveoU250Board.U250BoardCapabilities.XILINX_ALVEO_U250);
+        }
+        public int getMaxMuxSelWidth() {
+            return 6;
+        }    
+    }
+    
     //cd scratch/xilinx_vivado/implementation/<impname>/xilinx_vivado/place/
     //vivado -mode tcl
     //open_checkpoint com_maxeler_platform_max5_board_XilinxAlveoU250Top_post_place.dcp
@@ -168,8 +180,11 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
                         if (lines.get(i).equals("set_param route.enableHoldExpnBailout 1")) {
-                            pw.println("set preRoutes [get_nets -of [get_timing_paths -max_paths 25000 -slack_lesser_than 0]]");
-                            pw.println("lappend preRoutes [get_nets -of [get_timing_paths -hold -max_paths 25000 -slack_lesser_than 0]]");
+                            //pw.println("set preRoutes [get_nets -of [get_timing_paths -max_paths 25000 -slack_lesser_than 0]]");
+                            //pw.println("lappend preRoutes [get_nets -of [get_timing_paths -hold -max_paths 25000 -slack_lesser_than 0]]");
+                            pw.println("set preRoutes [get_nets -hier clk_nobuf]");
+                            pw.println("lappend preRoutes [get_nets -hier -regexp .*photonstreamingblockadapterwithsm1_q]");
+                            //pw.println("lappend preRoutes [get_nets -of_objects [get_cells -hier -regexp .*portablecomponentsupplier] -filter {BUS_NAME==\"E\"}]");
                             pw.println("route_design -nets [get_nets $preRoutes] -auto_delay");
                             pw.println("set_param route.enableGlobalHoldIter 1");
                         } else if (lines.get(i).startsWith("route_design -directive")) {
@@ -277,6 +292,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
 
     public PermanentGlynnDFEManagerAlveoU250(PermanentGlynnEngineParameters params) {
         super(params);
+        getBuildManager().setPlatform(new XilinxAlveoU250BoardCustomMux());
         setDefaultStreamClockFrequency(params.getFrequency());
         //getManagerConfig().setStreamClockFrequencyMHz(params.getFrequency()); //setDefaultStreamClockFrequency
         getManagerConfig().setDefaultStreamFifoDepth(512); //64 minimum, 512 is default, with 300/320MHz and 4 registers per crossing, the minimum moves to 128, might cause stalling if too low
@@ -298,7 +314,7 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
         conf.setSynthesisStrategy(Utility.getHighPerfSynthStrategy()); //SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH);
 
         //Inspect output timing scores and rank from best to worst
-        conf.setImplementationStrategies(Utility.chooseImplementationStrategies(false, isProbe));
+        conf.setImplementationStrategies(Utility.chooseImplementationStrategies(true, isProbe));
         conf.setParallelism(5);
 
         manager.createSlicInterface(PermanentGlynnDFEManager.interfaceDefault(params.dual(), params.isSim(), params.useFloat(), params.getMaxDim()));
