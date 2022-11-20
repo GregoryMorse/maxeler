@@ -1,12 +1,14 @@
 package permanentglynn;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.TreeSet;
 import java.util.Iterator;
 import java.util.function.BiFunction;
 import java.math.BigInteger;
@@ -17,6 +19,10 @@ import com.maxeler.platform.max5.manager.XilinxAlveoU250Manager;
 import com.maxeler.platform.max5.manager.BuildConfig;
 import com.maxeler.platform.max5.manager.ImplementationStrategy;
 import com.maxeler.platform.max5.manager.SynthesisStrategy;
+import com.maxeler.platform.max5.toolchain.VivadoClockDef;
+import com.maxeler.platform.max5.toolchain.MmcmE3Calc;
+import com.maxeler.platform.max5.board.VivadoMaxelerOsPlatform;
+import com.maxeler.platform.max5.board.XilinxAlveoU250Board;
 
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerKernelBase;
 import com.maxeler.maxcompiler.v2.managers.custom.api.ManagerRouting;
@@ -86,6 +92,39 @@ public class Utility {
         int r = 0;
         while ((i >>= 1) != 0) r++;
         return r + 1;
+    }
+    //Alveo U250: MmcmFInMax, MmcmFInMin, MmcmFOutMax, MmcmFOutMin, MmcmFVcoMax, MmcmFVcoMin, MmcmFVcoMax, MmcmFVcoMin - SPEED_2L("SPEED_2L", 3, "2L", 933.0, 10.0, 725.0, 6.25, 1600.0, 800.0, 500.0, 10.0),
+    public static TreeSet<Double> getLowJitterClockFrequency(int scale, XilinxAlveoU250Manager base)
+    {
+        double minFreq = ((XilinxAlveoU250Board)base.getBuildManager().getPlatform()).getBoardCapabilities().getFpga().getMmcmFOutMin(); //UltrascalePlusPart.FIGD2104
+        double maxFreq = ((XilinxAlveoU250Board)base.getBuildManager().getPlatform()).getBoardCapabilities().getFpga().getMmcmFOutMax();
+        double mmcmVcoMax = ((XilinxAlveoU250Board)base.getBuildManager().getPlatform()).getBoardCapabilities().getFpga().getMmcmFVcoMax();
+        int minRange = (int)(minFreq * scale), maxRange = (int)(maxFreq * scale);
+        TreeSet<Double> set = new TreeSet<>();
+        LinkedList<Pair<Double, Double>> scores = new LinkedList<>();
+        ArrayList<VivadoClockDef> list = new ArrayList<>();
+        VivadoMaxelerOsPlatform platform = VivadoMaxelerOsPlatform.get(base.getBuildManager());
+        VivadoClockDef defClock = new VivadoClockDef((float)platform.getStreamClockGeneratorInputFrequency());
+        for (int i = minRange; i < maxRange; i++) {
+            list.clear(); 
+            double freq = (double)i / (double)scale;
+            VivadoClockDef targetClockDef = new VivadoClockDef((float)freq);
+            list.add(targetClockDef);
+            int[] divs = null;
+            try {
+                MmcmE3Calc calc = new MmcmE3Calc(base.getBuildManager(), platform.getFPGAPart(), defClock, list);
+                divs = calc.getClkOutDivide();
+                double score = (calc.getDivClkDivide() * divs[0] + calc.getClkFbMult() * mmcmVcoMax / calc.getVcoFreq());
+                if (scores.size() >= 10 * scale) scores.remove();
+                scores.add(new Pair<Double, Double>(freq, score));
+                //System.out.println(divs[0] + " " + calc.getDivClkDivide() + " " + calc.getClkFbMult() + " " + calc.getVcoFreq() + " " + calc.getClkOutFreq()[0] + " " + freq + " " + score); 
+            } catch (com.maxeler.maxdc.MaxDCException e) { continue; }
+            if (scores.size() == 10 * scale) {
+                set.add(scores.stream().min((x, y) -> x.second == y.second ? 0 : (x.second < y.second ? -1 : 1)).get().first); 
+            }
+        }
+        System.out.println(set);
+        return set;
     }
     
     public static char[] charAdapter(Character[] l)
@@ -695,7 +734,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     public static int getIntSplits(DFEFix aType, int bits, int signbits, KernelBase<?> base)
     {
         int num = aType.getSignMode() == SignMode.UNSIGNED ? (aType.getTotalBits()+bits-1)/bits : 1+(aType.getTotalBits()-signbits+bits-1)/bits;
-        if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && ((aType.getTotalBits()-signbits)%bits == 1)) num--; //cannot have sign bit isolated
+        if (aType.getSignMode() == SignMode.TWOSCOMPLEMENT && ((aType.getTotalBits()-signbits)%bits == 1) && bits == signbits) num--; //cannot have sign bit isolated
         return num;
     }
     public static DFEVar[] splitInt(DFEVar a, int bits, int signbits, KernelBase<?> base)
@@ -754,8 +793,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     public static int getMulOutpBits(DFEFix aType, DFEFix bType) { //actual output bits, save one sign bit on 2 argument signed multiplication
         if (aType.getTotalBits() == 1) return bType.getTotalBits();
         if (bType.getTotalBits() == 1) return aType.getTotalBits();
-        return aType.getTotalBits() + bType.getTotalBits() -
-            ((aType.getSignMode() == SignMode.TWOSCOMPLEMENT && bType.getSignMode() == SignMode.TWOSCOMPLEMENT) ? 1 : 0);
+        return aType.getTotalBits() + bType.getTotalBits(); //the smallest signed times smallest signed is a special case making no optimization possible 
+            //- ((aType.getSignMode() == SignMode.TWOSCOMPLEMENT && bType.getSignMode() == SignMode.TWOSCOMPLEMENT) ? 1 : 0);
     }
     public static void latencyDump(DFEVar a, DFEVar b, KernelBase<?> base)
     {
@@ -914,7 +953,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 extraProdMap.put(o, right.get(0) ? left : base.constant.zero(KernelBase.dfeFixOffset(left.getType().getTotalBits(), 0, ((DFEFix)left.getType()).getSignMode())));
                 right = right.slice(1, DSP_Y).reinterpret(KernelBase.dfeInt(DSP_Y));
             }
-            if (!(getMulInpBits((DFEFix)left.getType()) <= DSP_X && getMulInpBits((DFEFix)right.getType()) <= DSP_Y)) throw new IllegalArgumentException("Size: " + aType.getTotalBits() + " " + bType.getTotalBits());
+            if (!(getMulInpBits((DFEFix)left.getType()) <= DSP_X && getMulInpBits((DFEFix)right.getType()) <= DSP_Y)) throw new IllegalArgumentException("Size: " + aType.getTotalBits() + " " + bType.getTotalBits() + " " + left.getType() + " " + right.getType());
             if (left.getType().getTotalBits() == 1) { //must be unsigned...
                 if (((DFEFix)left.getType()).getSignMode() != SignMode.UNSIGNED) throw new IllegalArgumentException();
                 prodMap.put(o, left ? right : base.constant.zero(KernelBase.dfeFixOffset(right.getType().getTotalBits(), 0, ((DFEFix)right.getType()).getSignMode())));
@@ -1766,8 +1805,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEComplex doFloatAdd(DFEComplex n1, DFEComplex n2, boolean isSub, KernelBase<?> base)
     {
-        return DFEComplexType.newInstance(base, doFloatAdd(n1.getReal(), n2.getReal(), false, base),
-            doFloatAdd(n1.getImaginary(), n2.getImaginary(), false, base));
+        return DFEComplexType.newInstance(base, doFloatAdd(n1.getReal(), n2.getReal(), isSub, base),
+            doFloatAdd(n1.getImaginary(), n2.getImaginary(), isSub, base));
     }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
@@ -2521,7 +2560,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
         int hierFanoutLimit = 10000; //512 minimum
-        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, false, hierFanoutLimit, true, true, false, false, false,
+        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, false, false, false, hierFanoutLimit, true, true, false, false, false,
             "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
@@ -2686,12 +2725,12 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         int bufg = 24; //base on number of streams, rather than default of 12, UltraScale maximum of 24
-        int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
+        int shreg_min_size = 4; //instead of 3, minimum chain before changing from registers to an SRL, breaks 3-stage fanout optimizations at 3 so higher better (shift register lookup table)
         int fanoutLimit = 10000; //400 is the performance default
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
         //SynthesisStrategy.Directive directive, SynthesisStrategy.FlattenHierarchy flattenHierarchy, SynthesisStrategy.FsmExtraction fsmExtraction, SynthesisStrategy.CascadeDsp cascadeDsp, SynthesisStrategy.GatedClock gatedClock, SynthesisStrategy.ResourceSharing resourceSharing, boolean keepEquivalentRegisters, boolean lutCombining, boolean srlExtract, boolean retiming, int bufg, int fanoutLimit, int controlSetOptThreshold, int shregMinSize, int maxBram, int maxBramCascadeHeight, int maxUram, int maxUramCascadeHeight, int maxDsp, boolean vhdlAssert, boolean oocMode, java.lang.String options
-        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, fanoutLimit, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, true, true, false, bufg, fanoutLimit, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
         return customPerfOptHigh;
     }
     public static void printKernelConfigurationOptimizationDefaults(ManagerKernelBase owner)
