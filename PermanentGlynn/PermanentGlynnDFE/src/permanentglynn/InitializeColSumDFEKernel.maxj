@@ -140,10 +140,8 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVar sel = null;
             int division = (cols * 2 + 32-1) / 32; //ceiling gives optimal division, the remainder portion could be further divided but not necessary
             for (int j = 0; j < cols * 2; j++) {
-                if ((j % division) == 0) sel = optimization.pipeline(initOneHot[i]);
-                optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.TREE);
+                if ((j % division) == 0) sel = optimization.limitFanout(initOneHot[i], 32);
                 allRows[i][j] <== sel ? (i < gcodeRows/2 ? onerow0 : onerow1)[j] : stream.offset(allRows[i][j], -1);
-                optimization.popFanoutLimit(); 
             }
         }
         
@@ -166,7 +164,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar changePosSel = null;
         for (int j = 0; j < 2 * cols; j++) {
             final int finalj = j;
-            changePosSel = optimization.pipeline(bigMuxSels[j]);
+            changePosSel = optimization.limitFanout(bigMuxSels[j], 32);
             rowToAdd[j] <== Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj]).collect(Collectors.toList()), 4, this);
         }
 
