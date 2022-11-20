@@ -129,6 +129,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar startOfRowLoop = 
                 startOfLoop.cat(isInitGcode).cat(isInitMplicity).cat(stream.offset(mplicityWrap, -loopLength)).reinterpret(dfeUInt(4)) >= 11; //0-10, 11-15
         
+        if (oneRowPackedType.getTotalBits() > 32*32) rowData = optimization.pipeline(rowData); //plan for high fanout
         oneRowPacked <== io.input("mappedInputMtx_Rows", oneRowPackedType, rowData);
         if (2*cols > 32) oneRowPacked = Utility.repeatVectorPipeline(oneRowPacked, 1, cols + 1, this);
         DFEVar controlBits = oneRowPacked[2*cols+1].cat(oneRowPacked[2*cols]);
@@ -373,24 +374,21 @@ public class InitializeColSumDFEKernel extends Kernel {
         //DFEVector < DFEVar > rowToAdd = Utility.mux32to64(optimization.pipeline(changePos), allRows.getElementsAsList(), 4, this);
         //DFEVector < DFEVar > rowToAdd = Utility.oneHotMuxVector32to64(optimization.pipeline(changePos), allRows.getElementsAsList(), 3, this);
         DFEVector < DFEVar > rowToAdd = oneRowType.newInstance(this);
-        DFEVar bigMuxSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : changePos, 2*cols*4, 32, this);
+        DFEVar bigMuxPreSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : changePos, 2*cols, 32, this);
+        DFEVar bigMuxSels[] = new DFEVar[2*cols];
+        for (int j = 0; j < 2*cols; j++) {
+            bigMuxSels[j] = optimization.pipeline(bigMuxPreSels[j/32]);
+        }
         List<DFEVector<DFEVar>> rowList = new ArrayList<>();
         rowList.addAll(allRows.getElementsAsList());
         rowList.add(oneRow);        
         DFEVar changePosSel = null;
-        divis = (cols * 2 + 32-1) / 32;
         for (int j = 0; j < 2 * cols; j++) {
             final int finalj = j;
-            DFEVar rowChunks = null;
-            for (int k = 0; k < 4; k++) {
-                final int finalk = k;
-                changePosSel = optimization.pipeline(bigMuxSels[(j*4+k)/32]);
-                DFEVar newChunk = Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj].slice(finalk*16, 16)).collect(Collectors.toList()), 4, this);
-                rowChunks = k == 0 ? newChunk : newChunk.cat(rowChunks);
-            }
-            rowToAdd[j] <== rowChunks.reinterpret(dataTypeFix64);
+            changePosSel = optimization.pipeline(bigMuxSels[j]);
+            rowToAdd[j] <== Utility.mux32to64(changePosSel, rowList.stream().map(x -> x[finalj]).collect(Collectors.toList()), 4, this);
         }
-         
+                
         DFEVector < DFEVar > negRowToAdd = -rowToAdd;
         //update sum vector
         for (int kern = 0; kern < kerns; kern++) {
