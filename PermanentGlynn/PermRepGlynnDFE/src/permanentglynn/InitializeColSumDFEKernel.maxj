@@ -129,7 +129,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar startOfRowLoop = 
                 startOfLoop.cat(isInitGcode).cat(isInitMplicity).cat(stream.offset(mplicityWrap, -loopLength)).reinterpret(dfeUInt(4)) >= 11; //0-10, 11-15
         
-        if (oneRowPackedType.getTotalBits() > 32*32) rowData = optimization.pipeline(rowData); //plan for high fanout
+        if (oneRowPackedType.getTotalBits() > 32*32) rowData = optimization.limitFanout(rowData, 32); //plan for high fanout
         oneRowPacked <== io.input("mappedInputMtx_Rows", oneRowPackedType, rowData);
         if (2*cols > 32) oneRowPacked = Utility.repeatVectorPipeline(oneRowPacked, 1, cols + 1, this);
         DFEVar controlBits = oneRowPacked[2*cols+1].cat(oneRowPacked[2*cols]);
