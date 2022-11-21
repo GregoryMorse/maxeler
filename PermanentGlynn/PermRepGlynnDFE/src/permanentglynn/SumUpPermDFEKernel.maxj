@@ -68,7 +68,7 @@ public class SumUpPermDFEKernel extends Kernel {
                 //debug.simPrintf("%X %X\n", colProdVals[i-n/2].reinterpret(dfeUInt(colProdVals[i-n/2].getType().getTotalBits())), colProdVals[i].reinterpret(dfeUInt(colProdVals[i].getType().getTotalBits())));
                 colProdVals[i] = Utility.doMult(colProdVals[i-n/2], colProdVals[i], totalprec, false, useFloat, this);
             }
-            DFEVar sign = dual ? isLocal ^ parity : ((((i-(isBig ? n/2 : 0)) & 1) != 0) ^ parity);
+            DFEVar sign = optimization.limitFanout(dual ? isLocal ^ parity : ((((i-(isBig ? n/2 : 0)) & 1) != 0) ^ parity), 32);
             colProdVals[i] = sign ? -colProdVals[i] : colProdVals[i]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
             if (isBig) colProdVals[i-n/2] = colProdVals[i];
         }
@@ -164,9 +164,9 @@ public class SumUpPermDFEKernel extends Kernel {
             DFEType finalTypeFix128 = dfeFixOffset(256, -250, SignMode.TWOSCOMPLEMENT); //CPU stream width should be multiple of 128, so extra bits supplied
             DFEComplexType finalCplxFix128Type = new DFEComplexType(finalTypeFix128);        
         
-            DFEVar initTick = optimization.pipeline(tickCount < 3),
-                    firstTick = Utility.repeatPipeline(tickCount === 0, 3, this),
-                    secondTick = Utility.repeatPipeline(tickCount < 2, 3, this);
+            DFEVar initTick = optimization.limitFanout(tickCount < 3, 32),
+                    firstTick = optimization.limitFanout(Utility.repeatPipeline(tickCount === 0, 2, this), 32),
+                    secondTick = optimization.limitFanout(Utility.repeatPipeline(tickCount < 2, 2, this), 32);
             DFEComplex cursum = initTick ? constant.zero(cplxFix128Type) : stream.offset(sum, -3);
             sum <== DFEComplexType.newInstance(this, Utility.addExact(cursum.getReal(), colProdVals[0].getReal(), false, this).cast(dataTypeFix128),
                                            Utility.addExact(cursum.getImaginary(), colProdVals[0].getImaginary(), false, this).cast(dataTypeFix128));
