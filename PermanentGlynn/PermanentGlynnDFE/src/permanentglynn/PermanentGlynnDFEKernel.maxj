@@ -106,6 +106,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
                 while (Utility.getIntSplits(dfeInt(totalprec), 16, 18, this) == Utility.getIntSplits(dfeInt(totalprec+1), 16, 18, this) &&
                        Utility.getIntSplits(dfeInt(totalprec), 24, 25, this) == Utility.getIntSplits(dfeInt(totalprec+1), 24, 25, this)) { totalprec++; }
                 totalprec-=3; //save 2 extra bits for inner and outer addition in 3M formula
+                if (totalprec < 77+3) totalprec = 77+3;
                 //if (idx == 0) System.out.println((colSumFix[2 * idx].getType().getTotalBits()/2) + "x" + (colSumFix[2 * idx + 1].getType().getTotalBits()/2) + "->" + totalprec);  
                 colSumFix[idx] = Utility.doMult(colSumFix[2 * idx], colSumFix[2 * idx + 1], totalprec, false, useFloat, this);
                 //colSumVerify[idx] = colSumVerify[2 * idx] * colSumVerify[2 * idx + 1];
@@ -129,7 +130,7 @@ public class PermanentGlynnDFEKernel extends Kernel {
         //debug.simPrintf((KernelMath.abs(checkdiff.getReal()) > 0x1.0p-110) | (KernelMath.abs(checkdiff.getImaginary()) > 0x1.0p-110), "%KObj% %KObj% %e %e\n", check, colSumVerify[0], KernelMath.abs(checkdiff.getReal()), KernelMath.abs(checkdiff.getImaginary()));  
         //optimization.popDSPFactor();
         //optimization.popDSPFactor();
-        DFEVar sign = tickCount.get(0) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0)));
+        DFEVar sign = optimization.limitFanout(tickCount.get(0) | ((dual ? (msizeadj === 0) & isLocal : (msizeadj === 0) & ((kernNum & 1) != 0))), 32);
         DFEComplex colProdVal = sign ? -colSumFix[0] : colSumFix[0]; //colSumFix[0].rotate90(constant.var( dfeUInt(2), 1));
         
 
