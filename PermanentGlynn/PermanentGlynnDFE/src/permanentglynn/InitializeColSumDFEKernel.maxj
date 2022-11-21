@@ -110,7 +110,7 @@ public class InitializeColSumDFEKernel extends Kernel {
             DFEVector < DFEVar > fixRow = oneRowType.newInstance(this);
             int division = (cols * 2 + 32-1) / 32; 
             for (int j = 0; j < 2 * cols; j++) {
-                if ((j % division) == 0) oneHotSel = optimization.pipeline(oneHot);
+                if ((j % division) == 0) oneHotSel = optimization.limitFanout(oneHot, 32);
                 fixRow[j] <== control.oneHotMux(oneHotSel, new DFEVar[] { initChoices.get(0)[j], initChoices.get(1)[j], initChoices.get(2)[j] });
             }
             oneRow = fixRow;
@@ -156,7 +156,7 @@ public class InitializeColSumDFEKernel extends Kernel {
         DFEVar bigMuxPreSels[] = Utility.parallelFanout(isInit ? allRows.getElementsAsList().size() : grayCounter.changePosition, 2*cols, 32, this);
         DFEVar bigMuxSels[] = new DFEVar[2*cols];
         for (int j = 0; j < 2*cols; j++) {
-            bigMuxSels[j] = optimization.pipeline(bigMuxPreSels[j/32]);
+            bigMuxSels[j] = optimization.limitFanout(bigMuxPreSels[j/32], 32);
         }
         List<DFEVector<DFEVar>> rowList = new ArrayList<>();
         rowList.addAll(allRows.getElementsAsList());
@@ -177,8 +177,8 @@ public class InitializeColSumDFEKernel extends Kernel {
             int division = (cols*2 + 32-1) / 32;
             for (int j = 0; j < cols*2; j++) {
                 if ((j % division) == 0) {
-                    firstSel = optimization.pipeline(firstTickCopy);
-                    negSel = optimization.pipeline(negations[kern]);
+                    firstSel = optimization.limitFanout(firstTickCopy, 32);
+                    negSel = optimization.limitFanout(negations[kern], 32);
                 }
                 prevColmnSumVector[j] <== firstSel ? constant.zero(dataTypeFix64) : stream.offset(allColSums[kern][j], -1);
                 if (useFloat) allColSums[kern][j] <== Utility.doFloatAdd(prevColmnSumVector[j], (negSel ? optimization.pipeline(negRowToAdd[j]) : optimization.pipeline(rowToAdd[j])), false, this);
