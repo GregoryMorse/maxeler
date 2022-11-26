@@ -10,17 +10,25 @@
 #define SIZE 8
 
 //DFE float uses IEEE style, not C long double style - bias is 32767 not 16383 (if (16, 64) used so we use (15, 64) for identical bias), mantissa stores 63 bits not 64, must adjust manually
-long double dfeFloatToLD(__int128 res)
+long double dfeFloatToLD(void* p)
 {
+    __int128 res = *((__int128*)p);
     __int128 temp = res >> 63;
     if ((temp & 0x7FFF) == 0) //+/- 0
         res = (res & ((1ULL<<63)-1)) | (temp << 64);
-    else if ((temp & 0x7FFF) == 0x7FFF) //+/- inf or +/- NaN
-        res = ((res & ((1ULL<<62)-1)) | (1ULL << 63)) | (temp << 64);
-    else
+    else //normal, +/- inf or +/- NaN
         res = ((res & ((1ULL<<63)-1)) | (1ULL << 63)) | (temp << 64);
     long double* pld = (long double*)&res;
     return *pld;
+}
+
+__int128 dfeLDToFloat(void* p)
+{
+    __uint64_t* pLD = p;
+    __int128 res = *pLD & ((1ULL<<63)-1); //pseudo denormal, pseudo-infinity, pseudo NaN, Floating point Indefinite, Quiet Not a Number disregarded
+    res |= (__uint64_t)(*(__uint16_t*)(pLD+1)) << 63;
+    res |= (__int128)(*(__uint16_t*)(pLD+1) >> 1) << 64;
+    return res;
 }
 
 void printnum(__uint128_t* chunks, size_t bytes)
@@ -45,6 +53,39 @@ void gen_randdata(void* p, int bits)
     }
 }
 
+#define SUBTRACTIONTESTS(s, t, mantExp, i) (s(t)((mantExp-1) - ((i == 64 ? 0x1.0p64l : (1ULL<<(i)))-1)))/mantExp
+#define UNDERFLOWTESTS(s, t, mantExp, biasm2, i) (s(t)(mantExp-1))/mantExp*(i == 64 ? 0x1.0p64l : (1ULL<<(i)))*2/biasm2
+#define UNDERFLOWSUBTESTS(s, t, mantExp, biasm2, i) (s(t)((mantExp-1) - ((i == 64 ? 0x1.0p64l : (1ULL<<(i)))-1)))/mantExp/biasm2
+#define OVERFLOWTESTS(s, t, mantExp, biasm2, i) (s(t)(mantExp-1))/mantExp/(i == 64 ? 0x1.0p64l : (1ULL<<(i)))*biasm2*4
+#define OVERFLOWSUBTESTS(s, t, mantExp, biasm2, i) (s(t)((mantExp-1) - ((i == 64 ? 0x1.0p64l : (1ULL<<(i)))-1)))/mantExp*biasm2*8
+
+#define REP0(f, i, ...) f(__VA_ARGS__, i)
+#define REP1(f, i, ...) REP0(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP2(f, i, ...) REP1(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP3(f, i, ...) REP2(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP4(f, i, ...) REP3(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP5(f, i, ...) REP4(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP6(f, i, ...) REP5(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP7(f, i, ...) REP6(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP8(f, i, ...) REP7(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP9(f, i, ...) REP8(f, i-1, __VA_ARGS__), f(__VA_ARGS__, i)
+#define REP19(f, i, ...) REP9(f, i-10, __VA_ARGS__), REP9(f, i, __VA_ARGS__)
+#define REP29(f, i, ...) REP19(f, i-10, __VA_ARGS__), REP9(f, i, __VA_ARGS__)
+#define REP39(f, i, ...) REP29(f, i-10, __VA_ARGS__), REP9(f, i, __VA_ARGS__)
+#define REP49(f, i, ...) REP39(f, i-10, __VA_ARGS__), REP9(f, i, __VA_ARGS__)
+#define REP59(f, i, ...) REP49(f, i-10, __VA_ARGS__), REP9(f, i, __VA_ARGS__)
+
+#define REP23(f, i, ...) REP19(f, i-4, __VA_ARGS__), REP3(f, i, __VA_ARGS__)
+#define REP24(f, i, ...) REP19(f, i-5, __VA_ARGS__), REP4(f, i, __VA_ARGS__)
+#define REP52(f, i, ...) REP49(f, i-3, __VA_ARGS__), REP2(f, i, __VA_ARGS__)
+#define REP53(f, i, ...) REP49(f, i-4, __VA_ARGS__), REP3(f, i, __VA_ARGS__)
+#define REP64(f, i, ...) REP59(f, i-5, __VA_ARGS__), REP4(f, i, __VA_ARGS__)
+#define REP65(f, i, ...) REP59(f, i-6, __VA_ARGS__), REP5(f, i, __VA_ARGS__)
+
+#define CAT_(a, b) a##b
+#define CAT(a, b) CAT_(a, b)
+#define REPN(f, i, ...) CAT(REP, i)(f, i, __VA_ARGS__)
+
 int main(void)
 {
     max_file_t* mavMaxFile = PermanentTest_singleSIM_init();
@@ -55,7 +96,11 @@ int main(void)
 #endif
     if (xbits < 0) xbits = -xbits;
     if (ybits < 0) ybits = -ybits;
+#if PermanentTest_singleSIM_USEFLOAT != 1
     int outpbits = xbits + ybits;
+#else
+    int outpbits = xbits > ybits ? xbits : ybits;
+#endif
     size_t xBytes = (xbits+128-1)/128*16,
         yBytes = (ybits+128-1)/128*16,
         outBytes = (outpbits+128-1)/128*16;
@@ -64,49 +109,107 @@ int main(void)
     __uint128_t* outp = malloc(outBytes);
     PermanentTest_singleSIM_actions_t actions = { 1, inp1, xBytes, inp2, yBytes, outp, outBytes };
     
+//#define BIAS (1<<(BITS-MANT))/2-1
 #if PermanentTest_singleSIM_USEFLOAT == 1
 #if PermanentTest_singleSIM_INPXBITS == -32
 #define XTYPE float
+#define XMANT 24
+#define XMANTPOW2 0x1.0p24f 
+//#define XBIAS 127
+#define XBIASM2 0x1.0p125f
 #elif PermanentTest_singleSIM_INPXBITS == -64
 #define XTYPE double
+#define XMANT 53
+#define XMANTPOW2 0x1.0p53
+//#define XBIAS 1023
+#define XBIASM2 0x1.0p1021
 #elif PermanentTest_singleSIM_INPXBITS == -79
 #define XTYPE long double
+#define XMANT 64
+#define XMANTPOW2  0x1.0p64l
+//#define XBIAS 16383
+#define XBIASM2 0x1.0p16381l
 #endif
 #if PermanentTest_singleSIM_INPYBITS == -32
 #define YTYPE float
+#define YMANT 24
+#define YMANTPOW2 0x1.0p24f 
+//#define YBIAS 127
+#define YBIASM2 0x1.0p125f
 #elif PermanentTest_singleSIM_INPYBITS == -64
 #define YTYPE double
+#define YMANT 53
+#define YMANTPOW2 0x1.0p53
+//#define YBIAS 1023
+#define YBIASM2 0x1.0p1021
 #elif PermanentTest_singleSIM_INPYBITS == -79
 #define YTYPE long double
+#define YMANT 64
+#define YMANTPOW2  0x1.0p64l
+//#define YBIAS 16383
+#define YBIASM2 0x1.0p16381l
 #endif
-    for (int i = 0; i < 512; i++) {
+    XTYPE bvaX[] = { 0.0, -0.0, 1.0, -1.0, 2.0, -2.0,
+        REPN(SUBTRACTIONTESTS, XMANT, +, XTYPE, XMANTPOW2),
+        REPN(UNDERFLOWTESTS, XMANT, +, XTYPE, XMANTPOW2, XBIASM2),
+        REPN(UNDERFLOWSUBTESTS, XMANT, +, XTYPE, XMANTPOW2, XBIASM2),
+        REPN(OVERFLOWTESTS, XMANT, +, XTYPE, XMANTPOW2, XBIASM2),
+        REPN(OVERFLOWSUBTESTS, XMANT, +, XTYPE, XMANTPOW2, XBIASM2),        
+        INFINITY, -INFINITY, NAN, -NAN }; 
+    YTYPE bvaY[] = { 0.0, -0.0, 1.0, -1.0, 2.0, -2.0,
+        REPN(SUBTRACTIONTESTS, YMANT, -, YTYPE, YMANTPOW2),
+        REPN(UNDERFLOWTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),
+        REPN(UNDERFLOWSUBTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),
+        REPN(OVERFLOWTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),
+        REPN(OVERFLOWSUBTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),    
+        INFINITY, -INFINITY, NAN, -NAN };
+    for (int i = 0; i < sizeof(bvaX)/sizeof(XTYPE); i++) {
+        //printf("TEST: %16La\n", (long double)bvaX[i]);
+        for (int j = 0; j < sizeof(bvaY)/sizeof(YTYPE); j++) {
+    //for (int i = 0; i < 512; i++) {
         XTYPE a = 0.0; YTYPE b = 0.0;
-        gen_randdata(&a, sizeof(XTYPE) * 8);
-        gen_randdata(&b, sizeof(YTYPE) * 8);
+        a = bvaX[i]; //gen_randdata(&a, sizeof(XTYPE) * 8);
+        b = bvaY[j]; //gen_randdata(&b, sizeof(YTYPE) * 8);
+#if PermanentTest_singleSIM_INPXBITS == -79 || PermanentTest_singleSIM_INPYBITS == -79    
+        long double res, c;
+#elif PermanentTest_singleSIM_INPXBITS == -64 || PermanentTest_singleSIM_INPYBITS == -64
+        double res, c;
+#elif PermanentTest_singleSIM_INPXBITS == -32 || PermanentTest_singleSIM_INPYBITS == -32
+        float res, c;
+#endif
 #if PermanentTest_singleSIM_ISCOMPLEX == 1
 #else
 #if PermanentTest_singleSIM_ADDSUBMUL == 2
-        long double c = a * b;
+        c = a * b;
 #elif PermanentTest_singleSIM_ADDSUBMUL == 1
-        long double c = a - b;
+        c = a - b;
 #else
-        long double c = a + b;
+        c = a + b;
 #endif
 #endif
+#if PermanentTest_singleSIM_INPXBITS == -79
+        __int128 t1 = dfeLDToFloat(&a);
+        memcpy(inp1, &t1, sizeof(t1));
+#else    
         memcpy(inp1, &a, sizeof(a));
+#endif
+#if PermanentTest_singleSIM_INPYBITS == -79
+        __int128 t2 = dfeLDToFloat(&b);
+        memcpy(inp2, &t2, sizeof(t2));
+#else
         memcpy(inp2, &b, sizeof(b));
+#endif
         PermanentTest_singleSIM_run(mavDFE, &actions);
 #if PermanentTest_singleSIM_INPXBITS == -79 || PermanentTest_singleSIM_INPYBITS == -79    
-        long double res;
-#elif PermanentTest_singleSIM_INPXBITS == -64 || PermanentTest_singleSIM_INPYBITS == -64
-        double res;
-#elif PermanentTest_singleSIM_INPXBITS == -32 || PermanentTest_singleSIM_INPYBITS == -32
-        float res;
+        res = dfeFloatToLD(outp);
+#else
+        memcpy(&res, outp, sizeof(res));
 #endif
-        memcpy(&res, (char*)outp + outBytes - sizeof(res), sizeof(res));
-        if (res != c && !(isnan(res) && isnan(c))) {
-            printf("%Lf %Lf %Lf %Lf\n", (long double)a, (long double)b, (long double)c, (long double)res);
+        int resc = fpclassify(res), cc = fpclassify(c);
+        if (res != c && !(resc == FP_NAN && cc == FP_NAN) && !((resc == FP_ZERO || resc == FP_SUBNORMAL) && (cc == FP_ZERO || cc == FP_SUBNORMAL))) {
+            printf("%16La %16La %16La %16La\n", (long double)a, (long double)b, (long double)c, (long double)res);
         }
+    }
     }
 #else
     mpz_t a, b, c, res;
