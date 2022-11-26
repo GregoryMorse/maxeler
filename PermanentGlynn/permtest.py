@@ -94,7 +94,7 @@ def dump_stats():
     with open("results.txt", "r") as f:
         lines = f.readlines()
     synthstats = [{x: int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
-    print(synthstats)
+    #print(synthstats)
     with open("dump.tcl", "w") as f:
         f.write(get_tcl(False))
     result = os.system("vivado -mode batch -source dump.tcl -notrace -nolog -quiet")
@@ -103,7 +103,7 @@ def dump_stats():
     with open("results.txt", "r") as f:
         lines = f.readlines()
     routestats = [{x: int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
-    print(routestats)
+    #print(routestats)
     return synthstats, routestats
 def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addSubMul):
     import os
@@ -117,7 +117,7 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
     return retval
 def runtests():
     import os
-    for size in floatSizes:
+    for size in floatSizes[2:]:
         for strategy in range(2):
             retval = runbuild(True, 100, size, True, strategy, True, False, 2)
             if retval != 0: return
