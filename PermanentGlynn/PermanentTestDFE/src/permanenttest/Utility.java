@@ -76,7 +76,6 @@ import com.maxeler.maxcompiler.v2.statemachine.StateMachineLib;
 import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
 import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 
-
 public class Utility {
     /**
     @brief Calculates the n-th power of 2.
@@ -1808,6 +1807,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar barrelShifter(DFEVar value, DFEVar shift, boolean isLeft, KernelBase<?> base)
     {
+        //final int muxPipeliningLimit = 3;
         value = base.optimization.pipeline(value);
         //LUT6 allows 4:1 MUX, LUT6_2 allows 2-bit 2:1 MUX
         //base.optimization.pushNoPipelining();
@@ -1964,25 +1964,59 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar doFloatMult(DFEVar n1, DFEVar n2, KernelBase<?> base) //default long double multiplication latency is 22, we achieve 7 and less DSPs
     {
+        //initialization: splice apart mantissa, exponent and sign
         DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
         int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
+        int bigMant = Math.max(n1mant, n2mant);
         DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
         DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1.slice(0, n1mant - 1)).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)),
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2.slice(0, n2mant - 1)).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED));
         DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
+        DFEVar adjustExp = base.constant.var(KernelBase.dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1);
+        
+        //multi-cycle pipeline stage 1: zero, inf/NaN detection, final sign, multiply, detect explicit NaN, simple underflow, overflow
+        int totalDelay = n1mant >= 64 || n2mant >= 64 ? 6 : (n1mant >= 53 || n2mant >= 53 ? 5 : 4); //for long double, 24x24 (2 DSPs) has 4 delay, 53x53 has 5? delay, 64x64 has 6 delay 
+        DFEVar resultMant = mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, false, base);
+        //pipeline stage 1A:
+        DFEVar expInf1 = n1e === (1<<n1exp)-1, expInf2 = n2e === (1<<n2exp)-1; 
         DFEVar isZero = n1e === 0 | n2e === 0; //2 delay for comparison and bitwise or
         DFEVar sign = n1sign ^ n2sign;
-        int bigMant = Math.max(n1mant, n2mant);
-        int totalDelay = 6; //for long double, 64x64 has 6 delay 
-        DFEVar mult = mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, false, base);
-        DFEVar adjustExp = base.constant.var(KernelBase.dfeUInt(Math.min(n1exp, n2exp)-1), (1 << (Math.min(n1exp, n2exp)-1))-1); //is a second normalization required after rounding?  No, it should not be mathematically possible as with multiplication with more than 1 bit, at least one or more 0s are always present in the significant part of the result 
-        DFEVar expUpdate = repeatPipeline(isZero ? base.constant.zero(KernelBase.dfeInt(Math.max(n1exp, n2exp)+1+1)) : base.optimization.pipeline(triAddExact(n1e, n2e, adjustExp, false, true, base)), totalDelay-3, base);
-        DFEVar incExp = mult.get(n1mant + n2mant - 1).reinterpret(KernelBase.dfeBool());
-        isZero = repeatPipeline(isZero, totalDelay-2, base);
-        DFEVar selMult = base.control.mux(isZero.cat(incExp), base.constant.var(KernelBase.dfeUInt(2), 2), base.constant.var(KernelBase.dfeUInt(2), 1), base.constant.zero(KernelBase.dfeUInt(2)), base.constant.zero(KernelBase.dfeUInt(2))).cat(base.optimization.pipeline(isZero));
-        mult = base.control.oneHotMux(selMult, base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.reinterpret(KernelBase.dfeFixOffset(n1mant + n2mant, -(n1mant + n2mant) + 1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)), mult.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))); //1 rounding delay on cast, 1 delay on multiplexer
-        DFEVar newExp = addExact(expUpdate, incExp, false, base).cast(KernelBase.dfeUInt(Math.max(n1exp, n2exp)));
+        DFEVar expNormal = triAddExact(n1e, n2e, adjustExp, false, true, base);
+        DFEVar mant1nz = n1m.slice(0, n1mant-1) !== 0, mant2nz = n2m.slice(0, n2mant-1) !== 0;
+        //pipeline stage 1B:
+        DFEVar isNaN = isZero & (expInf1 | expInf2) | mant1nz & expInf1 | mant2nz & expInf2;
+        DFEVar underflow = isZero & ~expInf1 & ~expInf2 | expNormal < 0;
+        DFEVar nearUnderflow = expNormal === 0;
+        DFEVar overflow = expInf1 | expInf2 | expNormal >= (1<<Math.max(n1exp, n2exp))-1;
+        DFEVar nearOverflow = expNormal === (1<<Math.max(n1exp, n2exp))-2;
+        //pipeline stage 1C:
+        DFEVar expUpdate = base.control.mux(underflow.cat(overflow), expNormal,
+            base.constant.var(KernelBase.dfeInt(Math.max(n1exp, n2exp)+1+1), (1<<Math.max(n1exp, n2exp))-1),
+            base.constant.zero(KernelBase.dfeInt(Math.max(n1exp, n2exp)+1+1)));
+        DFEVar flowCond = underflow | overflow;
+        
+        //pipeline stage 2: check result size, including boundary overflow and underflow, shift left by zero/one or set zero/NaN, calculate sticky 
+        DFEVar incExp = resultMant.get(n1mant + n2mant - 1).reinterpret(KernelBase.dfeBool());
+        DFEVar roundOverflow = resultMant.slice(bigMant-2, n1mant+n2mant-(bigMant-1)) === base.constant.var(KernelBase.dfeUInt(bigMant), (1<<bigMant)-1).cat(~nearUnderflow);
+        DFEVar sticky = resultMant.slice(0, n1mant+n2mant-(bigMant+1)) !== base.constant.zero(KernelBase.dfeUInt(n1mant+n2mant-(bigMant+2))).cat(~incExp);
+        DFEVar z = base.constant.zero(KernelBase.dfeBool()).cat(isNaN).cat(base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant-1, SignMode.UNSIGNED)));
+        DFEVar mult = base.control.mux(
+            flowCond.cat(nearUnderflow).cat(nearOverflow).cat(incExp),
+            resultMant.slice(bigMant-2, n1mant+n2mant-(bigMant-1)),
+            resultMant.slice(bigMant-1, n1mant+n2mant-(bigMant-1)),
+            resultMant.slice(bigMant-2, n1mant+n2mant-(bigMant-1)), z,
+            z, resultMant.slice(bigMant-1, n1mant+n2mant-(bigMant-1)),
+            z, z,
+            z, z, z, z, z, z, z, z
+        );
+        incExp = incExp & ~flowCond;
+        
+        //pipeline stage 3: rounding, final exponent computation
+        mult = mult.cat(sticky).reinterpret(KernelBase.dfeFixOffset(bigMant+2, -bigMant-1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar newExp = triAddExact(expUpdate, incExp, roundOverflow, false, false, base).cast(KernelBase.dfeUInt(Math.max(n1exp, n2exp)));
+        
+        //finalization: recombine mantissa, exponent and sign
         DFEVar result = repeatPipeline(sign, totalDelay, base).cat(newExp).cat(mult).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
         //base.debug.simPrintf(result !== n1 * n2, "%f %f %f %f %f %f %f\n", n1, n2, n1 * n2, result, n1m, n2m, mulKaratsubaRectangularExact(n1m, n2m, n1mant + n2mant, 2, false, base));
         return result; //return n1 * n2;
@@ -2422,7 +2456,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return stagger;
     }
-     public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
+    public static <T extends KernelObjectVectorizable<T,?>> T repeatVectorPipeline(T var, int count, int limit, KernelBase<?> base)
     {
         DFEVar v = var.reinterpret(KernelBase.dfeUInt(var.getType().getTotalBits()));
         int sz = ((DFEVectorType<?>)var.getType()).getContainedType().getTotalBits();        
@@ -2434,9 +2468,18 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
         return out.reinterpret(var.getType());
     }
+    public static DFEVar pipelineBits(DFEVar var, KernelBase<?> base)
+    {
+        int size = var.getType().getTotalBits();
+        DFEVar res = base.optimization.pipeline(var.get(--size));
+        while (size != 0) {
+            res = res.cat(base.optimization.pipeline(var.get(--size)));
+        }
+        return res;
+    }
     public static <T extends KernelObject<T>> T mux32to64(DFEVar sel, List<T> values, int split, KernelBase<?> base) //split==2 bits, 6-LUT 2 selection bits + 4 selections per Xilinx docs 
     {
-        final int muxPipeliningLimit = 3;
+        final int muxPipeliningLimit = split >= 4 ? 1 : (split == 3 ? 2 : 3);
         int limit = Math.max(32, 1 << split);
         int bitsToAddress = MathUtils.bitsToAddress(values.size()); //==6 bits...
         for (int bits = 0; bits < bitsToAddress; bits += split) {
@@ -2616,7 +2659,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
         int hierFanoutLimit = 10000; //512 minimum
-        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, true, true, false, hierFanoutLimit, true, true, false, false, false,
+        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, false, false, false, hierFanoutLimit, true, true, false, false, false,
             "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
@@ -2781,12 +2824,12 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //SynthesisStrategy.FLOW_AREA_OPTIMIZED_HIGH, SynthesisStrategy.FLOW_AREA_OPTIMIZED_MEDIUM, SynthesisStrategy.FLOW_PERF_OPTIMIZED_HIGH,
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         int bufg = 24; //base on number of streams, rather than default of 12, UltraScale maximum of 24
-        int shreg_min_size = 3; //instead of 5, minimum chain before changing from registers to an SRL (shift register lookup table)
+        int shreg_min_size = 4; //instead of 3, minimum chain before changing from registers to an SRL, breaks 3-stage fanout optimizations at 3 so higher better (shift register lookup table)
         int fanoutLimit = 10000; //400 is the performance default
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
         //SynthesisStrategy.Directive directive, SynthesisStrategy.FlattenHierarchy flattenHierarchy, SynthesisStrategy.FsmExtraction fsmExtraction, SynthesisStrategy.CascadeDsp cascadeDsp, SynthesisStrategy.GatedClock gatedClock, SynthesisStrategy.ResourceSharing resourceSharing, boolean keepEquivalentRegisters, boolean lutCombining, boolean srlExtract, boolean retiming, int bufg, int fanoutLimit, int controlSetOptThreshold, int shregMinSize, int maxBram, int maxBramCascadeHeight, int maxUram, int maxUramCascadeHeight, int maxDsp, boolean vhdlAssert, boolean oocMode, java.lang.String options
-        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, false, true, false, bufg, fanoutLimit, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
+        SynthesisStrategy customPerfOptHigh = SynthesisStrategy.createCustomStrategy(SynthesisStrategy.Directive.DEFAULT, SynthesisStrategy.FlattenHierarchy.REBUILT, SynthesisStrategy.FsmExtraction.AUTO, SynthesisStrategy.CascadeDsp.AUTO, SynthesisStrategy.GatedClock.OFF, SynthesisStrategy.ResourceSharing.OFF, true, true, true, false, bufg, fanoutLimit, -1, shreg_min_size, -1, -1, -1, -1, -1, false, false, "");
         return customPerfOptHigh;
     }
     public static void printKernelConfigurationOptimizationDefaults(ManagerKernelBase owner)
