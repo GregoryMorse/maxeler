@@ -55,8 +55,8 @@ public class PermanentTestKernel extends Kernel {
             }
             outp = (useFloat ?
                 DFEComplexType.newInstance(this,
-                    outpCplx.getReal().cat(constant.zero(dfeUInt(outpAdj - outpCplx.getType().getRealType().getTotalBits()))).reinterpret(dfeRawBits(outpAdj)),
-                    outpCplx.getImaginary().cat(constant.zero(dfeUInt(outpAdj - outpCplx.getType().getImaginaryType().getTotalBits()))).reinterpret(dfeRawBits(outpAdj))) :
+                    constant.zero(dfeUInt(outpAdj - outpCplx.getType().getRealType().getTotalBits())).cat(outpCplx.getReal()).reinterpret(dfeRawBits(outpAdj)),
+                    constant.zero(dfeUInt(outpAdj - outpCplx.getType().getImaginaryType().getTotalBits())).cat(outpCplx.getImaginary()).reinterpret(dfeRawBits(outpAdj))) :
                 outpCplx.cast(new DFEComplexType(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj)))).reinterpret(dfeRawBits(outpAdj*2));
         } else {
     		final DFEVar inp1 = io.input("inp1", dfeUInt(inpAdjX)).slice(0, xType.getTotalBits()).reinterpret(xType);
@@ -99,7 +99,7 @@ public class PermanentTestKernel extends Kernel {
                 }
             }
     		// Output
-            outp = useFloat ? outp.cat(constant.zero(dfeUInt(outpAdj - outp.getType().getTotalBits()))) : outp.cast(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj));
+            outp = useFloat ? constant.zero(dfeUInt(outpAdj - outp.getType().getTotalBits())).cat(outp).reinterpret(dfeUInt(outpAdj)) : outp.cast(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj));
         }
 		io.output("outp", outp, outp.getType());
 	}
