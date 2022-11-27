@@ -2115,7 +2115,7 @@ class LoopCorrections(g.Component):
         #1200 cycles or nanoseconds - 1x80 * 80x80 complex matrix multiplication uses 80*(80*(4M+2A)+2*79A)=160*(160M+159A) - parallelism 8
         #160*(160M+159A)*8*10^9/1200 OPS or 160*(160+159)*8/1200 ~=340 GOPS 
         import timeit        
-        worstCase, useCplx, longDoubleOracle, matpow = False, True, False, 2 #dim//2-1
+        worstCase, useCplx, longDoubleOracle, matpow = False, True, False, 1 #dim//2-1
         pgm_pkg = g.ProgramPackage(name="mm", output_dir="mm")
         with pgm_pkg.create_program_context("init_mm_fp") as pcinit:
             lc = LoopCorrections(chunks, dim, matpow)
@@ -2153,10 +2153,10 @@ class LoopCorrections(g.Component):
             #export OMP_NUM_THREADS=64
             floattype = np.clongdouble if longDoubleOracle else np.cdouble #np.clongdouble uses a single thread, while np.cdouble uses 20 threads for an 80x80 np.cdouble matrix
             B = [np.stack([originpmat[i].transpose().astype(floattype) for i in range(parallel)], axis=0)]
-            w = np.vstack([originpvec[i].astype(floattype) for i in range(parallel)]) #.reshape(parallel, 1, dim)
+            w = [np.vstack([originpvec[i].astype(floattype) for i in range(parallel)])] #.reshape(parallel, 1, dim)
             gcodeCounter, lastgcode = [0], [0]
             @jit(nopython=True)
-            def fastoracle(B, gcodeCounter, lastgcode):
+            def fastoracle(B, w, gcodeCounter, lastgcode):
                 #v = w #3D-version, not supported by numba, but numba appears to be faster
                 #for _ in range(matpow):
                 #    v = v @ B
@@ -2176,11 +2176,11 @@ class LoopCorrections(g.Component):
                 shift = (v > 0x3   ) << 1; v >>= shift; r |= shift
                 r |= (v >> 1) #r = v.bit_length()-1
                 change = r + 1+3 #bit_length()-1==oneHotDecode, first 1 + 3 (or 4 for dual) rows are reserved for anchor plus parallelism 2^3/2^4
-                B[:,change*2, :] = -B[:,change*2, :]
-                B[:,change*2+1, :] = -B[:,change*2+1, :]                
+                B[:,change*2:change*2+2, :] = -B[:,change*2:change*2+2, :]
+                w[:, change*2:change*2+2] = -w[:, change*2:change*2+2]
                 return l, gcodeCounter, gcode
             def oracle():
-                oracleres[0], gcodeCounter[0], lastgcode[0] = fastoracle(B[0], gcodeCounter[0], lastgcode[0])
+                oracleres[0], gcodeCounter[0], lastgcode[0] = fastoracle(B[0], w[0], gcodeCounter[0], lastgcode[0])
             return oracle
         oracle = makeOracle()
         batchsize = 30000
@@ -2259,7 +2259,7 @@ class LoopCorrections(g.Component):
                     )
     def unit_test(chunks, dim):
         import timeit
-        loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, 1 #dim//2-1
+        loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, 2 #dim//2-1
         with g.ProgramContext() as pc:
             lc = LoopCorrections(chunks, dim, matpow, True)
             tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
