@@ -1003,7 +1003,8 @@ s16rangeE = list(range(26, 27+1))+list(range(29,42+1))
 def get_slice2(drctn, slices, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S2(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
 def get_slice16(drctn, slices, bank=0):
-    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
+    #return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + ",".join(str(x) for x in slices) + "), B1(" + str(bank) + ")"
+    return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + str(min(slices)) + "-" + str(max(slices)) + "), B1(" + str(bank) + ")"
 def alu_for_hemi(alu, drctn): return alu if drctn==WEST else 15-alu
 def sg4_for_hemi(sg4, drctn): return sg4 if drctn==WEST else (9-sg4) % 8 #[(9-x)%8 for x in range(8)] vs list(range(8))
 def dump_groq_doc():
@@ -1090,9 +1091,9 @@ class VecNormalize(g.Component):
                     "shiftcomp": g.from_data(np.array([[7]*dim], dtype=np.uint8), layout=get_slice1(drctn, 3, drctn), name="shiftcomp" + dirstr),
                     "shiftmask": g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="shiftmask" + dirstr),
                     "zeros": g.zeros(shape=(1,dim), dtype=g.int8, layout=get_slice1(drctn, 0, drctn), name="zeros" + dirstr),
-                    "maps": g.concat_inner_splits([g.from_data(np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 43, drctn)) for i in range(16)]),
-                    "perms": g.concat_inner_splits([g.from_data(np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320), layout=get_slice1(drctn, 42, drctn)) for i in range(10)]),
-                })                
+                    "maps": g.from_data(np.concatenate([np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320) for i in range(16)]), layout=get_slice1(drctn, 43, drctn)),
+                    "perms": g.from_data(np.concatenate([np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320) for i in range(10)]), layout=get_slice1(drctn, 42, drctn)),
+                })
             else: self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvn.consts[drctn][key], name="post" + lastvn.consts[drctn][key].name) for key in lastvn.consts[drctn]})
             g.add_mem_constraints(list(self.consts[drctn].values()), list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.logtworeqs, self.biasreqs, self.shftreqs, self.shiftedreqs, self.selreqs, self.cmpreqs, self.permreqs = [], [], [], [], [], [], []
@@ -1135,7 +1136,7 @@ class VecNormalize(g.Component):
             with g.ResourceScope(name="maxlogtwo" + dirstr, is_buffered=True, time=t+52, predecessors=None) as pred:
                 #reduce_max inner dimension requires  Distributor x 16 -> VXM reduce_max outer -> Shifter -> reduce_max outer
                 x = g.concat_inner_splits([logtworesult[drctn*2+plane]]*16).read(streams=g.SG4[4*plane], time=0)
-                x = g.distribute_8(x, map=self.consts[drctn]["maps"], distributor_req=drctn*4+2*plane, bypass8=0b11110000, map_stream_req=g.SG1[(4*plane+1)*4])
+                x = g.distribute_8(x, map=g.concat_inner_splits(g.split_vectors(self.consts[drctn]["maps"], [1]*16)), distributor_req=drctn*4+2*plane, bypass8=0b11110000, map_stream_req=g.SG1[(4*plane+1)*4])
                 x = g.transpose_null(x, transposer_req=drctn*2+plane, stream_order=[0,1,2,3])
                 x = g.concat_vectors(g.split_inner_splits(x), (16, 320))
                 x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(8*plane, drctn)], output_streams=g.SG4[4*plane])
@@ -1143,7 +1144,7 @@ class VecNormalize(g.Component):
                 maxresult.append(x.write(name="maxlogtwo" + dirstr, storage_req=self.permreqs[drctn*2+plane]))
             with g.ResourceScope(name="maxlogtwofin" + dirstr, is_buffered=True, time=t+134, predecessors=None) as pred:
                 x = g.concat_inner_splits([maxresult[drctn*2+plane].reshape(1, 320)]*10)#.read(streams=g.SG4[4*plane])
-                x = g.permute_inner(x, permute_map=self.consts[drctn]["perms"], permutor_req=drctn, input_streams=[g.SG1[0], g.SG1[24]], output_streams=g.SG1[0], time=0)
+                x = g.permute_inner(x, permute_map=g.concat_inner_splits(g.split_vectors(self.consts[drctn]["perms"], [1]*10)), permutor_req=drctn, input_streams=[g.SG1[0], g.SG1[24]], output_streams=g.SG1[0], time=0)
                 x = g.concat_vectors(g.split_inner_splits(x), (10, 320))
                 x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0])
                 cmpr = g.greater_equal(x, self.consts[drctn]["shiftcomp"].read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
@@ -1920,7 +1921,7 @@ class AdvanceGrayCode(g.Component):
                 with g.ResourceScope(name="adjvec" + str(plane), is_buffered=True, time=None, predecessors=[pred]) as pred:
                     for drctn in (WEST, EAST):
                         mulvec = g.concat_vectors([negmulvecs[drctn*2+plane]]*self.chunks, (self.chunks, self.dim*2*2)).read(streams=g.SG4[sg4_for_hemi(3, drctn)], time=0)
-                        res = tvec[drctn*2+plane].read(streams=g.SG4[sg4_for_hemi(2, drctn)]).mul(mulvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
+                        res = tvec[drctn*2+plane].read(streams=g.SG1[4*sg4_for_hemi(2, drctn)]).mul(mulvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
                         vecres.append(res.write(name="adjvec" + ("W" if drctn == WEST else "E") + "p" + str(plane), storage_req=tvec[drctn*2+plane].storage_request))
         g.add_mem_constraints(gcodechanges + negmulvecs, self.tcounter + self.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(counters + gcodes + gcodechanges + negmulvecs, counters + gcodes + gcodechanges + negmulvecs, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -2045,10 +2046,13 @@ class LoopCorrections(g.Component):
                 self.tnorm.append(g.zeros(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr, layout=get_slice1(drctn, 1, plane)))
                 self.cx_diag.append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="C" + dirstr, layout=get_slice1(drctn, 43, plane)))        
             else:
-                self.tvec.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tvec[drctn*2+plane], name="postA" + dirstr))
-                self.tmat.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tmat[drctn*2+plane], name="postB" + dirstr))
+                #self.tvec.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tvec[drctn*2+plane], name="postA" + dirstr))
+                self.tvec.append(g.from_addresses(np.array(lastlc.tvec[drctn*2+plane].storage_request.addresses.reshape(-1, g.int8.size), dtype=object), 320, g.int8, "postA" + dirstr))
+                #self.tmat.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tmat[drctn*2+plane], name="postB" + dirstr))
+                self.tmat.append(g.from_addresses(np.array(lastlc.tmat[drctn*2+plane].storage_request.addresses.reshape(-1, g.int8.size), dtype=object), 320, g.int8, "postB" + dirstr))
                 self.tnorm.append(tensor.shared_memory_tensor(mem_tensor=lastlc.tnorm[drctn*2+plane], name="postnorm" + dirstr))
-                self.cx_diag.append(tensor.shared_memory_tensor(mem_tensor=lastlc.cx_diag[drctn*2+plane], name="postC" + dirstr))
+                #self.cx_diag.append(tensor.shared_memory_tensor(mem_tensor=lastlc.cx_diag[drctn*2+plane], name="postC" + dirstr))
+                self.cx_diag.append(g.from_addresses(np.array(lastlc.cx_diag[drctn*2+plane].storage_request.addresses.reshape(-1, g.int8.size), dtype=object), 320, g.int8, "postC" + dirstr))
             g.add_mem_constraints(self.tvec + self.cx_diag, self.tvec + self.cx_diag, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(self.tmat, self.tmat, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(self.tnorm, self.tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -2127,7 +2131,8 @@ class LoopCorrections(g.Component):
         print_utils.infoc("\nAssembling model ...")
         iops = pgm_pkg.assemble()
         iop = runtime.IOProgram(iops[0])
-        devices = [runtime.devices[0]] if not dual else runtime.devices
+        driver = runtime.Driver()
+        devices = [driver.next_available_device()] if not dual else [driver.get_device(d) for d in driver.enumerate_devices()]
         
         if worstCase:
             if useCplx:
@@ -2186,8 +2191,8 @@ class LoopCorrections(g.Component):
         #from GroqBatch_wrapper import GroqBatch_wrapper
         #GroqBatch_wrapper(iop_file=iops[0])
         import contextlib
-        with ExitStack() as exitstack:
-            devices = [exitstack.enter_context(device) for device in devices]
+        with contextlib.ExitStack() as exitstack:
+            devices_ = [exitstack.enter_context(device) for device in devices]
             results, runfunc = [None], [None]
             def loaddata():
                 fractionbits = 62 if useCplx else 63 #allow 8/7 integer bits
@@ -2195,7 +2200,6 @@ class LoopCorrections(g.Component):
                 exp_inpvecs, Z = [], np.zeros((chunks, dim*2, dim*2), dtype=np.int8)
                 for device in devices:
                     inputs.append({})
-                    device.open()
                     device.load(iop[0], unsafe_keep_entry_points=True)
                     device.load(iop[1], unsafe_keep_entry_points=True)
                 for i in range(parallel//2):
@@ -2422,13 +2426,15 @@ def tf_mm(chunks, dim):
     onnx.save(onnx_model, model_path)
     print(onnx_model)
     ort_sess = ort.InferenceSession(model_path)
-    assert np.all(res == ort_sess.run(None, {'tvec': vecdata, 'tmat': matdata})[0])
-    os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --GroqView")
-    os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
+    assert np.all(res == ort_sess.run(None, {'tvec': vecdata.astype(np.int8), 'tmat': matdata.astype(np.int8)})[0])
+    retval = os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --groqview-json")
+    if retval != 0: assert False, retval
+    retval = os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
+    if retval != 0: assert False, retval
     runner = tsp.create_tsp_runner(model_iop)
-    assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})['Identity:0'])
+    assert np.all(res == runner(**{"tvec": vecdata.astype(np.int8), "tmat": matdata.astype(np.int8)})['Identity:0'])
 def pt_mm(chunks, dim):
-    import torch
+    import torch #pip install torch
     class MM(torch.nn.Module):
         def __init__(self):
             super(MM, self).__init__()
@@ -2450,8 +2456,10 @@ def pt_mm(chunks, dim):
     import onnxruntime as ort
     ort_sess = ort.InferenceSession(model_path)
     assert np.all(res == ort_sess.run(None, {'tvec': vecdata, 'tmat': matdata})[0])
-    os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --GroqView")
-    os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
+    retval = os.system("groq-compiler " + model_path + " -o " + model_aa + " --print-stats --GroqView")
+    if retval != 0: assert False, retval
+    retval = os.system("aa-latest -i" + model_aa + ".aa --output-iop " + model_iop)
+    if retval != 0: assert False, retval
     runner = tsp.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})["res"])
 def main():
@@ -2463,10 +2471,10 @@ def main():
     #VecMatMul.unit_test(chunks, dim)
     #AdvanceGrayCode.unit_test(chunks, dim)
     #AdvanceGrayCode.chain_test(chunks, dim)
-    VectorsToComplexMatrix.unit_test(chunks, dim)
-    LoopCorrections.unit_test(chunks, dim)
-    #LoopCorrections.chain_test(chunks, dim)
-    #LoopCorrections.chain_test(chunks, dim, True)
+    #VectorsToComplexMatrix.unit_test(chunks, dim)
+    #LoopCorrections.unit_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim)
+    LoopCorrections.chain_test(chunks, dim, True)
     #tf_mm(chunks, dim)
     #pt_mm(chunks, dim)
     return
