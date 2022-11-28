@@ -164,7 +164,7 @@ int main(void)
         REPN(OVERFLOWSUBTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),    
         INFINITY, -INFINITY, NAN, -NAN };
     for (int i = 0; i < sizeof(bvaX)/sizeof(XTYPE); i++) {
-        //printf("TEST: %16La\n", (long double)bvaX[i]);
+        printf("TEST: %16La\n", (long double)bvaX[i]);
         for (int j = 0; j < sizeof(bvaY)/sizeof(YTYPE); j++) {
     //for (int i = 0; i < 512; i++) {
         XTYPE a = 0.0; YTYPE b = 0.0;
