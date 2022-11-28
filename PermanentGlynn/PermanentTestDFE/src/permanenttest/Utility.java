@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.HashMap;
@@ -56,13 +57,13 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.memory.Memory;
 //import com.maxeler.maxcompiler.v2.utils.MathUtils;
 import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
-import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
+//import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.FloatingPoint;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
 //import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
-import com.maxeler.maxcompiler.v2.utils.Bits;
+//import com.maxeler.maxcompiler.v2.utils.Bits;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelLib;
 import com.maxeler.maxcompiler.v2.kernelcompiler.SMIO;
@@ -1807,46 +1808,21 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar barrelShifter(DFEVar value, DFEVar shift, boolean isLeft, KernelBase<?> base)
     {
-        //final int muxPipeliningLimit = 3;
+        final int muxPipeliningLimit = 3;
         value = base.optimization.pipeline(value);
         //LUT6 allows 4:1 MUX, LUT6_2 allows 2-bit 2:1 MUX
-        //base.optimization.pushNoPipelining();
         int tot = shift.getType().getTotalBits();
         for (int i = 0; i < tot; i+=2) {
+            if (i % (muxPipeliningLimit * 2) == (muxPipeliningLimit * 2 - 2) || i+2 >= tot) base.optimization.pushNoPipelining();
             if (i == tot-1) {
                 value = base.control.mux(shift.get(i), value, isLeft ? value << (1<<i) : value >> (1<<i)); //1+2=LUT3 or 1+2+1+2=LUT6_2
             } else {
                 value = base.control.mux(shift.slice(i, 2), value, isLeft ? value << (1<<i) : value >> (1<<i),
                     isLeft ? value << (1<<(i+1)) : value >> (1<<(i+1)), isLeft ? value << ((1<<i)+(1<<(i+1))) : value >> ((1<<i)+(1<<(i+1)))); //2+4=LUT6
             }
+            if (i % (muxPipeliningLimit * 2) == (muxPipeliningLimit * 2 - 2) || i+2 >= tot) base.optimization.popNoPipelining();
         }
-        //base.optimization.popNoPipelining();
         return value;
-    }
-    public static void doTestFloatAdd(KernelBase<?> base)
-    {
-        DFEType type = KernelBase.dfeFloat(15, 64);
-        BigInteger allOnes = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
-        
-        DFEVar floatMaxMant = FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, String.format("%0" + ((65+3)/4) + "X", allOnes))), base.constant.var(KernelBase.dfeInt(16), 1));
-        for (int i = 1-66; i < 1+66; i++) {
-            doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, String.format("%0" + ((65+3)/4) + "X", allOnes))), base.constant.var(KernelBase.dfeInt(16), 1+i)), false, base);
-            doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, String.format("%0" + ((65+3)/4) + "X", allOnes))), base.constant.var(KernelBase.dfeInt(16), 1+i)), true, base);
-            
-            if (i>=0 && i <=64) doFloatAdd(floatMaxMant, FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), new Bits(65, String.format("%0" + ((65+3)/4) + "X", allOnes.subtract(BigInteger.ONE.shiftLeft(i).subtract(BigInteger.ONE))))), base.constant.var(KernelBase.dfeInt(16), 1+i)), true, base);
-        }
-        DFEVar floatMinMant = FloatingPoint.newInstance(base.constant.var(KernelBase.dfeFixOffset(65, -63, SignMode.TWOSCOMPLEMENT), 1), base.constant.var(KernelBase.dfeInt(16), 1));
-        //doFloatAdd(base.constant.zero(type), base.constant.zero(type), false, base);
-        //doFloatAdd(base.constant.zero(type), base.constant.zero(type), true, base);
-        doFloatAdd(base.constant.zero(type), floatMaxMant, false, base);
-        doFloatAdd(base.constant.zero(type), floatMaxMant, true, base);
-        doFloatAdd(floatMinMant, floatMaxMant, false, base);
-        doFloatAdd(floatMinMant, floatMaxMant, true, base);
-        doFloatAdd(floatMaxMant, floatMinMant, true, base);
-        doFloatAdd(floatMaxMant, floatMaxMant, false, base);
-        doFloatAdd(floatMaxMant, floatMaxMant, true, base);
-        doFloatAdd(floatMinMant, floatMinMant, false, base);
-        doFloatAdd(floatMinMant, floatMinMant, true, base);
     }
     public static DFEVar trailing1mask(DFEVar var, KernelBase<?> base)
     {
@@ -1875,92 +1851,96 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar doFloatAdd(DFEVar n1, DFEVar n2, boolean isSub, KernelBase<?> base)
     {
-        return isSub ? n1 - n2 : n1 + n2;
-        /*DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
+        //return isSub ? n1 - n2 : n1 + n2;
+        //initialization: splice apart mantissa, exponent and sign
+        DFEFloat n1type = (DFEFloat)n1.getType(), n2type = (DFEFloat)n2.getType();
         int n1exp = n1type.getExponentBits(), n2exp = n2type.getExponentBits();
         int n1mant = n1type.getMantissaBits(), n2mant = n2type.getMantissaBits();
         int bigMant = Math.max(n1mant, n2mant);
+        DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
+        DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
+        
+        //pipeline stage 1: comparison, sign parity and final sign
         DFEVar swap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) < n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
-            //notSwap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) >= n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
+        DFEVar signParity = isSub ? n1sign === n2sign : n1sign !== n2sign;
+
+        //pipeline stage 2: swapping and exponent difference, zero, inf/NaN detection
+        DFEVar sign = swap ? (isSub ? ~n2sign : n2sign) : n1sign;
         DFEVar n1s = swap ? base.optimization.pipeline(n2.slice(0, n1mant - 1)) : base.optimization.pipeline(n1.slice(0, n1mant - 1));
-        //base.optimization.pushNoPipelining();
         DFEVar n2s = swap ? base.optimization.pipeline(n1.slice(0, n1mant - 1)) : base.optimization.pipeline(n2.slice(0, n1mant - 1));
-        //base.optimization.popNoPipelining();
-        //DFEVar n1s = swap ? n2 : n1, n2s = swap ? n1 : n2;
-        DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);        
         DFEVar n1m = base.constant.var(KernelBase.dfeBool(), 1).cat(n1s).reinterpret(KernelBase.dfeFixOffset(n1mant, -n1mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED)),
                n2m = base.constant.var(KernelBase.dfeBool(), 1).cat(n2s).reinterpret(KernelBase.dfeFixOffset(n2mant, -n2mant+1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+2, -bigMant-2+1, SignMode.UNSIGNED));
-        DFEVar n1e = n1.slice(n1mant - 1, n1exp).reinterpret(KernelBase.dfeUInt(n1exp)), n2e = n2.slice(n2mant - 1, n2exp).reinterpret(KernelBase.dfeUInt(n2exp));
-        DFEVar notIsZero1 = n1e !== 0, isZero2 = swap ? (n1e === 0) : (n2e === 0), notIsZero2 = n2e !== 0;
         //r = (v + mask) ^ mask;
-        DFEVar shift2 = swap ? n2e - n1e : n1e - n2e; //shift2 = n1e >= n2e ? n1e - n2e : 0,
-               //shift1 = n1e >= n2e ? 0 : n2e - n1e;
-        DFEVar resExp = (swap ? base.optimization.pipeline(n2e) : base.optimization.pipeline(n1e)) + (notIsZero1 | notIsZero2).cast(n1e.getType()); //n1e >= n2e ? n1e : n2e;
-        DFEVar //shift1trunc = shift1.slice(0, MathUtils.bitsToAddress(bigMant+1)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+1))),
-               eqCase = shift2 === bigMant;
-        DFEVar shift2redux = shift2.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant)));
-        DFEVar shifts[] = new DFEVar[] { base.optimization.pipeline(shift2redux), base.optimization.pipeline(shift2redux) };
-        DFEVector<DFEVar> enc = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bigMant).newInstance(base);
-        for (int i = 0; i < bigMant; i++) {
-            enc[i] <== shifts[i / 32] === i;
-        }
-        DFEVar shift2trunc = enc.reinterpret(KernelBase.dfeUInt(bigMant));
-        DFEVar n2msel = (shift2 < bigMant).cat(eqCase);
-        DFEVar eqCaseVal = base.optimization.pipeline(n2m>>bigMant), 
-            shiftCaseVal = barrelShifter(n2m, shift2redux, false, base);
-            //doShift(n2m, shift2trunc.slice(0, bigMant), bigMant, 8, false, true, base).reinterpret(n1m.getType())
-        //DFEVar n2msel = (shift2 < bigMant).cat(eqCase).cat(shift2 > bigMant);
-        DFEVar n1mshifted = n1m; //base.control.oneHotMux((shift1 < bigMant & ~isZero1).cat(shift1 === bigMant & ~isZero1).cat(shift1 > bigMant | isZero1), base.constant.zero(n1m.getType()), n1m>>bigMant, doShift(n1m, shift1trunc, bigMant, 32, false, false, base).reinterpret(n1m.getType())),
-               //n2mshifted = base.control.mux(eqCase.cat(shift2 > bigMant), barrelShifter(n2m, shift2redux, false, base), base.optimization.pipeline(n2m>>bigMant), base.constant.zero(n2m.getType()), base.constant.zero(n2m.getType()));
-        DFEVar stickymask = trailing1mask(n2m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)), base);
-        //base.optimization.pushNoPipelining();
-        DFEVar n2mshifted = base.control.mux(n2msel, //base.control.oneHotMux(n2msel,
-                   base.constant.zero(n2m.getType()), eqCaseVal, shiftCaseVal);
-        DFEVar sticky2 = (isZero2.cat(eqCase.cat(shift2trunc).slice(3, bigMant-2)).reinterpret(KernelBase.dfeUInt(bigMant-1)) & base.constant.zero(KernelBase.dfeBool()).cat(stickymask).reinterpret(KernelBase.dfeUInt(bigMant-1))) !== 0;
-        //base.optimization.popNoPipelining();
-        DFEVar sticky1 = base.constant.zero(KernelBase.dfeBool()); //oneHotEncode(shift1trunc, bigMant+1, 32, base).reinterpret(KernelBase.dfeUInt(bigMant+1)).slice(3, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)) >= Bitops.trailing1Detect(n1m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2))).reinterpret(KernelBase.dfeUInt(bigMant-2)),
-               //sticky2 = base.control.oneHotMux(
-               //    isZero2.cat(eqCase.cat(shift2trunc).slice(3, bigMant-2)).reinterpret(KernelBase.dfeUInt(bigMant-1)),
-               //    base.constant.zero(KernelBase.dfeBool()).cat(trailing1mask(n2m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)), base)).reinterpret(new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bigMant-1)).getElementsAsList());
-               //sticky2 = base.constant.zero(KernelBase.dfeBool()).cat(eqCase.cat(shift2trunc).slice(3, bigMant-2)).reinterpret(KernelBase.dfeUInt(bigMant-1)) >= isZero2.cat(Bitops.trailing1Detect(n2m.slice(2, bigMant-2).reinterpret(KernelBase.dfeUInt(bigMant-2)))).reinterpret(KernelBase.dfeUInt(bigMant-1));
+        base.optimization.pushNoPipelining();
+        DFEVar expDiff = (n1e ^ Bitops.catLsbToMsb(Collections.nCopies(n1exp, swap)).reinterpret(KernelBase.dfeUInt(n1exp))) -
+                         (n2e ^ Bitops.catLsbToMsb(Collections.nCopies(n2exp, swap)).reinterpret(KernelBase.dfeUInt(n2exp))); //swap ? n2e-n1e : n1e-n2e
+        base.optimization.popNoPipelining();
+        expDiff = base.optimization.limitFanout(expDiff, 32);
+        DFEVar expZero1 = n1e === 0, expZero2 = n2e === 0;
+        DFEVar expInf1 = n1e === (1<<n1exp)-1, expInf2 = n2e === (1<<n2exp)-1;
+        DFEVar resExp = swap ? base.optimization.pipeline(n2e) : base.optimization.pipeline(n1e);
         
-        //DFEVar sticky1 = n1mshifted.slice(0, bigMant-1-1) !== 0, sticky2 = n2mshifted.slice(0, bigMant-1-1) !== 0; //for addition need bigMant-1 bits, but subtraction needs bigMant bits plus a guard bit, plus a round bit, and finally sticky bit
-        n1mshifted = n1mshifted.cat(sticky1).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED));
-        n2mshifted = n2mshifted.cat(sticky2).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED));
-        DFEVar signParity = base.optimization.pipeline(isSub ? n1sign === n2sign : n1sign !== n2sign); //, unevenSign = n1mshifted >= n2mshifted;
-        DFEVar sum = doAddExact(n1mshifted, n2mshifted, signParity, base);
+        //pipeline stage 3: add guard, round bits, shifting smaller argument right, compression for "sticky" bit
+        DFEVar expDiffRedux = expDiff.slice(0, MathUtils.bitsToAddress(bigMant+2)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant+2)));
+        DFEVar shifted = barrelShifter(n2m, expDiffRedux.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant))), false, base);
+        DFEVar zeroMant = expZero1 | expZero2 | expDiff > bigMant+1 | expInf1 | expInf2;
+        DFEVar shifts[] = new DFEVar[] { base.optimization.pipeline(expDiffRedux), bigMant < 32 ? null : base.optimization.pipeline(expDiffRedux) };
+        DFEVector<DFEVar> enc = new DFEVectorType<DFEVar>(KernelBase.dfeBool(), bigMant-1).newInstance(base);
+        for (int i = 0; i < bigMant-1; i++) {
+            enc[i] <== shifts[i / 32] > i+2;
+        }
+        DFEVar nearOverflow = resExp === (1<<Math.max(n1exp, n2exp))-2;
+        
+        //pipeline stage 4: handling zero mantissa, computing sticky bit
+        //base.optimization.pushNoPipelining();
+        DFEVar n2mshifted =
+            (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
+            base.control.mux(zeroMant.cat(expDiff.slice(MathUtils.bitsToAddress(bigMant+2))), 
+                shifted, base.optimization.pipeline(n2m>>bigMant), base.constant.zero(n2m.getType()), base.constant.zero(n2m.getType())) :  
+            (zeroMant ? base.constant.zero(n2m.getType()) : shifted);
+        DFEVar sticky2 = (n2m.slice(2, bigMant-1) & enc.reinterpret(KernelBase.dfeRawBits(bigMant-1))) !== 0;
+        //base.optimization.popNoPipelining();
+        DFEVar sticky1 = base.constant.zero(KernelBase.dfeBool());
+        n1m = n1m.cat(sticky1).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED));
+        n2mshifted = n2mshifted.cat(sticky2).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED)); 
+        signParity = base.optimization.limitFanout(signParity, 32);
+        
+        //pipeline stage 5: conditional addition/subtraction
+        DFEVar sum = doAddExact(n1m, n2mshifted, signParity, base);
             //base.control.oneHotMux((signParity & ~unevenSign).cat(signParity & unevenSign).cat(~signParity), sum, sub1, sub2);
-        DFEVar oneHotShift = Bitops.trailing1Detect(Bitops.bitreverse(sum.slice(3, bigMant+1)).reinterpret(KernelBase.dfeUInt(bigMant+1))); //sum === 0
+            
+        //pipeline stage 6: check zero result, count of leading zeros
+        DFEVar sumIsZero = sum === 0;
+        DFEVar oneHotShift = Bitops.trailing1Detect(Bitops.bitreverse(sum.slice(2, bigMant+2)).reinterpret(KernelBase.dfeUInt(bigMant+2))); //sum === 0
+        DFEVar expAdjust = Bitops.onehotDecode(oneHotShift); //.slice(1, bigMant+1)
         //rounding is only needed if the high bit is set for full rounding, or next to high bit is set (round becomes guard, sticky becomes round bit and sticky is 0)
         //DFEVar sumshifted = oneHotShift.get(0) ? sum.reinterpret(KernelBase.dfeUInt(sum.getType().getTotalBits())) : doShift(sum << 1, oneHotShift.slice(1, bigMant), bigMant, 32, true, true, base); //0 to bigMant inclusive shift amounts, since addition adds 1, while subtraction can make the bigMant bit the highest bit set, otherwise it must be zero
-        DFEVar sum1 = sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
-        DFEVar sumIsZero = sum === 0;
-        //ABC==000 -> 11, ABC==1XX -> 00, ABC==01X -> 01, ABC==001 -> 10 so (A==0 && B==0) cat (A==0 && (B == 1 || C == 0))
-        DFEVar sel = base.control.mux(sum.slice(bigMant+2, 2), base.constant.var(KernelBase.dfeBool(), 1), base.constant.zero(KernelBase.dfeBool()), base.constant.zero(KernelBase.dfeBool()), base.constant.zero(KernelBase.dfeBool())).cat(base.control.mux(sum.slice(bigMant+1, 3), base.constant.var(KernelBase.dfeBool(), 1), base.constant.zero(KernelBase.dfeBool()), base.constant.var(KernelBase.dfeBool(), 1), base.constant.var(KernelBase.dfeBool(), 1), base.constant.zero(KernelBase.dfeBool()), base.constant.zero(KernelBase.dfeBool()), base.constant.zero(KernelBase.dfeBool()), base.constant.zero(KernelBase.dfeBool())));
+        
+        //pipeline stage 7: shift left, underflow detect
+        DFEVar underflow = expAdjust.cast(resExp.getType()) > resExp;
         sum = base.optimization.pipeline(sum);
-        //DFEVar sel = (sum.slice(bigMant+1, 3) === 0).cat(base.optimization.pipeline(oneHotShift.slice(0, 3))); 
-        DFEVar sumshifted = base.control.mux(sel, //base.control.oneHotMux(sel,
-            sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
-            base.optimization.pipeline(sum1.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))),
-            sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-1, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
-            //doShift(sum.slice(2, bigMant-2), oneHotShift.slice(3, bigMant-2), bigMant-2, 8, true, true, base)
-            barrelShifter(sum.slice(2, bigMant-2), Bitops.onehotDecode(oneHotShift.slice(3, bigMant-2)), true, base)
-            .cat(base.constant.zero(KernelBase.dfeBool())).reinterpret(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))); //alignment so guard/round/sticky===0, also dont need first 3 or leading 1
-        DFEVar expAdjust = Bitops.onehotDecode(oneHotShift);
-        //DFEVar sumshifted = sum << expAdjust;
-        //sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
-        DFEVar roundOverflow = (oneHotShift.get(1) & sum1.get(bigMant)).reinterpret(KernelBase.dfeBool());//handle rounding overflow by pipeline only when expAdjust===1...
+        DFEVar sumshifted = barrelShifter(sum, expAdjust, true, base);
+            
+        //pipeline stage 8: rounding
+        sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
+        
+        //pipeline stage 9: exponent adjust and mantissa NaN marking       
+        DFEVar roundOverflow = sumshifted.get(bigMant).reinterpret(KernelBase.dfeBool());//handle rounding overflow by pipeline only when expAdjust===1...
+        sumshifted = (underflow | nearOverflow & (roundOverflow | expAdjust===0)) ? base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)) : sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        DFEVar isNaN = (sumIsZero | signParity) & expInf1 & expInf2;
+        sumshifted = (sumshifted.get(bigMant - 2) | isNaN).cat(sumshifted.slice(0, bigMant-2));
         //sumshifted = sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
-        //DFEVar sign = signParity ? unevenSign ^ n2sign : n1sign.reinterpret(KernelBase.dfeBool());         
-        n1sign = repeatPipeline(swap ? (isSub ? ~n2sign : base.optimization.pipeline(n2sign)) : base.optimization.pipeline(n1sign), 4, base);
-        DFEVar result = n1sign.cat((sumIsZero ? base.constant.zero(resExp.getType()) : base.optimization.pipeline(resExp))+roundOverflow.cast(resExp.getType()) - expAdjust.cast(resExp.getType())).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
-        //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }*/
+        resExp = (sumIsZero & ~expInf1 & ~expInf2 | underflow) ? base.constant.zero(resExp.getType()) : (base.optimization.pipeline(resExp)+roundOverflow.cat(~roundOverflow).reinterpret(KernelBase.dfeUInt(2)).cast(resExp.getType()) - expAdjust.cast(resExp.getType()));
+        
+        //finalization: recombine mantissa, exponent and sign
+        DFEVar result = sign.cat(resExp).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
+        //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }
         /*if (isSub)
-            base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 - n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);
+            base.debug.simPrintf(result !== n1 - n2, "sub %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 - n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 - n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), expDiff, resExp, expAdjust, sticky1, sticky2);
         else
-            base.debug.simPrintf(result !== n1 + n2, "add %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 + n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 + n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), shift2, resExp, expAdjust, sticky1, sticky2);*/
+            base.debug.simPrintf(result !== n1 + n2, "add %f %f %f %f %X %X %X %X %X %X %d %d %d %d %d\n", n1, n2, n1 + n2, result, n1.reinterpret(KernelBase.dfeUInt(79)), n2.reinterpret(KernelBase.dfeUInt(79)), (n1 + n2).reinterpret(KernelBase.dfeUInt(79)), result.reinterpret(KernelBase.dfeUInt(79)), n1mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), n2mshifted.reinterpret(KernelBase.dfeUInt(bigMant+3)), expDiff, resExp, expAdjust, sticky1, sticky2);*/
         //hex(int.from_bytes((np.fromstring(((0x5FFCC<<61)|0x4762E060FCDF98E5).to_bytes(length=16, byteorder='little'), dtype=np.longdouble)-np.fromstring(((0x5FFE4<<61)|0x0055CB372292309D).to_bytes(length=16, byteorder='little'), dtype=np.longdouble))[0].tobytes(), byteorder='little'))
-        //return result;
+        return result;
     }
     public static DFEVar doFloatMult(DFEVar n1, DFEVar n2, KernelBase<?> base) //default long double multiplication latency is 22, we achieve 7 and less DSPs
     {
