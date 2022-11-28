@@ -120,10 +120,17 @@ public class PermanentGlynnDFEManagerAlveoU250 extends XilinxAlveoU250Manager im
                 try (PrintWriter pw = new PrintWriter(tclFile)) {
                     for (int i = 0; i < lines.size(); i++) {
                         if (lines.get(i).startsWith("opt_design ")) {
-                            pw.println("set clockGroups [get_nets -of_objects [get_pins -hier -regexp .*photonstreamingblockadapterwithsm/O]]");
-                            pw.println("foreach net $clockGroups { regexp {wrapper/wrapper_entity/(.*?)/} $net NULL match; set_property CLOCK_DELAY_GROUP [concat ${match}_CGROUP] [get_nets -regexp [string map {photonstreamingblockadapterwithsm photonstreamingblockadapterwithsm.*} $net]] }");
                         } else if (lines.get(i).startsWith("place_design -directive")) {
-                            lines.set(i, lines.get(i) + " -ultrathreads");
+                            //llength [get_sites -filter {SITE_TYPE==HPIOBDIFFINBUF}]==384
+                            //pw.println("set_property LOC HPIOBDIFFINBUF_X0Y106 [get_cells IBUFDS_freerunClk_inst]");
+                            pw.println("set_property CLOCK_REGION [get_clock_regions X4Y4] [get_cells BUFG_freerunClk_inst]");
+                            pw.println("set clockGroups [get_cells -hier mmcm_instance]");
+                            //pw.println("regexp X.Y(.) [get_property CLOCK_REGION [get_cells BUFG_freerunClk_inst]] NULL yloc");
+                            pw.println("foreach mmcm $clockGroups { if {[regexp StreamClock(.*?)_clock_gen_i/mmcm_instance $mmcm NULL match]} { set_property LOC [concat MMCM_X0Y[expr $match*4+3-$match]] $mmcm } }");
+                            pw.println("foreach net $clockGroups { if {[regexp StreamClock(.*?)_clock_gen_i/mmcm_instance $net NULL match]} { set_property USER_CLOCK_ROOT [get_clock_regions [concat X4Y[expr $match*4+3-$match]]] [get_nets -of_objects [get_pins -of_objects [get_cells -of_objects [get_nets -segments -of_objects [get_pins -of_objects $net -filter {REF_PIN_NAME == CLKOUT0}]] -filter {REF_NAME == BUFGCE}] -filter {REF_PIN_NAME == O}]]} }"); 
+                            pw.println("foreach net $clockGroups { set_property CLOCK_DELAY_GROUP [concat [get_property PARENT $net]_CGROUP] [get_nets -of_objects [get_pins -of_objects [get_cells -of_objects [get_nets -segments -of_objects [get_pins -of_objects $net -filter {REF_PIN_NAME == CLKOUT0}]] -filter {REF_NAME == BUFGCE}] -filter {REF_PIN_NAME == O}]]}"); 
+                            pw.println("foreach net $clockGroups { if {[regexp StreamClock(.*?)_clock_gen_i/mmcm_instance $net NULL match]} { set_property CLOCK_REGION [get_clock_regions [concat X4Y[expr $match*4+3-$match]]] [get_cells -of_objects [get_nets -segments -of_objects [get_pins -of_objects $net -filter {REF_PIN_NAME == CLKOUT0}]] -filter {REF_NAME == BUFGCE}]} }"); 
+                            //lines.set(i, lines.get(i) + " -ultrathreads"); //not in current Vivado version
                         } else if (lines.get(i).startsWith("phys_opt_design")) {
                             //pw.println("place_design -post_place_opt");
                         } else if (lines.get(i).startsWith("write_checkpoint")) {
