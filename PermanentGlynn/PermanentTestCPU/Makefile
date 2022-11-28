@@ -40,7 +40,7 @@ INCLUDES :=	\
 INCLUDE_FLAGS := $(foreach DIR,$(INCLUDES),-I$(DIR))
 
 # Flags that are common to C and C++ in both debug AND release mode.
-COMMON_COMPILER_FLAGS := $(INCLUDE_FLAGS) -fPIC -Wall -march=native -march=native -Wno-unused-function -D_GNU_SOURCE -D__USE_MISC
+COMMON_COMPILER_FLAGS := $(INCLUDE_FLAGS) -fPIC -Wall -march=native -march=native -Wno-unused-function -D_GNU_SOURCE -D__USE_MISC --std=c99
 
 # Debug and release specific compiler flags.
 RELEASE_COMPILER_FLAGS := -g -O3
