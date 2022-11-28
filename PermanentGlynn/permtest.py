@@ -117,9 +117,9 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
     return retval
 def runtests():
     import os
-    for size in floatSizes[2:]:
-        for strategy in range(2):
-            retval = runbuild(True, 100, size, True, strategy, True, False, 2)
+    for size in floatSizes:
+        for strategy in [1]:#range(2):
+            retval = runbuild(True, 100, size, True, strategy, True, False, 0)
             if retval != 0: return
             retval = os.system("make CPUTEST")
             if retval != 0: return
