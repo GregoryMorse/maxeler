@@ -1835,6 +1835,106 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //return negVar | var;
         return (negVar.slice(bits/2, bits-bits/2) | var.slice(bits/2, bits-bits/2)).cat(negVar.slice(0, bits/2) | var.slice(0, bits/2));
     }
+    //https://e-archivo.uc3m.es/bitstream/handle/10016/34413/efficient_IEEE-ESL_2022_ps.pdf
+    public static Pair<DFEVar, DFEVar> leading0count(DFEVar var, KernelBase<?> base)
+    {
+        int size = var.getType().getTotalBits();
+        //construct 8-bit LZC
+        List<DFEVar> LP3s = new ArrayList<>(), LP2s = new ArrayList<>(), LP1_ints = new ArrayList<>();
+        List<DFEVar> LP1s = new ArrayList<>(), LP4s = new ArrayList<>();
+        base.optimization.pushNoPipelining();
+        for (int i = size; i > 0; i -= 8) {
+            int curSize = Math.min(i, 8);
+            DFEVar x = var.slice(Math.max(0, i-8), curSize);
+            LP3s.add(curSize <= 2 ? null : (curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0);
+            LP2s.add(curSize <= 1 ? null :
+                (curSize <= 4 ? x.slice(curSize-2, 2) === 0 :
+                x.slice(curSize-2, 2) === 0 &
+                    (x.slice(curSize-4, 2) !== 0 | (curSize >= 6 ? x.slice(curSize-6, 2) === 0 : ~x.get(curSize-5)))));
+            LP1_ints.add(
+                curSize > 6 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
+                curSize >= 5 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5))) :
+                curSize >= 3 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3)) :
+                ~x.get(curSize-1));
+            if (size <= 8) {
+                LP4s.add(curSize <= 4 ? null :
+                    curSize <= 6 ? x === 0 :
+                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0));
+                LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
+                    LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7));
+                base.optimization.popNoPipelining();
+                return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(
+                    size <= 1 ? LP1s.get(0).reinterpret(KernelBase.dfeBool()) :
+                    size <= 2 ? LP2s.get(0).reinterpret(KernelBase.dfeBool()) :
+                    size <= 4 ? LP3s.get(0).reinterpret(KernelBase.dfeBool()) : LP4s.get(0).reinterpret(KernelBase.dfeBool()), 32),
+                    size <= 1 ? null : base.optimization.limitFanout(
+                    size <= 2 ? LP1s.get(0).reinterpret(KernelBase.dfeBool()) :
+                    size <= 4 ? LP2s.get(0).cat(LP1s.get(0)).reinterpret(KernelBase.dfeUInt(2)) :
+                    LP3s.get(0).cat(LP2s.get(0)).cat(LP1s.get(0)).reinterpret(KernelBase.dfeUInt(3)), 32));
+            } else {
+                LP4s.add((curSize >= 6 ? x.slice(curSize-6, 6) : x) === 0);
+                LP1s.add(curSize <= 6 ? null : curSize <= 7 ? x.get(curSize-7) : x.slice(curSize-8, 2));
+            }
+        }
+        List<DFEVar> V = new ArrayList<>(), Z0s = new ArrayList<>(), Z1s = new ArrayList<>(), Z2s = new ArrayList<>(), Z3s = new ArrayList<>();
+        for (int i = 0; i < LP4s.size(); i += 2) {
+            DFEVar VH = LP1s.get(i) == null ? LP4s.get(i) : LP4s.get(i) & LP1s.get(i) === 0;
+            V.add(i+1==LP4s.size() ? VH : LP4s.get(i) & LP4s.get(i+1) & (LP1s.get(i+1) == null ? LP1s.get(i) : LP1s.get(i).cat(LP1s.get(i+1))) === 0);
+            Z0s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1) & ~LP1s.get(i+1).get(LP1s.get(i+1).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()));
+            Z1s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP2s.get(i+1) == null ? LP1_ints.get(i+1).reinterpret(KernelBase.dfeBool()) : LP2s.get(i+1))) :
+                (LP2s.get(i) == null ? LP1_ints.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)));
+            Z2s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1_ints.get(i+1).reinterpret(KernelBase.dfeBool()) : LP2s.get(i+1)) : LP3s.get(i+1))) :
+                (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1_ints.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)) : LP3s.get(i)));
+            Z3s.add(VH);
+        }
+        if (size <= 16) {
+            base.optimization.popNoPipelining();
+            return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z3s.get(0).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(4)), 32));
+        }
+        List<DFEVar> Z4s = new ArrayList<>();
+        for (int i = 0; i < V.size(); i++) {
+            Z0s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z0s.get(i+1)) : Z0s.get(i));
+            Z1s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z1s.get(i+1)) : Z1s.get(i));
+            Z2s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z2s.get(i+1)) : Z2s.get(i));
+            Z3s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z3s.get(i+1)) : Z3s.get(i));
+            Z4s.add(V.get(i));
+            V.set(i, i+1==V.size() ? V.get(i) : V.get(i) & V.get(i+1));
+            if (i+1!=V.size()) { V.remove(i+1); Z0s.remove(i+1); Z1s.remove(i+1); Z2s.remove(i+1); Z3s.remove(i+1); }
+        }
+        if (size <= 32) {
+            base.optimization.popNoPipelining();
+            return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z4s.get(0).cat(Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(5)), 32));
+        }
+        List<DFEVar> Z5s = new ArrayList<>();
+        for (int i = 0; i < V.size(); i++) {
+            Z0s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z0s.get(i+1)) : Z0s.get(i));
+            Z1s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z1s.get(i+1)) : Z1s.get(i));
+            Z2s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z2s.get(i+1)) : Z2s.get(i));
+            Z3s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z3s.get(i+1)) : Z3s.get(i));
+            Z4s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z4s.get(i+1)) : Z4s.get(i));
+            Z5s.add(V.get(i));
+            V.set(i, i+1==V.size() ? V.get(i) : V.get(i) & V.get(i+1));
+            if (i+1!=V.size()) { V.remove(i+1); Z0s.remove(i+1); Z1s.remove(i+1); Z2s.remove(i+1); Z3s.remove(i+1); Z4s.remove(i+1); }
+        }
+        if (size <= 64) {
+            base.optimization.popNoPipelining();
+            return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z5s.get(0).cat(Z4s.get(0)).cat(Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(6)), 32));
+        }
+        List<DFEVar> Z6s = new ArrayList<>();
+        for (int i = 0; i < V.size(); i++) {
+            Z0s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z0s.get(i+1)) : Z0s.get(i));
+            Z1s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z1s.get(i+1)) : Z1s.get(i));
+            Z2s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z2s.get(i+1)) : Z2s.get(i));
+            Z3s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z3s.get(i+1)) : Z3s.get(i));
+            Z4s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z4s.get(i+1)) : Z4s.get(i));
+            Z5s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z5s.get(i+1)) : Z5s.get(i));
+            Z6s.add(V.get(i));
+            V.set(i, i+1==V.size() ? V.get(i) : V.get(i) & V.get(i+1));
+            if (i+1!=V.size()) { V.remove(i+1); Z0s.remove(i+1); Z1s.remove(i+1); Z2s.remove(i+1); Z3s.remove(i+1); Z4s.remove(i+1); Z5s.remove(i+1); }
+        }
+        base.optimization.popNoPipelining();
+        return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z6s.get(0).cat(Z5s.get(0)).cat(Z4s.get(0)).cat(Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(7)), 32));
+    }
     //static boolean floatDelay = true;
     public static DFEVector<DFEComplex> doFloatAdd(DFEVector<DFEComplex> vec1, DFEVector<DFEComplex> vec2, boolean isSub, KernelBase<?> base)
     {
@@ -1895,7 +1995,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //base.optimization.pushNoPipelining();
         DFEVar n2mshifted =
             (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
-            base.control.mux(zeroMant.cat(expDiff.slice(MathUtils.bitsToAddress(bigMant+2))), 
+            base.control.mux(zeroMant.cat(expDiff.get(MathUtils.bitsToAddress(bigMant+2)-1)), 
                 shifted, base.optimization.pipeline(n2m>>bigMant), base.constant.zero(n2m.getType()), base.constant.zero(n2m.getType())) :  
             (zeroMant ? base.constant.zero(n2m.getType()) : shifted);
         DFEVar sticky2 = (n2m.slice(2, bigMant-1) & enc.reinterpret(KernelBase.dfeRawBits(bigMant-1))) !== 0;
@@ -1909,29 +2009,54 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar sum = doAddExact(n1m, n2mshifted, signParity, base);
             //base.control.oneHotMux((signParity & ~unevenSign).cat(signParity & unevenSign).cat(~signParity), sum, sub1, sub2);
             
-        //pipeline stage 6: check zero result, count of leading zeros
-        DFEVar sumIsZero = sum === 0;
-        DFEVar oneHotShift = Bitops.trailing1Detect(Bitops.bitreverse(sum.slice(2, bigMant+2)).reinterpret(KernelBase.dfeUInt(bigMant+2))); //sum === 0
-        DFEVar expAdjust = Bitops.onehotDecode(oneHotShift); //.slice(1, bigMant+1)
+        //pipeline stage 6: check zero result, count of leading zeros, rounding
+        //DFEVar sumIsZero = sum === 0;
+        //DFEVar oneHotShift = Bitops.trailing1Detect(Bitops.bitreverse(sum.slice(2, bigMant+2)).reinterpret(KernelBase.dfeUInt(bigMant+2))); //sum === 0
+        //DFEVar expAdjust = Bitops.onehotDecode(oneHotShift); //.slice(1, bigMant+1)
+        Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(sum.slice(2, bigMant+2), base);
+        DFEVar sumIsZero = isZeroExpAdjust.first, expAdjust = isZeroExpAdjust.second;        
+        //Rounding to nearest even: with Enable, Guard, Round Sticky, g.rs-> round when 1.1x 0.11 e&r&(g|s)
+        DFEVar roundAdjust = (sum.get(bigMant+3) & (sum.get(3) & (sum.get(4) | sum.slice(0, 3)!==0))).cat(
+                ~sum.get(bigMant+3) & sum.get(bigMant+2) & (sum.get(2) & (sum.get(3) | sum.slice(0, 2)!==0))).cat(
+                ~sum.get(bigMant+3) & ~sum.get(bigMant+2) & sum.get(bigMant+1) & (sum.get(1) & (sum.get(2) | sum.get(0)))).reinterpret(KernelBase.dfeFixOffset(3, -bigMant, SignMode.UNSIGNED));
+        DFEVar roundSum = doAddExact(sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)),
+                roundAdjust, false, base);
+        DFEVar roundOverflow = (sum.get(bigMant+3) & roundSum.get(bigMant+4) | ~sum.get(bigMant+3) & sum.get(bigMant+2) & roundSum.get(bigMant+3) | ~sum.get(bigMant+3) & ~sum.get(bigMant+2) & sum.get(bigMant+1) & roundSum.get(bigMant+2)).reinterpret(KernelBase.dfeBool());
+        sum = roundSum.slice(0, bigMant+4);
+        /*for (int i = 2; i <= bigMant+2; i++) {
+            DFEVar check = sum.slice(2, i);
+            DFEVar z = check === 0;
+            DFEVar ea = Bitops.onehotDecode(Bitops.trailing1Detect(Bitops.bitreverse(check).reinterpret(KernelBase.dfeUInt(i))));
+            ea = ea - (z ? base.constant.var(ea.getType(), 1) : base.constant.zero(ea.getType()));
+            Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(check, base);
+            base.debug.simPrintf(z !== isZeroExpAdjust.first | ea !== isZeroExpAdjust.second, "%d %X %X %X %X %X\n", i, check, z, ea, isZeroExpAdjust.first, isZeroExpAdjust.second);
+        }*/
         //rounding is only needed if the high bit is set for full rounding, or next to high bit is set (round becomes guard, sticky becomes round bit and sticky is 0)
         //DFEVar sumshifted = oneHotShift.get(0) ? sum.reinterpret(KernelBase.dfeUInt(sum.getType().getTotalBits())) : doShift(sum << 1, oneHotShift.slice(1, bigMant), bigMant, 32, true, true, base); //0 to bigMant inclusive shift amounts, since addition adds 1, while subtraction can make the bigMant bit the highest bit set, otherwise it must be zero
         
         //pipeline stage 7: shift left, underflow detect
         DFEVar underflow = expAdjust.cast(resExp.getType()) > resExp;
-        sum = base.optimization.pipeline(sum);
-        DFEVar sumshifted = barrelShifter(sum, expAdjust, true, base);
-            
-        //pipeline stage 8: rounding
-        sumshifted = sumshifted.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-3, SignMode.UNSIGNED)).cast(KernelBase.dfeFixOffset(bigMant+1, -bigMant+1, SignMode.UNSIGNED));
-        
-        //pipeline stage 9: exponent adjust and mantissa NaN marking       
-        DFEVar roundOverflow = sumshifted.get(bigMant).reinterpret(KernelBase.dfeBool());//handle rounding overflow by pipeline only when expAdjust===1...
-        sumshifted = (underflow | nearOverflow & (roundOverflow | expAdjust===0)) ? base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)) : sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        //DFEVar sumshifted = barrelShifter(sum, expAdjust, true, base);
+        DFEVar sumshifted = barrelShifter(sum, expAdjust.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant))), true, base);
         DFEVar isNaN = (sumIsZero | signParity) & expInf1 & expInf2;
-        sumshifted = (sumshifted.get(bigMant - 2) | isNaN).cat(sumshifted.slice(0, bigMant-2));
-        //sumshifted = sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
-        resExp = (sumIsZero & ~expInf1 & ~expInf2 | underflow) ? base.constant.zero(resExp.getType()) : (base.optimization.pipeline(resExp)+roundOverflow.cat(~roundOverflow).reinterpret(KernelBase.dfeUInt(2)).cast(resExp.getType()) - expAdjust.cast(resExp.getType()));
+        DFEVar zeroExp = sumIsZero & ~expInf1 & ~expInf2 | underflow;
+        DFEVar zeroResult = underflow | nearOverflow & (roundOverflow | expAdjust===0);
+        DFEVar sel = (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
+            (zeroResult | expAdjust.get(MathUtils.bitsToAddress(bigMant+2)-1)).cat(isNaN | expAdjust.get(MathUtils.bitsToAddress(bigMant+2)-1)) : zeroResult.cat(isNaN);
         
+        //pipeline stage 9: exponent adjust and mantissa zero/NaN or big shift adjustments       
+        //sumshifted = zeroResult ? base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)) : sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
+        sumshifted = (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
+            base.control.mux(sel,
+                sumshifted.slice(4, bigMant-1).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+                base.constant.var(KernelBase.dfeBool(), 1).cat(base.constant.zero(KernelBase.dfeUInt(bigMant-2))).reinterpret(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),                
+                base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+                (sumshifted<<bigMant).slice(4, bigMant-1).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED))) :
+            base.control.mux(sel,
+                sumshifted.slice(4, bigMant-1).cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+                base.constant.var(KernelBase.dfeBool(), 1).cat(base.constant.zero(KernelBase.dfeUInt(bigMant-2))).reinterpret(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)),
+                base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)));
+        resExp = zeroExp ? base.constant.zero(resExp.getType()) : (base.optimization.pipeline(resExp)+roundOverflow.cat(~roundOverflow).reinterpret(KernelBase.dfeUInt(2)).cast(resExp.getType()) - expAdjust.cast(resExp.getType()));        
         //finalization: recombine mantissa, exponent and sign
         DFEVar result = sign.cat(resExp).cat(sumshifted).reinterpret(KernelBase.dfeFloat(Math.max(n1exp, n2exp), bigMant));
         //if (floatDelay) { base.debug.simPrintf("%d %d\n", base.stream.measureDistance("floatAddDelay1", n1, result).getDFEVar(base, KernelBase.dfeUInt(4)), base.stream.measureDistance("floatAddDelay2", n2, result).getDFEVar(base, KernelBase.dfeUInt(4))); floatDelay=false; }
@@ -2638,7 +2763,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         ImplementationStrategy.PhysOpt postPlaceOpt = ImplementationStrategy.PhysOpt.createCustom(true, true, false, true, true, true, true, true, true, true, true, true, true, "", true, false, "", "-insert_negative_edge_ffs -aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
-        int hierFanoutLimit = 10000; //512 minimum
+        int hierFanoutLimit = 512; //512 minimum
         ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, false, false, false, hierFanoutLimit, true, true, false, false, false,
             "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
@@ -2805,7 +2930,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //SynthesisStrategy.FLOW_PERF_THRESHOLD_CARRY, SynthesisStrategy.FLOW_RUNTIME_OPTIMIZED
         int bufg = 24; //base on number of streams, rather than default of 12, UltraScale maximum of 24
         int shreg_min_size = 4; //instead of 3, minimum chain before changing from registers to an SRL, breaks 3-stage fanout optimizations at 3 so higher better (shift register lookup table)
-        int fanoutLimit = 10000; //400 is the performance default
+        int fanoutLimit = 32; //400 is the performance default
         //rather than FsmExtraction.ONE_HOT, AUTO may be better
         //Directive.ALTERNATE_ROUTABILITY does not seem to be better than Directive.DEFAULT
         //SynthesisStrategy.Directive directive, SynthesisStrategy.FlattenHierarchy flattenHierarchy, SynthesisStrategy.FsmExtraction fsmExtraction, SynthesisStrategy.CascadeDsp cascadeDsp, SynthesisStrategy.GatedClock gatedClock, SynthesisStrategy.ResourceSharing resourceSharing, boolean keepEquivalentRegisters, boolean lutCombining, boolean srlExtract, boolean retiming, int bufg, int fanoutLimit, int controlSetOptThreshold, int shregMinSize, int maxBram, int maxBramCascadeHeight, int maxUram, int maxUramCascadeHeight, int maxDsp, boolean vhdlAssert, boolean oocMode, java.lang.String options
