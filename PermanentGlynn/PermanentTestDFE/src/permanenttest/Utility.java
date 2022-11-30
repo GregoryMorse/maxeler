@@ -61,7 +61,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.RoundingMode;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization;
 import com.maxeler.maxcompiler.v2.kernelcompiler.Optimization.PipelinedOps;
 import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.MathOps;
-//import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 //import com.maxeler.maxcompiler.v2.utils.Bits;
 
@@ -1754,13 +1754,18 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
     }
     public static DFEVar doAddExact(DFEVar a, DFEVar b, DFEVar isSub, KernelBase<?> base) {
         DFEFix resultType = getAddExactType((DFEFix) a.getType(), (DFEFix) b.getType(), true);
+        if (((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) b = uToSigned(b, base);
+        DFEVar result = triAddExact(a, 
+            b ^ Bitops.catLsbToMsb(Collections.nCopies(b.getType().getTotalBits(), isSub)).reinterpret(b.getType()),
+            isSub.reinterpret(KernelBase.dfeFixOffset(1, -((DFEFix)b.getType()).getFractionBits(), SignMode.UNSIGNED)), false, false, base).cast(resultType);
+        /*
         base.optimization.pushFixOpMode(Optimization.bitSizeExact(resultType.getTotalBits()),
             Optimization.offsetExact(-resultType.getFractionBits()), MathOps.ADD_SUB);
         //base.optimization.pushEnableBitGrowth(true);
         if (((DFEFix)a.getType()).getSignMode() == SignMode.UNSIGNED) a = uToSigned(a, base);
         if (((DFEFix)b.getType()).getSignMode() == SignMode.UNSIGNED) b = uToSigned(b, base);
         DFEVar result = (isSub ? base.optimization.pipeline(a-b) : base.optimization.pipeline(a+b)); //NodeCondAddSub
-        base.optimization.popFixOpMode(MathOps.ADD_SUB);
+        base.optimization.popFixOpMode(MathOps.ADD_SUB);*/
         //base.optimization.popEnableBitGrowth();
         return result; //((DFEFix)result.getType()).getSignMode() == SignMode.UNSIGNED ? result.reinterpret(resultType) : result;
     }
@@ -1961,7 +1966,12 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar n1sign = n1.get(n1type.getTotalBits()-1), n2sign = n2.get(n2type.getTotalBits()-1);
         
         //pipeline stage 1: comparison, sign parity and final sign
+        base.optimization.pushNoPipelining();
         DFEVar swap = n1.slice(0, n1exp + n1mant - 1).reinterpret(KernelBase.dfeUInt(n1exp+n1mant-1)) < n2.slice(0, n2exp + n2mant - 1).reinterpret(KernelBase.dfeUInt(n2exp+n2mant-1));
+        base.optimization.popNoPipelining();
+        base.optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.TREE);
+        swap = base.optimization.limitFanout(swap, 32);
+        base.optimization.popFanoutLimit();
         DFEVar signParity = isSub ? n1sign === n2sign : n1sign !== n2sign;
 
         //pipeline stage 2: swapping and exponent difference, zero, inf/NaN detection
@@ -2003,10 +2013,14 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar sticky1 = base.constant.zero(KernelBase.dfeBool());
         n1m = n1m.cat(sticky1).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED));
         n2mshifted = n2mshifted.cat(sticky2).reinterpret(KernelBase.dfeFixOffset(bigMant+3, -bigMant-2, SignMode.UNSIGNED)); 
+        base.optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.TREE);
         signParity = base.optimization.limitFanout(signParity, 32);
+        base.optimization.popFanoutLimit();
         
         //pipeline stage 5: conditional addition/subtraction
+        base.optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.TREE);
         DFEVar sum = doAddExact(n1m, n2mshifted, signParity, base);
+        base.optimization.popFanoutLimit();
             //base.control.oneHotMux((signParity & ~unevenSign).cat(signParity & unevenSign).cat(~signParity), sum, sub1, sub2);
             
         //pipeline stage 6: check zero result, count of leading zeros, rounding
@@ -2016,12 +2030,16 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(sum.slice(2, bigMant+2), base);
         DFEVar sumIsZero = isZeroExpAdjust.first, expAdjust = isZeroExpAdjust.second;        
         //Rounding to nearest even: with Enable, Guard, Round Sticky, g.rs-> round when 1.1x 0.11 e&r&(g|s)
+        base.optimization.pushNoPipelining();
         DFEVar roundAdjust = (sum.get(bigMant+3) & (sum.get(3) & (sum.get(4) | sum.slice(0, 3)!==0))).cat(
                 ~sum.get(bigMant+3) & sum.get(bigMant+2) & (sum.get(2) & (sum.get(3) | sum.slice(0, 2)!==0))).cat(
                 ~sum.get(bigMant+3) & ~sum.get(bigMant+2) & sum.get(bigMant+1) & (sum.get(1) & (sum.get(2) | sum.get(0)))).reinterpret(KernelBase.dfeFixOffset(3, -bigMant, SignMode.UNSIGNED));
+        base.optimization.popNoPipelining();
         DFEVar roundSum = doAddExact(sum.reinterpret(KernelBase.dfeFixOffset(bigMant+4, -bigMant-2, SignMode.UNSIGNED)),
                 roundAdjust, false, base);
-        DFEVar roundOverflow = (sum.get(bigMant+3) & roundSum.get(bigMant+4) | ~sum.get(bigMant+3) & sum.get(bigMant+2) & roundSum.get(bigMant+3) | ~sum.get(bigMant+3) & ~sum.get(bigMant+2) & sum.get(bigMant+1) & roundSum.get(bigMant+2)).reinterpret(KernelBase.dfeBool());
+        base.optimization.pushNoPipelining();
+        DFEVar roundOverflow = base.optimization.pipeline((sum.get(bigMant+3) & roundSum.get(bigMant+4) | ~sum.get(bigMant+3) & sum.get(bigMant+2) & roundSum.get(bigMant+3) | ~sum.get(bigMant+3) & ~sum.get(bigMant+2) & sum.get(bigMant+1) & roundSum.get(bigMant+2)).reinterpret(KernelBase.dfeBool()));
+        base.optimization.popNoPipelining();
         sum = roundSum.slice(0, bigMant+4);
         /*for (int i = 2; i <= bigMant+2; i++) {
             DFEVar check = sum.slice(2, i);
@@ -2038,13 +2056,15 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar underflow = expAdjust.cast(resExp.getType()) > resExp;
         //DFEVar sumshifted = barrelShifter(sum, expAdjust, true, base);
         DFEVar sumshifted = barrelShifter(sum, expAdjust.slice(0, MathUtils.bitsToAddress(bigMant)).reinterpret(KernelBase.dfeUInt(MathUtils.bitsToAddress(bigMant))), true, base);
-        DFEVar isNaN = (sumIsZero | signParity) & expInf1 & expInf2;
-        DFEVar zeroExp = sumIsZero & ~expInf1 & ~expInf2 | underflow;
-        DFEVar zeroResult = underflow | nearOverflow & (roundOverflow | expAdjust===0);
+        base.optimization.pushNoPipelining();
+        DFEVar isNaN = base.optimization.pipeline((sumIsZero | signParity) & expInf1 & expInf2);
+        DFEVar zeroExp = base.optimization.pipeline(sumIsZero & ~expInf1 & ~expInf2 | underflow);
+        DFEVar zeroResult = base.optimization.pipeline(underflow | nearOverflow & (roundOverflow | expAdjust===0));
+        base.optimization.popNoPipelining();
         DFEVar sel = (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
             (zeroResult | expAdjust.get(MathUtils.bitsToAddress(bigMant+2)-1)).cat(isNaN | expAdjust.get(MathUtils.bitsToAddress(bigMant+2)-1)) : zeroResult.cat(isNaN);
         
-        //pipeline stage 9: exponent adjust and mantissa zero/NaN or big shift adjustments       
+        //pipeline stage 8: exponent adjust and mantissa zero/NaN or big shift adjustments       
         //sumshifted = zeroResult ? base.constant.zero(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED)) : sumshifted.cast(KernelBase.dfeFixOffset(bigMant-1, -bigMant+1, SignMode.UNSIGNED));
         sumshifted = (MathUtils.bitsToAddress(bigMant) != MathUtils.bitsToAddress(bigMant+2)) ?
             base.control.mux(sel,
@@ -2090,10 +2110,12 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         DFEVar expNormal = triAddExact(n1e, n2e, adjustExp, false, true, base);
         DFEVar mant1nz = n1m.slice(0, n1mant-1) !== 0, mant2nz = n2m.slice(0, n2mant-1) !== 0;
         //pipeline stage 1B:
-        DFEVar isNaN = isZero & (expInf1 | expInf2) | mant1nz & expInf1 | mant2nz & expInf2;
-        DFEVar underflow = isZero & ~expInf1 & ~expInf2 | expNormal < 0;
+        base.optimization.pushNoPipelining();
+        DFEVar isNaN = base.optimization.pipeline(isZero & (expInf1 | expInf2) | mant1nz & expInf1 | mant2nz & expInf2);
+        DFEVar underflow = base.optimization.pipeline(isZero & ~expInf1 & ~expInf2 | expNormal < 0);
+        DFEVar overflow = base.optimization.pipeline(expInf1 | expInf2 | expNormal >= (1<<Math.max(n1exp, n2exp))-1);
+        base.optimization.popNoPipelining();
         DFEVar nearUnderflow = expNormal === 0;
-        DFEVar overflow = expInf1 | expInf2 | expNormal >= (1<<Math.max(n1exp, n2exp))-1;
         DFEVar nearOverflow = expNormal === (1<<Math.max(n1exp, n2exp))-2;
         //pipeline stage 1C:
         DFEVar expUpdate = base.control.mux(underflow.cat(overflow), expNormal,
