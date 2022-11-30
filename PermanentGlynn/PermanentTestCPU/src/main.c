@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <gmp.h>
+#include <unistd.h>
 
 #include "PermanentTest_singleSIM.h"
 
@@ -107,7 +108,7 @@ int main(void)
     __uint128_t* inp1 = malloc(xBytes);
     __uint128_t* inp2 = malloc(yBytes);
     __uint128_t* outp = malloc(outBytes);
-    PermanentTest_singleSIM_actions_t actions = { 1, inp1, xBytes, inp2, yBytes, outp, outBytes };
+    PermanentTest_singleSIM_actions_t actions = { 1<<63, inp1, xBytes, inp2, yBytes, outp, outBytes };
     
 //#define BIAS (1<<(BITS-MANT))/2-1
 #if PermanentTest_singleSIM_USEFLOAT == 1
@@ -164,7 +165,7 @@ int main(void)
         REPN(OVERFLOWSUBTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),    
         INFINITY, -INFINITY, NAN, -NAN };
     for (int i = 0; i < sizeof(bvaX)/sizeof(XTYPE); i++) {
-        printf("TEST: %16La\n", (long double)bvaX[i]);
+        printf("TEST (%lu): %16La\n", sizeof(bvaY)/sizeof(YTYPE)*i, (long double)bvaX[i]);
         for (int j = 0; j < sizeof(bvaY)/sizeof(YTYPE); j++) {
     //for (int i = 0; i < 512; i++) {
         XTYPE a = 0.0; YTYPE b = 0.0;
@@ -199,6 +200,7 @@ int main(void)
 #else
         memcpy(inp2, &b, sizeof(b));
 #endif
+        //usleep(100);
         PermanentTest_singleSIM_run(mavDFE, &actions);
 #if PermanentTest_singleSIM_INPXBITS == -79 || PermanentTest_singleSIM_INPYBITS == -79    
         res = dfeFloatToLD(outp);
