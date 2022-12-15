@@ -98,7 +98,13 @@ int main(void)
     if (xbits < 0) xbits = -xbits;
     if (ybits < 0) ybits = -ybits;
 #if PermanentTest_singleSIM_USEFLOAT != 1
+#if PermanentTest_singleSIM_ADDSUBMUL == 3
+    int outpbits = 63-__builtin_clzl(xbits-1)+1 + 1 + 63-__builtin_clzl(ybits-1)+1 + 1;
+#elif PermanentTest_singleSIM_ADDSUBMUL == 2
     int outpbits = xbits + ybits;
+#else
+    int outpbits = xbits + ybits + 1;
+#endif
 #else
     int outpbits = xbits > ybits ? xbits : ybits;
 #endif
@@ -108,7 +114,7 @@ int main(void)
     __uint128_t* inp1 = malloc(xBytes);
     __uint128_t* inp2 = malloc(yBytes);
     __uint128_t* outp = malloc(outBytes);
-    PermanentTest_singleSIM_actions_t actions = { 1<<63, inp1, xBytes, inp2, yBytes, outp, outBytes };
+    PermanentTest_singleSIM_actions_t actions = { 1, inp1, xBytes, inp2, yBytes, outp, outBytes };
     
 //#define BIAS (1<<(BITS-MANT))/2-1
 #if PermanentTest_singleSIM_USEFLOAT == 1
@@ -165,7 +171,7 @@ int main(void)
         REPN(OVERFLOWSUBTESTS, YMANT, -, YTYPE, YMANTPOW2, YBIASM2),    
         INFINITY, -INFINITY, NAN, -NAN };
     for (int i = 0; i < sizeof(bvaX)/sizeof(XTYPE); i++) {
-        printf("TEST (%lu): %16La\n", sizeof(bvaY)/sizeof(YTYPE)*i, (long double)bvaX[i]);
+        printf("TEST (%lu %lu): %16La\n", sizeof(bvaY)/sizeof(YTYPE)*i, actions.ticks_PermanentTestKernel, (long double)bvaX[i]);
         for (int j = 0; j < sizeof(bvaY)/sizeof(YTYPE); j++) {
     //for (int i = 0; i < 512; i++) {
         XTYPE a = 0.0; YTYPE b = 0.0;
@@ -250,7 +256,13 @@ int main(void)
 #else
 #endif
 #else
-#if PermanentTest_singleSIM_ADDSUBMUL == 2
+#if PermanentTest_singleSIM_ADDSUBMUL == 3
+        int offs1 = 63-__builtin_clzl(xbits-1)+1, offs2 = 63-__builtin_clzl(ybits-1)+1;
+        int isz1 = mpz_sgn(a) == 0, isz2 = mpz_sgn(b) == 0;        
+        size_t lzc1 = isz1 ? -1 : xbits - mpz_sizeinbase(a, 2),
+                lzc2 = isz2 ? -1 : ybits - mpz_sizeinbase(b, 2);
+        mpz_set_ui(c, lzc1 | isz1 << offs1 | lzc2 << (1+offs1) | isz2 << (offs2+1+offs1));
+#elif PermanentTest_singleSIM_ADDSUBMUL == 2
         mpz_mul(c, a, b);
 #elif PermanentTest_singleSIM_ADDSUBMUL == 1
         mpz_sub(c, a, b);
