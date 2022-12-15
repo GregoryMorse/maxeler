@@ -1892,7 +1892,31 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1_ints.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)) : LP3s.get(i)));
             Z3s.add(VH);
         }
-        if (size <= 16) {
+        List<List<DFEVar>> Zs = new ArrayList<>();
+        int total = MathUtils.ceilLog2(size);
+        for (int c = 0; c < total-4; c++) {
+            for (int i = 0; i < V.size(); i++) {
+                Z0s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z0s.get(i+1)) : Z0s.get(i));
+                Z1s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z1s.get(i+1)) : Z1s.get(i));
+                Z2s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z2s.get(i+1)) : Z2s.get(i));
+                Z3s.set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Z3s.get(i+1)) : Z3s.get(i));
+                for (int j = 0; j < c; j++) {
+                    Zs.get(j).set(i, V.get(i) ? (i+1==V.size() ? base.constant.var(KernelBase.dfeBool(), 1) : Zs.get(j).get(i+1)) : Zs.get(j).get(i));
+                }
+                Zs.add(new ArrayList<>());
+                Zs.get(c).add(V.get(i));
+                V.set(i, i+1==V.size() ? V.get(i) : V.get(i) & V.get(i+1));
+                if (i+1!=V.size()) { V.remove(i+1); Z0s.remove(i+1); Z1s.remove(i+1); Z2s.remove(i+1); Z3s.remove(i+1);
+                    for (int j = 0; j < c; j++) { Zs.get(j).remove(i+1); }
+                }
+            }
+        }
+        base.optimization.popNoPipelining();
+        return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32),
+            base.optimization.limitFanout(
+                Bitops.catLsbToMsb(Zs.stream().map(x -> x.get(0)).collect(Collectors.toList())).cat(
+                    Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(total)), 32));
+        /*if (size <= 16) {
             base.optimization.popNoPipelining();
             return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z3s.get(0).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(4)), 32));
         }
@@ -1938,7 +1962,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             if (i+1!=V.size()) { V.remove(i+1); Z0s.remove(i+1); Z1s.remove(i+1); Z2s.remove(i+1); Z3s.remove(i+1); Z4s.remove(i+1); Z5s.remove(i+1); }
         }
         base.optimization.popNoPipelining();
-        return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z6s.get(0).cat(Z5s.get(0)).cat(Z4s.get(0)).cat(Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(7)), 32));
+        return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(V.get(0), 32), base.optimization.limitFanout(Z6s.get(0).cat(Z5s.get(0)).cat(Z4s.get(0)).cat(Z3s.get(0)).cat(Z2s.get(0)).cat(Z1s.get(0)).cat(Z0s.get(0)).reinterpret(KernelBase.dfeUInt(7)), 32));*/
     }
     //static boolean floatDelay = true;
     public static DFEVector<DFEComplex> doFloatAdd(DFEVector<DFEComplex> vec1, DFEVector<DFEComplex> vec2, boolean isSub, KernelBase<?> base)
