@@ -18,6 +18,8 @@ BASE, SYNTH, IMP, PLACE, ROUTE = (
 
 def get_tcl(isSynth=True):    
     import os
+    #report_power -hier power
+    #get_timing_paths -from -to
     tcl = """
     proc get_stats {a b e s t} {
         upvar 1 $b bel
@@ -117,19 +119,21 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
     return retval
 def runtests():
     import os
-    for size in floatSizes:
+    """
+    for size in floatSizes[2:]:
         for strategy in [1]:#range(2):
-            retval = runbuild(True, 100, size, True, strategy, True, False, 0)
+            retval = runbuild(True, 100, size, True, strategy, True, False, 2)
             if retval != 0: return
             retval = os.system("make CPUTEST")
             if retval != 0: return
             retval = os.system("make CPUSIMTEST")
             if retval != 0: return
+    """
     for signed in (False, True):
-        for size in range(2 if signed else 1, 256+1): #usefulSizes
-            for strategy in range(3):
+        for size in usefulSizes: #range(2 if signed else 1, 256+1)
+            for strategy in range(2):
                 if strategy == 2 and (size[0] > 64 or size[1] > 64): continue
-                retval = runbuild(True, 100, size, signed, strategy, False, False, 2)
+                retval = runbuild(True, 100, size, signed, strategy, False, False, 3)
                 if retval != 0: return
                 retval = os.system("make CPUTEST")
                 if retval != 0: return
