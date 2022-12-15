@@ -119,7 +119,14 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
     return retval
 def runtests():
     import os
-    """
+    for size in (2, 4, 6, 8, 16, 24, 24+2, 32, 53, 53+2, 64, 64+2):
+        for strategy in range(2):
+            retval = runbuild(True, 100, (size, size), False, strategy, False, False, 3)
+            if retval != 0: return
+            retval = os.system("make CPUTEST")
+            if retval != 0: return
+            retval = os.system("make CPUSIMTEST")
+            if retval != 0: return
     for size in floatSizes[2:]:
         for strategy in [1]:#range(2):
             retval = runbuild(True, 100, size, True, strategy, True, False, 2)
@@ -128,7 +135,6 @@ def runtests():
             if retval != 0: return
             retval = os.system("make CPUSIMTEST")
             if retval != 0: return
-    """
     for signed in (False, True):
         for size in usefulSizes: #range(2 if signed else 1, 256+1)
             for strategy in range(2):
