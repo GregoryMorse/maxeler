@@ -259,8 +259,8 @@ int main(void)
 #if PermanentTest_singleSIM_ADDSUBMUL == 3
         int offs1 = 63-__builtin_clzl(xbits-1)+1, offs2 = 63-__builtin_clzl(ybits-1)+1;
         int isz1 = mpz_sgn(a) == 0, isz2 = mpz_sgn(b) == 0;        
-        size_t lzc1 = isz1 ? -1 : xbits - mpz_sizeinbase(a, 2),
-                lzc2 = isz2 ? -1 : ybits - mpz_sizeinbase(b, 2);
+        size_t lzc1 = isz1 ? (1<<offs1)-1 : xbits - mpz_sizeinbase(a, 2),
+                lzc2 = isz2 ? (1<<offs2)-1 : ybits - mpz_sizeinbase(b, 2);
         mpz_set_ui(c, lzc1 | isz1 << offs1 | lzc2 << (1+offs1) | isz2 << (offs2+1+offs1));
 #elif PermanentTest_singleSIM_ADDSUBMUL == 2
         mpz_mul(c, a, b);
