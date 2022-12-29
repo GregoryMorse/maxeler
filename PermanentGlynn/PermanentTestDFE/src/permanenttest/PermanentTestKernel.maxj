@@ -6,6 +6,7 @@ import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplex;
 import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEComplexType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.op_management.FanoutLimitType;
 import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Bitops;
 import com.maxeler.maxcompiler.v2.utils.MathUtils;
 
@@ -62,8 +63,10 @@ public class PermanentTestKernel extends Kernel {
                     constant.zero(dfeUInt(outpAdj - outpCplx.getType().getImaginaryType().getTotalBits())).cat(outpCplx.getImaginary()).reinterpret(dfeRawBits(outpAdj))) :
                 outpCplx.cast(new DFEComplexType(signedX || signedY ? dfeInt(outpAdj) : dfeUInt(outpAdj)))).reinterpret(dfeRawBits(outpAdj*2));
         } else {
+            optimization.pushFanoutLimit(Integer.MAX_VALUE, FanoutLimitType.CHAIN);
     		final DFEVar inp1 = io.input("inp1", dfeUInt(inpAdjX)).slice(0, xType.getTotalBits()).reinterpret(xType);
             final DFEVar inp2 = io.input("inp2", dfeUInt(inpAdjY)).slice(0, yType.getTotalBits()).reinterpret(yType);
+            optimization.popFanoutLimit();
             if (addSubMul == 3) {
                 if (strategy == 0) {
                     DFEVar inp1z = inp1 === 0, inp2z = inp2 === 0;
@@ -72,9 +75,9 @@ public class PermanentTestKernel extends Kernel {
                     lzc1 -= inp1z.cast(dfeUInt(MathUtils.ceilLog2(inpX)));
                     lzc2 -= inp2z.cast(dfeUInt(MathUtils.ceilLog2(inpY)));
                     outp = inp2z.cat(lzc2).cat(inp1z).cat(lzc1).reinterpret(dfeUInt(MathUtils.ceilLog2(inpX) + 1 + MathUtils.ceilLog2(inpY) + 1));
-                } else if (strategy == 1) {
-                    Utility.Pair<DFEVar, DFEVar> lzc1 = Utility.leading0count(inp1, this);
-                    Utility.Pair<DFEVar, DFEVar> lzc2 = Utility.leading0count(inp2, this);
+                } else if (strategy == 1 || strategy == 2) {
+                    Utility.Pair<DFEVar, DFEVar> lzc1 = Utility.leading0count(inp1, this, strategy == 2);
+                    Utility.Pair<DFEVar, DFEVar> lzc2 = Utility.leading0count(inp2, this, strategy == 2);
                     outp = lzc2.getFirst().cat(lzc2.getSecond()).cat(lzc1.getFirst()).cat(lzc1.getSecond()).reinterpret(dfeUInt(MathUtils.ceilLog2(inpX) + 1 + MathUtils.ceilLog2(inpY) + 1));
                 }     
             } else if (addSubMul == 2) {
