@@ -1887,11 +1887,11 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         for (int i = 0; i < LP4s.size(); i += 2) {
             DFEVar VH;
             if (oldMethod) {
-                VH = LP4s.get(i);
-                V.add(i+1==LP4s.size() || LP4s.get(i+1) == null ? VH : VH & LP4s.get(i+1));
+                VH = LP4s.get(i) == null ? (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)) : LP3s.get(i)) : LP4s.get(i);
+                V.add(i+1==LP4s.size() ? VH : VH & (LP4s.get(i+1) == null ? (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)) : LP4s.get(i+1)));
                 Z0s.add(VH ? (i+1==LP1s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : LP1s.get(i+1).reinterpret(KernelBase.dfeBool())) : LP1s.get(i).reinterpret(KernelBase.dfeBool()));
-                Z1s.add(VH ? (i+1==LP2s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : LP2s.get(i+1).reinterpret(KernelBase.dfeBool())) : LP2s.get(i).reinterpret(KernelBase.dfeBool()));
-                Z2s.add(VH ? (i+1==LP3s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : LP3s.get(i+1).reinterpret(KernelBase.dfeBool())) : LP3s.get(i).reinterpret(KernelBase.dfeBool()));
+                Z1s.add(VH ? (i+1==LP2s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)).reinterpret(KernelBase.dfeBool()));
+                Z2s.add(VH ? (i+1==LP3s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)) : LP3s.get(i)).reinterpret(KernelBase.dfeBool()));
             } else {
                 VH = LP1s.get(i) == null ? LP4s.get(i) : LP4s.get(i) & LP1s.get(i) === 0;
                 V.add(i+1==LP4s.size() ? VH : LP4s.get(i) & LP4s.get(i+1) & (LP1s.get(i+1) == null ? LP1s.get(i) : LP1s.get(i).cat(LP1s.get(i+1))) === 0);
