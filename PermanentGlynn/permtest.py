@@ -18,8 +18,6 @@ BASE, SYNTH, IMP, PLACE, ROUTE = (
 
 def get_tcl(isSynth=True):    
     import os
-    #report_power -hier power
-    #get_timing_paths -from -to
     tcl = """
     proc get_stats {a b e s t} {
         upvar 1 $b bel
@@ -73,6 +71,9 @@ def get_tcl(isSynth=True):
         set elements [dict create]
         set slices [dict create]
         set totnets 0
+        set delay [get_property DATAPATH_DELAY [get_timing_paths -from [get_pins -of_objects [get_cells -hier -regexp .*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*] -filter {REF_PIN_NAME==Q}] -to [get_pins -of_objects [get_cells -of_objects [get_pins -of_objects [get_nets -segments -hier -regexp .*permanenttestkernel_core_outp_data.*] -filter {REF_PIN_NAME==Q}]] -filter {REF_PIN_NAME==D}]]]
+        set p [report_power -hier power -return_string -hierarchical_depth 8]
+        set power [regexp {PermanentTestKernel_core\s+\|\s+(\d+\.\d+) \|} $p "" match]
         get_stats [get_cells -hier [concat ${name}_core]] bel elements slices totnets
         set fp [open [concat ${dir}/results.txt] w]
         puts $fp $bel
@@ -80,6 +81,8 @@ def get_tcl(isSynth=True):
         puts $fp $slices
         puts $fp [concat SLICES [dict size $slices]]
         puts $fp [concat NETS $totnets]
+        puts $fp [concat DELAY $delay]
+        puts $fp [concat POWER $power]
         close $fp
     }
     open_checkpoint """ + BASE + (SYNTH if isSynth else (IMP + ROUTE)) + """
@@ -119,8 +122,9 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
     return retval
 def runtests():
     import os
-    for size in (2, 4, 6, 8, 16, 24, 24+2, 32, 53, 53+2, 64, 64+2):
-        for strategy in range(2):
+    for size in (#2, 4, 6, 8,
+        16, 24, 24+2, 32, 53, 53+2, 64, 64+2):
+        for strategy in (2,):#range(3):
             retval = runbuild(True, 100, (size, size), False, strategy, False, False, 3)
             if retval != 0: return
             retval = os.system("make CPUTEST")
