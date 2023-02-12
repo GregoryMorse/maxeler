@@ -1307,7 +1307,7 @@ class VecMatMul(g.Component):
                 split_result = []
                 allshifts = [self.zeros[drctn*2], self.zeros[drctn*2+1]]
             #mm = nn.MatMul(time=0, buffer_output=False, planes=mxm_rqs[drctn*2+plane].planes)
-            result_mt = [g.concat_inner_splits(x) for x in zip(*(g.split_vectors(x, [self.dim]*self.chunks) for x in g.split_inner_splits(tmat[drctn*2+plane])))]
+            result_mt = [g.concat_inner_splits(x) for x in zip(*(g.split(x, num_splits=self.chunks) for x in g.split_inner_splits(tmat[drctn*2+plane])))]
             #result_mt = g.split_vectors(tmat[drctn*2+plane], [self.dim]*self.chunks)
             rev_last_alu = [alu_for_hemi(4, drctn)]
             rev_alu = [alu_for_hemi(6, drctn)]
@@ -1645,12 +1645,15 @@ class VectorsToComplexMatrix(g.Component):
         g.add_mem_constraints(self.distmap[0] + self.imagpermmap, self.distmap[1] + self.imagpermmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.negate_tensor = []
         for hemi in (WEST, EAST):
-            self.negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[1]*dim+[-1]*dim, dtype=np.int8), layout=get_slice1(hemi, 0)))
-        g.add_mem_constraints(self.normmask, self.negate_tensor, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+            #self.negate_tensor.append(g.from_data(np.array([1]*dim+[-1]*dim+[1]*dim+[-1]*dim, dtype=np.int8), layout=get_slice1(hemi, 0)))
+            self.negate_tensor.append([])
+            for i in range(4):
+                self.negate_tensor[hemi].append(g.from_data(np.array([1]*dim+[-1]*dim+[1]*dim+[-1]*dim, dtype=np.int8).reshape(1, dim*2*2), layout=get_slice1(hemi, i)))
+        g.add_mem_constraints(self.normmask, [x[0] for x in self.negate_tensor], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.finmatreqs = []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             self.finmatreqs.append([])
-            for _ in range(4):
+            for _ in range(4+1): #1 extra temporary buffer to avoid distributor conflicts
                 self.finmatreqs[drctn*2+plane].append(tensor.create_storage_request(layout=get_slice16(drctn, s16rangeW if drctn==WEST else s16rangeE, plane)))
     def build(self, tvec, tnorm, inittime=0):
         t = inittime
@@ -1677,26 +1680,28 @@ class VectorsToComplexMatrix(g.Component):
                 #    splt = g.transpose_16(vecmatperm[hemi*2+i].reshape(self.chunks*self.dim//2//16, 16, self.dim*2*2), transposer_req=hemi*2+i, time=i*(23+1+self.chunks*self.dim//2//16))
                 #    splt = g.concat_vectors(np.array(g.split_vectors(splt, [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2), (self.chunks*self.dim//2, self.dim*2*2))
                 #    vecmatperm[hemi*2+i] = splt.write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(i), storage_req=self.finmatreqs[hemi*2+i][0])
-                perm = g.split_inner_splits(g.permute_inner(g.concat_inner_splits(tvec[hemi*2+0] + tvec[hemi*2+1]), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0))
-                vecmatperm.append(g.concat_inner_splits(perm[:self.dim//2]).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][0]))
-                vecmatperm.append(g.concat_inner_splits(perm[self.dim//2:]).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][0]))
+                perm = g.split(g.permute_inner(g.concat(tvec[hemi*2+0] + tvec[hemi*2+1], 0), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0), num_splits=2)
+                vecmatperm.append(perm[0].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][1]))
+                vecmatperm.append(perm[1].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][1]))
                 #perm = g.split_vectors(g.permute_inner(g.concat_vectors(tvec[hemi*2+0] + tvec[hemi*2+1], (self.chunks*self.dim, self.dim*2*2)), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0), [self.chunks]*self.dim)
                 #vecmatperm.append(g.concat_vectors(perm[:self.dim//2], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][0]))
                 #vecmatperm.append(g.concat_vectors(perm[self.dim//2:], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][0]))
-        g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        for j in range(2):
-            with g.ResourceScope(name="distmask" + str(j), is_buffered=True, time=None, predecessors=[pred]) as pred:
-                for hemi in (WEST, EAST):
-                    for i in range(2):
-                        halves = np.hsplit(np.array([g.split_vectors(x, [1]*self.chunks) for x in g.split_inner_splits(vecmatperm[hemi*2+i])]).reshape(self.chunks*self.dim//2//16, 16), 2)
-                        #halves = np.hsplit(np.array(g.split_vectors(vecmatperm[hemi*2+i], [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2//16, 16), 2)                    
-                        half1 = g.distribute_8(g.concat_inner_splits(halves[0].flatten()), self.distmap[j][hemi*2], distributor_req=hemi*4+i*2, map_stream_req=g.SG1[i*2*8])
-                        half2 = g.distribute_8(g.concat_inner_splits(halves[1].flatten()), self.distmap[j][hemi*2+1], distributor_req=hemi*4+i*2+1, map_stream_req=g.SG1[(i*2+1)*8])
-                        combined = g.transpose_null(g.concat_inner_splits(np.hstack((np.array(g.split_inner_splits(half1)).reshape(self.chunks*self.dim//2//16, 8), np.array(g.split_inner_splits(half2)).reshape(self.chunks*self.dim//2//16, 8))).flatten()), transposer_req=hemi*2+i, stream_order=list(reversed(range(16))), time=i*(23+1+self.chunks*self.dim//2//16))         
-                        res.append(combined.write(name="vecmatdist" + str(j) + ("W" if hemi==WEST else "E") + str(i), storage_req=self.finmatreqs[hemi*2+i][2*j+1]))                    
-        g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        """
         with g.ResourceScope(name="negcplx", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            for hemi in (WEST, EAST):
+                r = g.split(g.mul(g.concat(tvec[hemi*2+0] + tvec[hemi*2+1], 0), self.negate_tensor[hemi][0], time=0, overflow_mode=g.OverflowMode.MODULAR), num_splits=2)
+                vecmatperm.append(r[0].write(name="vecmatneg" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][4]))
+                vecmatperm.append(r[1].write(name="vecmatneg" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][4]))
+            """
+            splittings = np.array(g.split_vectors(g.concat_vectors(tvec[0], (self.dim//2, self.chunks, 320)), [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2//4, 4).transpose()
+            v = g.concat_pipelines([g.concat_vectors(splittings[0], (self.chunks*self.dim//2//4, 320)).read(g.SG1[0]),
+                    g.concat_vectors(splittings[1], (self.chunks*self.dim//2//4, 320)).read(g.SG1[1]),
+                    g.concat_vectors(splittings[2], (self.chunks*self.dim//2//4, 320)).read(g.SG1[2]),
+                    g.concat_vectors(splittings[3], (self.chunks*self.dim//2//4, 320)).read(g.SG1[3])])
+            n = g.concat_pipelines([self.negate_tensor[0][0].read(g.SG1[4]), self.negate_tensor[0][1].read(g.SG1[5]), self.negate_tensor[0][2].read(g.SG1[6]), self.negate_tensor[0][3].read(g.SG1[7])])
+            x = g.add(n, v, time=0).write(name="test")
+            x.set_program_output()
+            """
+            """
             splittings = []
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 splittings.append(np.vsplit(np.array(g.split_vectors(tvec[drctn*2+plane], [1]*(self.chunks*self.dim*2*2))).reshape(self.chunks*self.dim*2*2//16, 16).transpose(), 4))
@@ -1729,6 +1734,18 @@ class VectorsToComplexMatrix(g.Component):
                         matres.append(g.concat_vectors(np.vstack([rows[i][plane].reshape(4, 200) for i in range(4)]).transpose().flatten().tolist(), (self.chunks*self.dim*2*2, 320))
                             .write(name="adjmat" + ("W" if drctn == WEST else "E") + "p" + str(plane), storage_req=tmat[drctn*2+plane].storage_request))
         """        
+        g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        for j in range(4):
+            with g.ResourceScope(name="distmask" + str(j), is_buffered=True, time=None, predecessors=[pred]) as pred:
+                for hemi in (WEST, EAST):
+                    for i in range(2):
+                        halves = g.split(vecmatperm[hemi*2+i+(4 if j>=2 else 0)].reshape(self.chunks*self.dim//2//16, 16, 320), dim=1, num_splits=2)
+                        #halves = np.hsplit(np.array(g.split_vectors(vecmatperm[hemi*2+i], [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2//16, 16), 2)
+                        half1 = g.distribute_8(halves[0], self.distmap[j%2][hemi*2], distributor_req=hemi*4+i*2, map_stream_req=g.SG1[i*2*8])
+                        half2 = g.distribute_8(halves[1], self.distmap[j%2][hemi*2+1], distributor_req=hemi*4+i*2+1, map_stream_req=g.SG1[(i*2+1)*8])
+                        combined = g.transpose_null(g.concat([half1, half2], 1), transposer_req=hemi*2+i, stream_order=list(range(16)), time=i*(23+1+self.chunks*self.dim//2//16))
+                        res.append(combined.reshape(self.chunks, self.dim//2, 320).write(name="vecmatdist" + str(j) + ("W" if hemi==WEST else "E") + str(i), storage_req=self.finmatreqs[hemi*2+i][j]))
+        g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         normres = []
         for plane in range(2):
             with g.ResourceScope(name="normcombine" + str(plane), is_buffered=True, time=None, predecessors=[pred]) as pred:                
@@ -1736,10 +1753,12 @@ class VectorsToComplexMatrix(g.Component):
                     normvec = g.concat_vectors(tnorm[drctn*2+plane], (self.dim//2-1, self.dim*2*2)).read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
                     normvec = g.sum(g.mask(self.normmask[drctn].read(streams=g.SG1[4*sg4_for_hemi(1, drctn)]), normvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]), dims=0, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])
                     normres.append(normvec.write(name="normfin" + ("W" if drctn==WEST else "E") + str(plane), layout=get_slice1(1, drctn)))
-        g.add_mem_constraints(normres, normres + self.normmask + self.negate_tensor, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        g.add_mem_constraints(normres, normres + self.normmask + [x[0] for x in self.negate_tensor], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             g.add_mem_constraints(tnorm[drctn*2+plane], normres, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         t += 0
+        res = [g.concat([res[8+i], res[i], res[12+i], res[4+i]], 1) for i in range(4)]
+        for i, x in enumerate(res): x.name = "vecmatlast" + str(i)
         return res, normres, t
     def unit_test(chunks, dim):
         with g.ProgramContext() as pc:
@@ -1770,8 +1789,11 @@ class VectorsToComplexMatrix(g.Component):
             oracleres.append([])
             for i in range(parallel):
                 reidx = np.concatenate(origvecs[i]).reshape(dim//2, chunks, 4, dim).transpose(1,0,2,3)
-                oracleres[0].append(np.stack((reidx[:,:,[1,0],:], np.zeros((chunks, dim//2, 2, dim), dtype=np.int8)), axis=2).reshape(chunks, dim//2, dim*2*2))
-                #oracleres[0].append(np.stack((np.zeros((chunks, dim//2, 2, dim), dtype=np.int8), reidx[:,:,[3,2],:]), axis=2).reshape(chunks, dim//2, dim*2*2))
+                oracleres[0].append(np.stack((
+                    np.stack((np.concatenate((reidx[:,:,[0],:], -reidx[:,:,[1],:]), axis=2), np.zeros((chunks, dim//2, 2, dim), dtype=np.int8)), axis=2).reshape(chunks, dim//2, dim*2*2),
+                    np.stack((reidx[:,:,[1,0],:], np.zeros((chunks, dim//2, 2, dim), dtype=np.int8)), axis=2).reshape(chunks, dim//2, dim*2*2),
+                    np.stack((np.zeros((chunks, dim//2, 2, dim), dtype=np.int8), np.concatenate((reidx[:,:,[2],:], -reidx[:,:,[3],:]), axis=2)), axis=2).reshape(chunks, dim//2, dim*2*2),
+                    np.stack((np.zeros((chunks, dim//2, 2, dim), dtype=np.int8), reidx[:,:,[3,2],:]), axis=2).reshape(chunks, dim//2, dim*2*2)), axis=1).reshape(chunks, dim*2, dim*2*2))
         def actual():
             inputs = {}
             for i in range(parallel):
@@ -1779,10 +1801,10 @@ class VectorsToComplexMatrix(g.Component):
                     inputs[vecs[i][j].name] = origvecs[i][j]
                     if j!=0: inputs[norms[i][j-1].name] = orignorms[i][j-1]
             res = runner(**inputs)
-            print(res)
+            np.set_printoptions(threshold=sys.maxsize)
             result.append([])
             for i in range(parallel):
-                result[0].append(res[resmat[i].name].reshape(chunks, dim//2, dim*2*2))
+                result[0].append(res[resmat[i].name].reshape(chunks, dim*2, dim*2*2))
         print_utils.infoc("\nRunning on HW ...")
         oracle()
         actual()
@@ -1792,7 +1814,7 @@ class VectorsToComplexMatrix(g.Component):
             print_utils.success("\nVector To Complex Matrix Unit Test Success ...")
         else:
             print_utils.err("\nVector To Complex Matrix Unit Test Failure")
-            print(result[0][0,0,:], oracleres[0][0,0,:], result[1][0,0,:], oracleres[1][0,0,:])
+            print([[np.allclose(result[j][0,i], oracleres[j][0,i]) for i in range(160)] for j in range(4)])
             #print_utils.infoc(str([(oracleres[i][oracleres[i] != result[i]], result[i][oracleres[i] != result[i]]) for i in range(parallel)]))    
 class AdvanceGrayCode(g.Component):        
     def __init__(self, chunks, dim, lastagc=None, **kwargs):
@@ -2078,10 +2100,10 @@ class LoopCorrections(g.Component):
         g.add_mem_constraints(flat, flat + self.cx_diag, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         flat = [y for x in results_norm for y in x]
         g.add_mem_constraints(flat, flat + self.agc.tcounter + self.agc.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        #with g.ResourceScope(name="matnormfin", is_buffered=True, time=0, predecessors=None) as pred:
-        #    finmat, finnorm = VectorsToComplexMatrix(chunks, dim).build(results_mt, results_norm)
-        #with g.ResourceScope(name="vecmatfin", is_buffered=True, time=0, predecessors=None) as pred:
-        #    finresult_mt, finresnorm_mt, curt = VecMatMul(self.chunks, self.dim*2*2).build(self.cx_diag, finmat, finnorm, curt)
+        with g.ResourceScope(name="matnormfin", is_buffered=True, time=0, predecessors=None) as pred:
+            finmat, finnorm, _ = VectorsToComplexMatrix(self.chunks, self.dim).build([[results_mt[j][i] for j in range(self.matpow+1)] for i in range(4)], [[results_norm[j][i] for j in range(self.matpow)] for i in range(4)])
+        with g.ResourceScope(name="vecmatfin", is_buffered=True, time=0, predecessors=None) as pred:
+            finresult_mt, finresnorm_mt, curt = self.VMM.build(self.cx_diag, finmat, finnorm, curt)
         with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
             self.tvec, self.tmat, curt = self.agc.build(self.tvec, self.tmat, curt)
         result_combined = g.concat_vectors(results_mt[-1], (4, self.chunks, self.dim*2*2))
@@ -2259,7 +2281,7 @@ class LoopCorrections(g.Component):
                     )
     def unit_test(chunks, dim):
         import timeit
-        loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, 2 #dim//2-1
+        loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, dim//2-1
         with g.ProgramContext() as pc:
             lc = LoopCorrections(chunks, dim, matpow, True)
             tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
@@ -2308,7 +2330,7 @@ class LoopCorrections(g.Component):
                 for i in range(parallel):
                     V[0] = w[i]
                     for j in range(dim//2-1):
-                        V[j+1] = V[j] @ B[i]                    
+                        V[j+1] = V[j] @ B[i]
                     #print(d @ V.T, next(lciter))
                     oracleres[0].append(V[matpow].astype(np.cdouble))
             return oracle
@@ -2463,7 +2485,7 @@ def pt_mm(chunks, dim):
     runner = tsp.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})["res"])
 def main():
-    #dump_groq_doc()
+    #dump_groq_doc(); assert False
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
@@ -2472,9 +2494,9 @@ def main():
     #AdvanceGrayCode.unit_test(chunks, dim)
     #AdvanceGrayCode.chain_test(chunks, dim)
     #VectorsToComplexMatrix.unit_test(chunks, dim)
-    #LoopCorrections.unit_test(chunks, dim)
-    LoopCorrections.chain_test(chunks, dim)
-    LoopCorrections.chain_test(chunks, dim, True)
+    LoopCorrections.unit_test(chunks, dim)
+    #LoopCorrections.chain_test(chunks, dim)
+    #LoopCorrections.chain_test(chunks, dim, True)
     #tf_mm(chunks, dim)
     #pt_mm(chunks, dim)
     return
