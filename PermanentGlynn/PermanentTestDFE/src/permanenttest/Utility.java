@@ -77,6 +77,37 @@ import com.maxeler.maxcompiler.v2.statemachine.StateMachineLib;
 import com.maxeler.maxcompiler.v2.statemachine.kernel.KernelStateMachine;
 import com.maxeler.maxcompiler.v2.statemachine.types.DFEsmValueType;
 
+import com.maxeler.maxeleros.resourceestimation.KernelEstimatorVisitor;
+import com.maxeler.maxeleros.managercompiler.graph.nodes.KernelGraphVisitor;
+import com.maxeler.photon.resource_annotation.ResourceComponent;
+import com.maxeler.photon.graph_passes.maxdc_gen.OptionallyInlinedLogicNode;
+import com.maxeler.photon.core.PhotonDesignData;
+import com.maxeler.photon.core.VarTyped;
+import com.maxeler.photon.maxcompilersim.CodeBlockRoot;
+import com.maxeler.photon.maxcompilersim.Expression;
+import com.maxeler.photon.maxcompilersim.SimCodeType;
+import com.maxeler.photon.maxcompilersim.COutput;
+import com.maxeler.photon.maxcompilersim.ExpInput;
+import com.maxeler.photon.maxcompilersim.CodeContext;
+import com.maxeler.photon.core.Node;
+import com.maxeler.photon.core.Var;
+import com.maxeler.photon.types.HWType;
+import com.maxeler.photon.core.PhotonException;
+import com.maxeler.photon.nodes.NodeConstant;
+import com.maxeler.photon.nodes.ConstantFold;
+import com.maxeler.maxdc.resource_usage.EntityResourceUsage;
+import com.maxeler.maxdc.Entity;
+import com.maxeler.maxdc.Signal;
+import com.maxeler.maxdc.Reg;
+import com.maxeler.maxdc.LogicSource;
+import com.maxeler.maxdc.EntityStructural;
+import com.maxeler.utils.Bits;
+import java.util.Map;
+import java.util.Set;
+import java.util.EnumSet;
+import java.lang.reflect.Field;
+
+
 public class Utility {
     /**
     @brief Calculates the n-th power of 2.
@@ -1840,6 +1871,182 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //return negVar | var;
         return (negVar.slice(bits/2, bits-bits/2) | var.slice(bits/2, bits-bits/2)).cat(negVar.slice(0, bits/2) | var.slice(0, bits/2));
     }
+    public static class NodeKeep extends Node implements OptionallyInlinedLogicNode, ConstantFold
+    {
+        public NodeKeep(final PhotonDesignData photonDesignData, final String[] array) {
+            super(photonDesignData, array);
+            this.addInput("a");
+            this.addOutput("result");            
+        }
+
+        @Override
+        public Optimization.PipelinedOps getNodeType() {
+            return Optimization.PipelinedOps.LOGICAL;
+        }
+
+        @Override
+        public VarTyped<NodeKeep> connectOutput(final String s) {
+            return this._connectOutput(this, s);
+        }
+        
+        @Override
+        protected void assignOutputTypes() {
+            final InputDesc inputDesc = this.getInputDesc("a");
+            final HWType hwType = inputDesc.getSrcType();
+            this.setOutputDesc("result", hwType, this.isResultRegistered() ? 1 : 0);
+        }
+
+        @Override
+        public Set<ControlSignal> getControlSignals() {
+            if (this.getOutputDesc("result").getVar().getResetValue() != null) {
+                return EnumSet.of(ControlSignal.CLOCK, ControlSignal.CLOCK_ENABLE, ControlSignal.RESET);
+            }
+            return EnumSet.of(ControlSignal.CLOCK, ControlSignal.CLOCK_ENABLE);
+        }
+        
+        @Override
+        public Entity make() {
+            throw new PhotonException("make() not implemented", new Object[0]);
+        }
+        
+        @Override
+        public void makeSimCode(final CodeContext codeContext) {
+            final ExpInput expInput = codeContext.getInputVar("a");
+            final COutput cOutput = codeContext.getOutputVar("result");
+            final HWType hwType = cOutput.getType().getHWType();
+            Expression expression = expInput;
+            if (!expInput.getType().isSoftwareType() && !expInput.getType().getHWType().equals(hwType)) {
+                expression = expInput.cast(new SimCodeType(hwType));
+            }
+            final Bits bits = this.getOutputDesc("result").getVar().getResetValue();
+            if (bits != null) {
+                final CodeBlockRoot codeBlockRoot = codeContext.getResetBlock();
+                codeBlockRoot.output(cOutput, codeBlockRoot.constant(bits, cOutput.getType()));
+            }
+            final CodeBlockRoot codeBlockRoot2 = codeContext.getExecuteBlock();
+            codeBlockRoot2.output(cOutput, codeBlockRoot2.eval(expression));
+        }
+        
+        @Override
+        protected EntityResourceUsage getEstimatedResourceCount() {
+            final int totalBits = this.getInputDesc("a").getType().getTotalBits();
+            return new EntityResourceUsage(totalBits, this.isResultRegistered() ? totalBits : 0, 0, 0);
+        }
+        
+        private boolean isResultRegistered() {
+            return this.getOperatorSupplier().getSquashFactor(Optimization.PipelinedOps.LOGICAL) == 0.0;
+        }
+        
+        @Override
+        public boolean canResetOutput(final OutputDesc outputDesc) {
+            return outputDesc == this.getOutputDesc("result") && this.isResultRegistered();
+        }
+        
+        @Override
+        public Map<String, LogicSource> makeInlineLogic(final Map<String, LogicSource> map, final EntityStructural entityStructural) {
+            Signal signal = entityStructural.signal(map.get("a"));  
+            LogicSource logicSource = null;
+            if (this.isResultRegistered()) {
+                final Reg reg = entityStructural.reg(signal);
+                reg.setKeepSynthesis();
+                reg.setKeepImplementation();
+                final Bits bits = this.getOutputDesc("result").getVar().getResetValue();
+                if (bits != null) {
+                    reg.setResetValue(entityStructural.constant(bits));
+                }
+                logicSource = reg;
+            } else {
+                signal.setKeepSynthesis();
+                signal.setKeepImplementation();
+                logicSource = signal;
+            }
+            return Collections.singletonMap("result", logicSource);
+        }
+        
+        @Override
+        public String getUserSignature() {
+            return "PhotonKeep_" + this.getInputDesc("a").getType().getTotalBits() + ((this.getOperatorSupplier().getSquashFactor(this.getNodeType()) == 0.0) ? "pipe" : "nopipe");
+        }
+        
+        @Override
+        public void visitKernelGraph(final KernelGraphVisitor kernelGraphVisitor) {
+            kernelGraphVisitor.visitKernelGraph(this);
+        }
+        
+        @Override
+        public <R extends Enum<R> & ResourceComponent> void visitKernelUsageEstimation(final KernelEstimatorVisitor<R> kernelEstimatorVisitor) {
+            kernelEstimatorVisitor.visit(this);
+        }
+       
+        @Override
+        public NodeConstant foldOperation() {
+            final NodeConstant nodeConstant = this.tryReplaceByConstant();
+            if (nodeConstant != null) {
+                return nodeConstant;
+            }
+            final ConstantInput constantInput = this.findSingleConstantInput();
+            if (constantInput == null) {
+                return null;
+            }
+            final Bits bits = constantInput.node.getValueAsBits(constantInput.type);
+            if (bits.isAllZeros()) {
+                return this.replaceWithConstant(bits);
+            }
+            return null;
+        }
+               
+        @Override
+        public String toString() {
+            return "KEEP";
+        }
+        
+        protected NodeConstant tryReplaceByConstant() {
+            final NodeConstant nodeConstant = this.getInputAsConstant("a");
+            if (nodeConstant == null) {
+                return null;
+            }
+            return this.replaceWithConstant(nodeConstant.getValueAsBits(this.getInputDesc("a").getType()));
+        }        
+        protected ConstantInput findSingleConstantInput() {
+            String s = "a";
+            NodeConstant nodeConstant = this.getInputAsConstant("a");
+            HWType hwType = this.getInputDesc("a").getType();
+            if (nodeConstant == null) {
+                return null;
+            }
+            return new ConstantInput(s, nodeConstant, hwType);
+        }
+        protected NodeConstant replaceWithConstant(final Bits bits) {
+            return this.replaceWithConstant("result", bits);
+        }
+
+        protected static class ConstantInput
+        {
+            public final String input;
+            public final NodeConstant node;
+            public final HWType type;
+            
+            public ConstantInput(final String input, final NodeConstant node, final HWType type) {
+                this.input = input;
+                this.node = node;
+                this.type = type;
+            }
+        }        
+    }
+    public static DFEVar setKeep(DFEVar var, boolean keepEnabled)
+    {
+        if (keepEnabled) {
+            NodeKeep node = new NodeKeep(var.getOwner().getPhotonDesignData(), var.getOwner().getPhotonDesignData().getGroupPath());
+            try {
+                Field f = var.getClass().getDeclaredField("m_imp");
+                f.setAccessible(true);
+                node.connectInput("a", (Var)f.get(var));
+            } catch (NoSuchFieldException|IllegalAccessException e) { }
+            return new DFEVar(var.getOwner(), node.connectOutput("result"));
+        } else {
+            return var;
+        }
+    }
     //https://e-archivo.uc3m.es/bitstream/handle/10016/34413/efficient_IEEE-ESL_2022_ps.pdf
     public static Pair<DFEVar, DFEVar> leading0count(DFEVar var, KernelBase<?> base, boolean oldMethod)
     {
@@ -1851,22 +2058,27 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         for (int i = size; i > 0; i -= 8) {
             int curSize = Math.min(i, 8);
             DFEVar x = var.slice(Math.max(0, i-8), curSize);
-            LP3s.add(curSize <= 2 ? null : (curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0);
+            LP3s.add(curSize <= 2 ? null : setKeep((curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0, oldMethod));
             LP2s.add(curSize <= 1 ? null :
-                (curSize <= 4 ? x.slice(curSize-2, 2) === 0 :
+                setKeep((curSize <= 4 ? x.slice(curSize-2, 2) === 0 :
                 x.slice(curSize-2, 2) === 0 &
-                    (x.slice(curSize-4, 2) !== 0 | (curSize >= 6 ? x.slice(curSize-6, 2) === 0 : ~x.get(curSize-5)))));
-            LP1_ints.add(
-                curSize > 6 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
-                curSize >= 5 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5))) :
-                curSize >= 3 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3)) :
-                ~x.get(curSize-1));
+                    (x.slice(curSize-4, 2) !== 0 | (curSize >= 6 ? x.slice(curSize-6, 2) === 0 : ~x.get(curSize-5)))), oldMethod));
+            if (size > 8 && !oldMethod && ((LP1_ints.size() & 1) != 0) && curSize >= 7) {
+                LP1_ints.add(setKeep(
+                    ~var.get(i+1) & (var.get(i) | ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3))), false)); // & x.get(curSize-4)
+            } else {
+                LP1_ints.add(setKeep(
+                    curSize > 6 && (size <= 8 || oldMethod) ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
+                    curSize >= 5 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5))) :
+                    curSize >= 3 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3)) :
+                    ~x.get(curSize-1), oldMethod));
+            }
             if (size <= 8 || oldMethod) {
                 LP4s.add(curSize <= 4 ? null :
-                    curSize <= 6 ? x === 0 :
-                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0));
-                LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
-                    LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7));
+                    setKeep(curSize <= 6 ? x === 0 :
+                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0), oldMethod));
+                LP1s.add(setKeep(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
+                    LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7), oldMethod));
                 if (size <= 8) {
                     base.optimization.popNoPipelining();
                     return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(
@@ -1879,23 +2091,40 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                         LP3s.get(0).cat(LP2s.get(0)).cat(LP1s.get(0)).reinterpret(KernelBase.dfeUInt(3)), 32));
                 }
             } else {
-                LP4s.add((curSize >= 6 ? x.slice(curSize-6, 6) : x) === 0);
-                LP1s.add(curSize <= 6 ? null : curSize <= 7 ? x.get(curSize-7) : x.slice(curSize-8, 2));
+                if ((LP4s.size() & 1) != 0 && curSize >= 7) { //low part of intermediate requires shifted calculation or Z0s requires 7 bits
+                    LP4s.add(setKeep(var.slice(i, 2).cat(x.slice(curSize-3, 3)) === 0, false));
+                    LP1s.add(x.slice(0, curSize-3));
+                } else {
+                    LP4s.add(setKeep((curSize >= 6 ? x.slice(curSize-6, 6) : x) === 0, false));
+                    LP1s.add(curSize <= 6 ? null : curSize <= 7 ? x.get(curSize-7) : x.slice(curSize-8, 2));
+                }
             }
         }
         List<DFEVar> V = new ArrayList<>(), Z0s = new ArrayList<>(), Z1s = new ArrayList<>(), Z2s = new ArrayList<>(), Z3s = new ArrayList<>();
         for (int i = 0; i < LP4s.size(); i += 2) {
             DFEVar VH;
             if (oldMethod) {
-                VH = LP4s.get(i) == null ? (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)) : LP3s.get(i)) : LP4s.get(i);
-                V.add(i+1==LP4s.size() ? VH : VH & (LP4s.get(i+1) == null ? (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)) : LP4s.get(i+1)));
-                Z0s.add(VH ? (i+1==LP1s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : LP1s.get(i+1).reinterpret(KernelBase.dfeBool())) : LP1s.get(i).reinterpret(KernelBase.dfeBool()));
-                Z1s.add(VH ? (i+1==LP2s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)).reinterpret(KernelBase.dfeBool()));
-                Z2s.add(VH ? (i+1==LP3s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)) : LP3s.get(i)).reinterpret(KernelBase.dfeBool()));
+                VH = LP4s.get(i) == null ? (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)) : LP3s.get(i)) : LP4s.get(i);
+                V.add(setKeep(i+1==LP4s.size() ? VH : VH & (LP4s.get(i+1) == null ? (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)) : LP4s.get(i+1)), oldMethod));
+                Z0s.add(setKeep(VH ? (i+1==LP1s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : LP1s.get(i+1).reinterpret(KernelBase.dfeBool())) : LP1s.get(i).reinterpret(KernelBase.dfeBool()), oldMethod));
+                Z1s.add(setKeep(VH ? (i+1==LP2s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)).reinterpret(KernelBase.dfeBool()), oldMethod));
+                Z2s.add(setKeep(VH ? (i+1==LP3s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i) : LP2s.get(i)) : LP3s.get(i)).reinterpret(KernelBase.dfeBool()), oldMethod));
             } else {
                 VH = LP1s.get(i) == null ? LP4s.get(i) : LP4s.get(i) & LP1s.get(i) === 0;
-                V.add(i+1==LP4s.size() ? VH : LP4s.get(i) & LP4s.get(i+1) & (LP1s.get(i+1) == null ? LP1s.get(i) : LP1s.get(i).cat(LP1s.get(i+1))) === 0);
-                Z0s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1) & ~LP1s.get(i+1).get(LP1s.get(i+1).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()));
+                boolean defaultLogic = i+1==LP4s.size() || LP1s.get(i+1) == null || LP1s.get(i+1).getType().getTotalBits() < 3;
+                if (defaultLogic)
+                    V.add(i+1==LP4s.size() ? VH : LP4s.get(i) & LP4s.get(i+1) & (LP1s.get(i+1) == null ? LP1s.get(i) : LP1s.get(i).cat(LP1s.get(i+1))) === 0);
+                else {
+                    DFEVar allZero = LP1s.get(i+1) === 0;
+                    V.add(i+1==LP4s.size() ? VH : (LP1s.get(i+1) == null ? LP4s.get(i) & LP4s.get(i+1) : LP4s.get(i) & LP4s.get(i+1) & allZero));
+                }
+                if (defaultLogic) {
+                    Z0s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) & ~LP4s.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()));
+                } else {
+                    int l = LP1s.get(i+1).getType().getTotalBits();
+                    DFEVar parity = LP1s.get(i+1).get(l-1) | ~LP1s.get(i+1).get(l-2) & (LP1s.get(i+1).get(l-3) | ~LP1s.get(i+1).get(l-4));
+                    Z0s.add((LP4s.get(i) ? (LP4s.get(i+1) ? parity : LP1_ints.get(i+1)) : LP1_ints.get(i)).reinterpret(KernelBase.dfeBool()));
+                }
                 Z1s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP2s.get(i+1) == null ? LP1_ints.get(i+1).reinterpret(KernelBase.dfeBool()) : LP2s.get(i+1))) :
                     (LP2s.get(i) == null ? LP1_ints.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)));
                 Z2s.add(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1_ints.get(i+1).reinterpret(KernelBase.dfeBool()) : LP2s.get(i+1)) : LP3s.get(i+1))) :
@@ -2774,7 +3003,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         ImplementationStrategy.PhysOpt postRouteOpt = ImplementationStrategy.PhysOpt.createCustom(false, true, true, true, true, true, false, false, false, false, false, true, true, "", true, true, "", "-aggressive_hold_fix -sll_reg_hold_fix"); // -tns_cleanup
         //boolean retarget, boolean propagateConst, boolean sweep, boolean bramPowerOpt, boolean remap, boolean resynthArea, boolean resynthSeqArea, boolean muxfRemap, int hierFanoutLimit, boolean bufgOpt, boolean shiftRegisterOpt, boolean controlSetMerge, boolean mergeEquivalentDrivers, boolean carryRemap, java.lang.String addionalOptions 
         int hierFanoutLimit = 512; //512 minimum
-        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, true, false, false, false, hierFanoutLimit, true, true, false, false, false,
+        ImplementationStrategy.NetlistOpt netlistOpt = ImplementationStrategy.NetlistOpt.createCustom(true, true, true, true, false, false, false, false, hierFanoutLimit, true, true, false, false, false,
             "-aggressive_remap"); // -resynth_remap -dsp_register_opt
         ImplementationStrategy.NetlistOpt netlistOptDEFAULT = netlistOpt;
         ImplementationStrategy.NetlistOpt netlistOptEXPLORE = netlistOpt;
