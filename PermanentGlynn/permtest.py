@@ -70,11 +70,12 @@ def get_tcl(isSynth=True):
         set bel [dict create]
         set elements [dict create]
         set slices [dict create]
-        set totnets 0
-        set delay [get_property DATAPATH_DELAY [get_timing_paths -from [get_pins -of_objects [get_cells -hier -regexp .*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*] -filter {REF_PIN_NAME==Q}] -to [get_pins -of_objects [get_cells -of_objects [get_pins -of_objects [get_nets -segments -hier -regexp .*permanenttestkernel_core_outp_data.*] -filter {REF_PIN_NAME==Q}]] -filter {REF_PIN_NAME==D}]]]
+        set totnets 0 
+        set delay """ + ("0" if isSynth else "[get_property DATAPATH_DELAY [get_timing_paths -from [get_pins -of_objects [get_cells -hier -regexp {.*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*}] -filter {REF_PIN_NAME==Q}] -to [get_pins -of_objects [get_cells -of_objects [get_pins -of_objects [get_nets -segments -hier -regexp .*permanenttestkernel_core_outp_data.*] -filter {REF_PIN_NAME==Q}]] -filter {REF_PIN_NAME==D}]]]") + """
         set p [report_power -hier power -return_string -hierarchical_depth 8]
-        set power [regexp {PermanentTestKernel_core\s+\|\s+(\d+\.\d+) \|} $p "" match]
-        get_stats [get_cells -hier [concat ${name}_core]] bel elements slices totnets
+        regexp {PermanentTestKernel_core\\s+\\|\\s+(\\d+\\.\\d+) \\|} $p "" power
+        #get_stats [get_cells -hier [concat ${name}_core]] bel elements slices totnets
+        foreach child [get_cells -hier -regexp {.*inp\dinp\d_data.*} -filter {PRIMITIVE_LEVEL=~LEAF}] { get_stats $child bel elements slices totnets }        
         set fp [open [concat ${dir}/results.txt] w]
         puts $fp $bel
         puts $fp $elements
@@ -92,14 +93,16 @@ def get_tcl(isSynth=True):
 def flatten_unzip(z, interleave=2): return list(zip(*zip(*([iter(z)] * interleave))))
 def dump_stats():
     import os
+    """
     with open("dump.tcl", "w") as f:
         f.write(get_tcl(True))
     result = os.system("vivado -mode batch -source dump.tcl -notrace -nolog -quiet")
     if result != 0: return
     with open("results.txt", "r") as f:
         lines = f.readlines()
-    synthstats = [{x: int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
+    synthstats = [{x: float(y) if x == "DELAY" or x == "POWER" else int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
     #print(synthstats)
+    """
     with open("dump.tcl", "w") as f:
         f.write(get_tcl(False))
     result = os.system("vivado -mode batch -source dump.tcl -notrace -nolog -quiet")
@@ -107,9 +110,9 @@ def dump_stats():
     if result != 0: return
     with open("results.txt", "r") as f:
         lines = f.readlines()
-    routestats = [{x: int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
-    #print(routestats)
-    return synthstats, routestats
+    routestats = [{x: float(y) if x == "DELAY" or x == "POWER" else int(y) for x, y in zip(*flatten_unzip(line.split()))} for line in lines]
+    print(routestats)
+    return {'LUTs': sum(routestats[1][x] for x in routestats[1] if x.startswith('LUT')), **routestats[3], **routestats[5], **routestats[6]} #return synthstats, routestats
 def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addSubMul):
     import os
     wd = os.getcwd()
@@ -120,50 +123,34 @@ def runbuild(isSim, frequency, size, signed, strategy, useFloat, isComplex, addS
         " strategy=" + str(strategy) + " useFloat=" + str(useFloat).lower() + " isComplex=" + str(isComplex).lower() + " addSubMul=" + str(addSubMul) + "\"")
     os.chdir(wd)
     return retval
-def runtests():
+def runtests(curTests):
     import os
-    for size in (#2, 4, 6, 8,
-        16, 24, 24+2, 32, 53, 53+2, 64, 64+2):
-        for strategy in (2,):#range(3):
-            retval = runbuild(True, 100, (size, size), False, strategy, False, False, 3)
-            if retval != 0: return
-            retval = os.system("make CPUTEST")
-            if retval != 0: return
-            retval = os.system("make CPUSIMTEST")
-            if retval != 0: return
-    for size in floatSizes[2:]:
-        for strategy in [1]:#range(2):
-            retval = runbuild(True, 100, size, True, strategy, True, False, 2)
-            if retval != 0: return
-            retval = os.system("make CPUTEST")
-            if retval != 0: return
-            retval = os.system("make CPUSIMTEST")
-            if retval != 0: return
-    for signed in (False, True):
-        for size in usefulSizes: #range(2 if signed else 1, 256+1)
-            for strategy in range(2):
-                if strategy == 2 and (size[0] > 64 or size[1] > 64): continue
-                retval = runbuild(True, 100, size, signed, strategy, False, False, 3)
-                if retval != 0: return
-                retval = os.system("make CPUTEST")
-                if retval != 0: return
-                retval = os.system("make CPUSIMTEST")
-                if retval != 0: return
-def rundfebuilds():
+    for (frequency, size, signed, strategy, useFloat, isComplex, addSubMul) in curTests:
+        retval = runbuild(True, 100, size, signed, strategy, useFloat, isComplex, addSubMul)
+        if retval != 0: return
+        retval = os.system("make CPUTEST")
+        if retval != 0: return
+        retval = os.system("make CPUSIMTEST")
+        if retval != 0: return
+def rundfebuilds(curTests):
     import os
-    for signed in (False, True):
-        for size in usefulSizes:
-            for strategy in range(3):            
-                frequency, freqinc, minfreq = 350, 50, None
-                while frequency != minfreq and frequency >= 6.25 and frequency <= 725.0:
-                    retval = runbuild(False, frequency, size, signed, strategy, False, False, 2)
-                    if retval == 0:
-                        minfreq = frequency
-                        if minfreq < 350: freqinc = 10
-                        frequency += freqinc
-                        dump_stats()
-                    else: #determine if failed for bad timing score or other reason
-                        if not minfreq is None: freqinc = 10
-                        frequency -= freqinc
-runtests()
-#rundfebuilds()
+    for (frequency, size, signed, strategy, useFloat, isComplex, addSubMul) in curTests:
+        #frequency, freqinc, minfreq = 350, 50, None
+        frequency, freqinc, minfreq = 650, 50, None
+        while frequency != minfreq and frequency >= 6.25 and frequency <= 650.0: #725.0:
+            retval = runbuild(False, frequency, size, signed, strategy, useFloat, isComplex, addSubMul)
+            if retval == 0:
+                if not minfreq is None and frequency < minfreq: freqinc = 10
+                minfreq = frequency
+                frequency += freqinc
+                dump_stats()
+            else: #determine if failed for bad timing score or other reason
+                if not minfreq is None: freqinc = 10
+                frequency -= freqinc
+lzctests = [(100, (size, size), False, strategy, False, False, 3) for size in (8, 16, 32, 64) for strategy in (2,)] #[ for size in (2, 4, 6, 8, 16, 24, 24+2, 32, 53, 53+2, 64, 64+2) for strategy in range(3)]
+lzctests = [(100, (size, size), False, strategy, False, False, 3) for size in range(9, 32+1) for strategy in (1,2,)]
+multests = [(100, size, True, strategy, True, False, 2) for size in floatSizes for strategy in range(2)]
+addsubtests = [(100, size, signed, strategy, False, False, addSub) for addSub in range(2) for signed in (False, True) for size in usefulSizes for strategy in range(2) if not (strategy == 2 and (size[0] > 64 or size[1] > 64))] #range(2 if signed else 1, 256+1)
+#dump_stats(); assert False
+runtests(lzctests)
+#rundfebuilds(lzctests)
