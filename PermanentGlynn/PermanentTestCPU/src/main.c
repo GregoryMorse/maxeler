@@ -111,10 +111,11 @@ int main(void)
     size_t xBytes = (xbits+128-1)/128*16,
         yBytes = (ybits+128-1)/128*16,
         outBytes = (outpbits+128-1)/128*16;
-    __uint128_t* inp1 = malloc(xBytes);
-    __uint128_t* inp2 = malloc(yBytes);
-    __uint128_t* outp = malloc(outBytes);
-    PermanentTest_singleSIM_actions_t actions = { 1, inp1, xBytes, inp2, yBytes, outp, outBytes };
+    size_t numTests = 512;
+    __uint128_t* inp1 = malloc(xBytes*numTests);
+    __uint128_t* inp2 = malloc(yBytes*numTests);
+    __uint128_t* outp = malloc(outBytes*numTests);
+    PermanentTest_singleSIM_actions_t actions = { numTests, inp1, xBytes*numTests, inp2, yBytes*numTests, outp, outBytes*numTests };
     
 //#define BIAS (1<<(BITS-MANT))/2-1
 #if PermanentTest_singleSIM_USEFLOAT == 1
@@ -220,37 +221,53 @@ int main(void)
     }
     }
 #else
-    mpz_t a, b, c, res;
+    mpz_t a[numTests], b[numTests], c[numTests], res;
     mpz_t maskX, maskY, aexp, bexp;
     gmp_randstate_t state;
     gmp_randinit_default(state);
-    mpz_init_set_ui(a, 1); mpz_init_set_ui(b, 1); mpz_init(c); mpz_init(res);
-    mpz_mul_2exp(a, a, xbits); mpz_mul_2exp(b, b, ybits);
-    mpz_sub_ui(a, a, 1); mpz_sub_ui(b, b, 1);
-    if (signedX) { mpz_init(aexp); mpz_init_set(maskX, a); }
-    if (signedY) { mpz_init(bexp); mpz_init_set(maskY, b); }
-    for (int i = 0; i < 512; i++) {
-        if (i == 1) {
-            mpz_set_ui(a, 1); mpz_set_ui(b, 1);
-            mpz_mul_2exp(a, a, xbits); mpz_mul_2exp(b, b, ybits);
-            mpz_sub_ui(a, a, 2); mpz_sub_ui(b, b, 2);
-        } else if (i == 2) {
-            mpz_set_ui(a, 1); mpz_set_ui(b, 1);
-            mpz_mul_2exp(a, a, xbits-1); mpz_mul_2exp(b, b, ybits-1);
-        } else if (i == 3) {
-            mpz_set_ui(a, 1); mpz_set_ui(b, 1);
-            mpz_mul_2exp(a, a, xbits-1); mpz_mul_2exp(b, b, ybits-1);
-            mpz_sub_ui(a, a, 1); mpz_sub_ui(b, b, 1);            
-        } else if (i == 4) {
-            mpz_set_ui(a, 1); mpz_set_ui(b, 1);
-            mpz_mul_2exp(a, a, xbits-1); mpz_mul_2exp(b, b, ybits-1);
-            mpz_add_ui(a, a, 1); mpz_add_ui(b, b, 1);            
-        } else if (i != 0) {
-            mpz_urandomb(a, state, xbits);
-            mpz_urandomb(b, state, ybits);
+    mpz_init(res);
+    if (signedX) { mpz_init(aexp); mpz_init_set_ui(maskX, 1); mpz_mul_2exp(maskX, maskX, xbits); mpz_sub_ui(maskX, maskX, 1); }
+    if (signedY) { mpz_init(bexp); mpz_init_set_ui(maskY, 1); mpz_mul_2exp(maskY, maskY, xbits); mpz_sub_ui(maskY, maskY, 1); }
+    memset(inp1, 0, xBytes*numTests); memset(inp2, 0, yBytes*numTests); memset(outp, 0, outBytes*numTests);
+    for (int i = 0; i < numTests; i++) {
+        mpz_init(a[i]); mpz_init(b[i]); mpz_init(c[i]);
+#if PermanentTest_singleSIM_ADDSUBMUL == 3
+        if (i / xbits >= 2) {
+            mpz_urandomb(a[i], state, xbits);
+            mpz_urandomb(b[i], state, ybits);
+        } else {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], i % xbits); mpz_mul_2exp(b[i], b[i], i % ybits);
+            if (i / xbits) mpz_sub_ui(a[i], a[i], 1);
+            if (i / ybits) mpz_sub_ui(b[i], b[i], 1);
         }
-        if (signedX && mpz_sizeinbase(a, 2) == xbits) { mpz_clrbit(a, xbits-1); mpz_neg(a, a); }
-        if (signedY && mpz_sizeinbase(b, 2) == ybits) { mpz_clrbit(b, ybits-1); mpz_neg(b, b); }
+#else
+        if (i == 0) {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], xbits); mpz_mul_2exp(b[i], b[i], ybits);
+            mpz_sub_ui(a[i], a[i], 1); mpz_sub_ui(b[i], b[i], 1);
+        } else if (i == 1) {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], xbits); mpz_mul_2exp(b[i], b[i], ybits);
+            mpz_sub_ui(a[i], a[i], 2); mpz_sub_ui(b[i], b[i], 2);
+        } else if (i == 2) {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], xbits-1); mpz_mul_2exp(b[i], b[i], ybits-1);
+        } else if (i == 3) {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], xbits-1); mpz_mul_2exp(b[i], b[i], ybits-1);
+            mpz_sub_ui(a[i], a[i], 1); mpz_sub_ui(b[i], b[i], 1);            
+        } else if (i == 4) {
+            mpz_set_ui(a[i], 1); mpz_set_ui(b[i], 1);
+            mpz_mul_2exp(a[i], a[i], xbits-1); mpz_mul_2exp(b[i], b[i], ybits-1);
+            mpz_add_ui(a[i], a[i], 1); mpz_add_ui(b[i], b[i], 1);            
+        } else if (i != 0) {
+            mpz_urandomb(a[i], state, xbits);
+            mpz_urandomb(b[i], state, ybits);
+        }
+#endif
+        if (signedX && mpz_sizeinbase(a[i], 2) == xbits) { mpz_clrbit(a[i], xbits-1); mpz_neg(a[i], a[i]); }
+        if (signedY && mpz_sizeinbase(b[i], 2) == ybits) { mpz_clrbit(b[i], ybits-1); mpz_neg(b[i], b[i]); }
 #if PermanentTest_singleSIM_ISCOMPLEX == 1
 #if PermanentTest_singleSIM_ADDSUBMUL == 2
 #else
@@ -258,34 +275,34 @@ int main(void)
 #else
 #if PermanentTest_singleSIM_ADDSUBMUL == 3
         int offs1 = 63-__builtin_clzl(xbits-1)+1, offs2 = 63-__builtin_clzl(ybits-1)+1;
-        int isz1 = mpz_sgn(a) == 0, isz2 = mpz_sgn(b) == 0;        
-        size_t lzc1 = isz1 ? (1<<offs1)-1 : xbits - mpz_sizeinbase(a, 2),
-                lzc2 = isz2 ? (1<<offs2)-1 : ybits - mpz_sizeinbase(b, 2);
-        mpz_set_ui(c, lzc1 | isz1 << offs1 | lzc2 << (1+offs1) | isz2 << (offs2+1+offs1));
+        int isz1 = mpz_sgn(a[i]) == 0, isz2 = mpz_sgn(b[i]) == 0;        
+        size_t lzc1 = isz1 ? (1<<offs1)-1 : xbits - mpz_sizeinbase(a[i], 2),
+                lzc2 = isz2 ? (1<<offs2)-1 : ybits - mpz_sizeinbase(b[i], 2);
+        mpz_set_ui(c[i], lzc1 | isz1 << offs1 | lzc2 << (1+offs1) | isz2 << (offs2+1+offs1));
 #elif PermanentTest_singleSIM_ADDSUBMUL == 2
-        mpz_mul(c, a, b);
+        mpz_mul(c[i], a[i], b[i]);
 #elif PermanentTest_singleSIM_ADDSUBMUL == 1
-        mpz_sub(c, a, b);
+        mpz_sub(c[i], a[i], b[i]);
 #else
-        mpz_add(c, a, b);
+        mpz_add(c[i], a[i], b[i]);
 #endif
 #endif
-        memset(inp1, 0, xBytes); memset(inp2, 0, yBytes); memset(outp, 0, outBytes);
-        if (signedX && mpz_sgn(a) < 0) {
-            mpz_xor(aexp, a, maskX);
+        if (signedX && mpz_sgn(a[i]) < 0) {
+            mpz_xor(aexp, a[i], maskX);
             mpz_add_ui(aexp, aexp, 1);
-            mpz_export(inp1, NULL, -1, 16, 0, 0, aexp);
+            mpz_export(&inp1[i], NULL, -1, 16, 0, 0, aexp);
         } else
-        mpz_export(inp1, NULL, -1, 16, 0, 0, a);
-        if (signedY && mpz_sgn(b) < 0) {
-            mpz_xor(bexp, b, maskY);
+        mpz_export(&inp1[i], NULL, -1, 16, 0, 0, a[i]);
+        if (signedY && mpz_sgn(b[i]) < 0) {
+            mpz_xor(bexp, b[i], maskY);
             mpz_add_ui(bexp, bexp, 1);
-            mpz_export(inp2, NULL, -1, 16, 0, 0, bexp);
+            mpz_export(&inp2[i], NULL, -1, 16, 0, 0, bexp);
         } else
-        mpz_export(inp2, NULL, -1, 16, 0, 0, b);
-
-        PermanentTest_singleSIM_run(mavDFE, &actions);
-        mpz_import(res, outBytes/16, -1, 16, 0, 0, outp);
+        mpz_export(&inp2[i], NULL, -1, 16, 0, 0, b[i]);
+    }
+    PermanentTest_singleSIM_run(mavDFE, &actions);
+    for (int i = 0; i < numTests; i++) {
+        mpz_import(res, outBytes/16, -1, 16, 0, 0, &outp[i]);
         if ((signedX || signedY) && mpz_tstbit(res, outpbits-1)) {
             //mpz_com(res, res);
             for (int j = 0; j < outpbits; j++) {
@@ -297,14 +314,14 @@ int main(void)
             mpz_add_ui(res, res, 1);
             mpz_neg(res, res);
         }
-        if (mpz_cmp(res, c) != 0) {
-            gmp_printf("%Zx %Zx %Zx %Zx\n", a, b, c, res);
+        if (mpz_cmp(res, c[i]) != 0) {
+            gmp_printf("%Zx %Zx %Zx %Zx\n", a[i], b[i], c[i], res);
             return -1;
         }
+        mpz_clear(a[i]); mpz_clear(b[i]); mpz_clear(c[i]);
     }
     gmp_randclear(state);
-    mpz_clear(a); mpz_clear(b);
-    mpz_clear(res); mpz_clear(c);
+    mpz_clear(res);
     if (signedX) { mpz_clear(aexp); mpz_clear(maskX); }
     if (signedY) { mpz_clear(bexp); mpz_clear(maskY); }
 #endif
