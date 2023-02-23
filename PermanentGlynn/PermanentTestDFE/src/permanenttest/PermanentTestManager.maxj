@@ -82,6 +82,7 @@ public class PermanentTestManager extends XilinxAlveoU250Manager {
         getCurrentKernelConfig().debug.setEnableLatencyAnnotation(true);
         getCurrentKernelConfig().debug.setEnabledDebugIOControlRegs(false); //default is true
         getCurrentKernelConfig().optimization.setCEPipelining(1);
+        getCurrentKernelConfig().optimization.setInlining(true);
         getCurrentKernelConfig().optimization.setUseGlobalClockBuffer(true);
         //Utility.getLowJitterClockFrequency(12, this);
         //getCurrentKernelConfig().m_configuration.setAddChainMaxPreadderFanout(1); //default is 1
@@ -119,8 +120,9 @@ public class PermanentTestManager extends XilinxAlveoU250Manager {
 	public static void main(final String[] argv) {
         final PermanentTestEngineParameters params = new PermanentTestEngineParameters(argv);
 		final PermanentTestManager manager = new PermanentTestManager(params);
+        
         manager.getBuildConfig().setSynthesisStrategy(Utility.getHighPerfSynthStrategy());
-        manager.getBuildConfig().setImplementationStrategies(new ImplementationStrategy[] { Utility.chooseImplementationStrategies(true, false)[4] });
+        manager.getBuildConfig().setImplementationStrategies(new ImplementationStrategy[] { Utility.chooseImplementationStrategies(true, false, params.getAddSubMul() == 3 && params.getStrategy() == 4)[4] });
         
 		manager.build();
 	}
