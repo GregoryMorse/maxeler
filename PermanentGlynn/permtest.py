@@ -19,14 +19,22 @@ BASE, SYNTH, IMP, PLACE, ROUTE = (
 def get_tcl(isSynth=True):    
     import os
     tcl = """
-    proc get_stats {a b e s t} {
+    proc get_stats {a b e s t f d} {
         upvar 1 $b bel
         upvar 1 $e elements
         upvar 1 $s slices
         upvar 1 $t totnets
-        set val [get_property PRIMITIVE_LEVEL $a]
-        if {$val == "LEAF"} {
-            set val [get_property BEL $a]
+        upvar 1 $f regfence
+        upvar 1 $d done
+        dict append done $a 0
+        #set val [get_property PRIMITIVE_LEVEL $a]
+        #set val [get_property PRIMITIVE_COUNT $a]
+        #set val [get_property PRIMITIVE_GROUP $a]
+        #set val [get_property PRIMITIVE_SUBGROUP $a]
+        #set val [get_property PRIMITIVE_TYPE $a]
+        set outnets [get_pins -of_objects $a -filter {DIRECTION==OUT}]
+        set val [get_property BEL $a]
+        if {[get_property PRIMITIVE_GROUP $a] != "REGISTER"} {
             if {$val != ""} {
                if {[dict exists $bel $val]} {
                    dict set bel $val [expr [dict get $bel $val] + 1]
@@ -51,37 +59,36 @@ def get_tcl(isSynth=True):
                    dict append slices $val 1
                }
             }
-            #set val [get_property PRIMITIVE_COUNT $a]
-            #set val [get_property PRIMITIVE_GROUP $a]
-            #set val [get_property PRIMITIVE_SUBGROUP $a]
-            #set val [get_property PRIMITIVE_TYPE $a]
-        } else {
-            set childs [get_cells -regexp [concat [get_property NAME $a]/*]]
-            foreach child $childs {
-               if {[get_property NAME $child] != [get_property NAME $a]} { 
-                   get_stats $child bel elements slices totnets
-               }
+            lappend totnets [llength $outnets]
+        }
+        set childs [get_cells -of_objects [get_pins -of_objects [get_nets -segments -of_objects $outnets] -filter DIRECTION==IN]]
+        foreach child $childs {
+            if {[dict exists $done $child]} { continue }
+            if {[get_property PRIMITIVE_GROUP $child] == "REGISTER"} {
+                lappend regfence $child
+            } else {
+                get_stats $child bel elements slices totnets regfence done
             }
         }
-        set totnets [expr $totnets + [llength [get_nets -of_objects $a]]]
-        return [list $bel $elements $slices $totnets]
     }
     proc dump_state {name dir} {
         set bel [dict create]
         set elements [dict create]
         set slices [dict create]
-        set totnets 0 
-        set delay """ + ("0" if isSynth else "[get_property DATAPATH_DELAY [get_timing_paths -from [get_pins -of_objects [get_cells -hier -regexp {.*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*}] -filter {REF_PIN_NAME==Q}] -to [get_pins -of_objects [get_cells -of_objects [get_pins -of_objects [get_nets -segments -hier -regexp .*permanenttestkernel_core_outp_data.*] -filter {REF_PIN_NAME==Q}]] -filter {REF_PIN_NAME==D}]]]") + """
+        set regfence {}
+        set totnets {}
+        set namedict [dict create]
+        set filter [dict create]
+        foreach child [get_cells -hier -regexp {.*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*}] { get_stats $child bel elements slices totnets regfence filter }
+        set delay """ + ("0" if isSynth else "[get_property DATAPATH_DELAY [get_timing_paths -from [get_pins -of_objects [get_cells -hier -regexp {.*node_id\\d+_nodeinput_inp\\d+inp\\d+_data0_reg/reg_reg.*}] -filter {REF_PIN_NAME==Q}] -to [get_pins -of_objects $regfence -filter {REF_PIN_NAME==D}]]]") + """
         set p [report_power -hier power -return_string -hierarchical_depth 8]
         regexp {PermanentTestKernel_core\\s+\\|\\s+(\\d+\\.\\d+) \\|} $p "" power
-        #get_stats [get_cells -hier [concat ${name}_core]] bel elements slices totnets
-        foreach child [get_cells -hier -regexp {.*inp\dinp\d_data.*} -filter {PRIMITIVE_LEVEL=~LEAF}] { get_stats $child bel elements slices totnets }        
         set fp [open [concat ${dir}/results.txt] w]
         puts $fp $bel
         puts $fp $elements
         puts $fp $slices
         puts $fp [concat SLICES [dict size $slices]]
-        puts $fp [concat NETS $totnets]
+        puts $fp [concat NETS [expr [join $totnets +]+0]]
         puts $fp [concat DELAY $delay]
         puts $fp [concat POWER $power]
         close $fp
@@ -136,21 +143,25 @@ def rundfebuilds(curTests):
     import os
     for (frequency, size, signed, strategy, useFloat, isComplex, addSubMul) in curTests:
         #frequency, freqinc, minfreq = 350, 50, None
-        frequency, freqinc, minfreq = 650, 50, None
-        while frequency != minfreq and frequency >= 6.25 and frequency <= 650.0: #725.0:
+        frequency, freqinc, minfreq, maxfreq = 650, 50, None, None
+        while frequency != minfreq and frequency != maxfreq and frequency >= 6.25 and frequency <= 650.0: #725.0:
             retval = runbuild(False, frequency, size, signed, strategy, useFloat, isComplex, addSubMul)
             if retval == 0:
-                if not minfreq is None and frequency < minfreq: freqinc = 10
+                stats = dump_stats()
+                with open("buildstats.txt", "a") as f:
+                    f.write("Frequency: " + str(frequency) + " Size: " + str(size) + " Signed: " + str(signed) + " strategy: " + str(strategy) + " useFloat: " + str(useFloat) + " isComplex: " + str(isComplex) + " addSubMul: " + str(addSubMul) + "\n")
+                    f.write(str(stats) + "\n")
+                if not minfreq is None and frequency < minfreq or not maxfreq is None: freqinc = 10
                 minfreq = frequency
                 frequency += freqinc
-                dump_stats()
             else: #determine if failed for bad timing score or other reason
+                maxfreq = frequency
                 if not minfreq is None: freqinc = 10
                 frequency -= freqinc
 lzctests = [(100, (size, size), False, strategy, False, False, 3) for size in (8, 16, 32, 64) for strategy in (2,)] #[ for size in (2, 4, 6, 8, 16, 24, 24+2, 32, 53, 53+2, 64, 64+2) for strategy in range(3)]
-lzctests = [(100, (size, size), False, strategy, False, False, 3) for size in range(9, 32+1) for strategy in (1,2,)]
+#lzctests = [(100, (size, size), False, strategy, False, False, 3) for size in range(2, 32+1) for strategy in (0,1,2,)]
 multests = [(100, size, True, strategy, True, False, 2) for size in floatSizes for strategy in range(2)]
 addsubtests = [(100, size, signed, strategy, False, False, addSub) for addSub in range(2) for signed in (False, True) for size in usefulSizes for strategy in range(2) if not (strategy == 2 and (size[0] > 64 or size[1] > 64))] #range(2 if signed else 1, 256+1)
 #dump_stats(); assert False
-runtests(lzctests)
-#rundfebuilds(lzctests)
+#runtests(lzctests)
+rundfebuilds(lzctests)
