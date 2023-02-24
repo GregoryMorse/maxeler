@@ -2079,10 +2079,10 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             }
             if (size <= 8 || oldMethod) {
                 LP4s.add(curSize <= 4 ? null :
-                    curSize <= 6 ? x === 0 :
-                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0));
+                    setKeep(curSize <= 6 ? x === 0 :
+                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0), size > 8 && keep));
                 LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
-                    LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7));
+                    setKeep(LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7), size > 8 && keep));
                 if (size <= 8) {
                     base.optimization.popNoPipelining();
                     return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(
