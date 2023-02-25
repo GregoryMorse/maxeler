@@ -1950,16 +1950,16 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             LogicSource logicSource = null;
             if (this.isResultRegistered()) {
                 final Reg reg = entityStructural.reg(signal);
-                reg.setKeepSynthesis();
-                reg.setKeepImplementation();
+                reg.setKeepSynthesis(); //Vivado KEEP
+                //reg.setKeepImplementation(); //Vivado DONT_TOUCH prevents LUTNMs!
                 final Bits bits = this.getOutputDesc("result").getVar().getResetValue();
                 if (bits != null) {
                     reg.setResetValue(entityStructural.constant(bits));
                 }
                 logicSource = reg;
             } else {
-                signal.setKeepSynthesis();
-                signal.setKeepImplementation();
+                signal.setKeepSynthesis(); //Vivado KEEP
+                //signal.setKeepImplementation(); //Vivado DONT_TOUCH prevents LUTNMs!
                 logicSource = signal;
             }
             entityStructural.setKeepHierarchy(KeepHierarchy.FALSE);
@@ -2062,7 +2062,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         for (int i = size; i > 0; i -= 8) {
             int curSize = Math.min(i, 8);
             DFEVar x = var.slice(Math.max(0, i-8), curSize);
-            LP3s.add(curSize <= 2 ? null : setKeep((curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0, keep));
+            if (size <= 8 || oldMethod || (LP4s.size() & 1) == 0 || curSize < 7)
+                LP3s.add(curSize <= 2 ? null : setKeep((curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0, keep));
             LP2s.add(curSize <= 1 ? null :
                 setKeep((curSize <= 4 ? x.slice(curSize-2, 2) === 0 :
                 x.slice(curSize-2, 2) === 0 &
@@ -2098,6 +2099,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 if ((LP4s.size() & 1) != 0 && curSize >= 7) { //low part of intermediate requires shifted calculation or Z0s requires 7 bits
                     LP4s.add(setKeep(var.slice(i, 2).cat(x.slice(curSize-3, 3)) === 0, keep));
                     LP1s.add(x.slice(0, curSize-3));
+                    LP3s.add(LP4s.get(LP4s.size()-1) & ~x.get(curSize-4));
                 } else {
                     LP4s.add(setKeep((curSize >= 6 ? x.slice(curSize-6, 6) : x) === 0, keep));
                     LP1s.add(curSize <= 6 ? null : curSize <= 7 ? x.get(curSize-7) : x.slice(curSize-8, 2));
