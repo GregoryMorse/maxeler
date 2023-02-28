@@ -2051,7 +2051,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         }
     }
     //https://e-archivo.uc3m.es/bitstream/handle/10016/34413/efficient_IEEE-ESL_2022_ps.pdf
-    public static Pair<DFEVar, DFEVar> leading0count(DFEVar var, KernelBase<?> base, boolean oldMethod, boolean keep)
+    public static Pair<DFEVar, DFEVar> leading0count(DFEVar var, KernelBase<?> base, boolean oldMethod, boolean keep, boolean altMethod)
     {
         int size = var.getType().getTotalBits();
         //construct 8-bit LZC
@@ -2062,18 +2062,18 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         for (int i = size; i > 0; i -= 8) {
             int curSize = Math.min(i, 8);
             DFEVar x = var.slice(Math.max(0, i-8), curSize);
-            if (size <= 8 || oldMethod || (LP4s.size() & 1) == 0 || curSize < 7)
+            if (size <= 8 || oldMethod || altMethod || (LP4s.size() & 1) == 0 || curSize < 7)
                 LP3s.add(curSize <= 2 ? null : setKeep((curSize >= 4 ? x.slice(curSize-4, 4) : x) === 0, keep));
             LP2s.add(curSize <= 1 ? null :
                 setKeep((curSize <= 4 ? x.slice(curSize-2, 2) === 0 :
                 x.slice(curSize-2, 2) === 0 &
                     (x.slice(curSize-4, 2) !== 0 | (curSize >= 6 ? x.slice(curSize-6, 2) === 0 : ~x.get(curSize-5)))), keep));
-            if (size > 8 && !oldMethod && ((LP1_ints.size() & 1) != 0) && curSize >= 7) {
+            if (size > 8 && !oldMethod && !altMethod && ((LP1_ints.size() & 1) != 0) && curSize >= 7) {
                 LP1_ints.add(setKeep(
                     ~var.get(i+1) & (var.get(i) | ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3))), keep)); // & x.get(curSize-4)
             } else {
                 LP1_ints.add(setKeep(
-                    curSize > 6 && (size <= 8 || oldMethod) ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
+                    curSize > 6 && (size <= 8 || oldMethod || altMethod) ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
                     curSize >= 5 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5))) :
                     curSize >= 3 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3)) :
                     ~x.get(curSize-1), keep));
@@ -2096,7 +2096,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                         LP3s.get(0).cat(LP2s.get(0)).cat(LP1s.get(0)).reinterpret(KernelBase.dfeUInt(3)), 32));
                 }
             } else {
-                if ((LP4s.size() & 1) != 0 && curSize >= 7) { //low part of intermediate requires shifted calculation or Z0s requires 7 bits
+                if (!altMethod && (LP4s.size() & 1) != 0 && curSize >= 7) { //low part of intermediate requires shifted calculation or Z0s requires 7 bits
                     LP4s.add(setKeep(var.slice(i, 2).cat(x.slice(curSize-3, 3)) === 0, keep));
                     LP1s.add(x.slice(0, curSize-3));
                     LP3s.add(LP4s.get(LP4s.size()-1) & ~x.get(curSize-4));
@@ -2122,7 +2122,8 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                 if (defaultLogic) {
                     if (size <= 16) keep = false;
                     V.add(i+1==LP4s.size() ? VH : setKeep(LP4s.get(i) & LP4s.get(i+1) & (LP1s.get(i+1) == null ? LP1s.get(i) : LP1s.get(i).cat(LP1s.get(i+1))) === 0, keep));
-                    Z0s.add(setKeep(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) & ~LP4s.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()), keep));
+                    if (size <= 14) Z0s.add(setKeep(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) & ~LP4s.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()), keep));
+                    else Z0s.add(setKeep(VH ? (i+1==LP4s.size() ? base.constant.var(KernelBase.dfeBool(), 1) : (LP1s.get(i+1) == null ? LP1_ints.get(i+1) : LP1_ints.get(i+1) | LP4s.get(i+1) & ~LP1s.get(i+1).get(LP1s.get(i+1).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool())) : (LP1s.get(i) == null ? LP1_ints.get(i) : LP1_ints.get(i) & ~LP4s.get(i) | LP4s.get(i) & ~LP1s.get(i).get(LP1s.get(i).getType().getTotalBits()-1)).reinterpret(KernelBase.dfeBool()), keep));
                 } else {
                     DFEVar allZero = setKeep(LP1s.get(i+1) === 0, keep);
                     int l = LP1s.get(i+1).getType().getTotalBits();
@@ -2252,7 +2253,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         //DFEVar sumIsZero = sum === 0;
         //DFEVar oneHotShift = Bitops.trailing1Detect(Bitops.bitreverse(sum.slice(2, bigMant+2)).reinterpret(KernelBase.dfeUInt(bigMant+2))); //sum === 0
         //DFEVar expAdjust = Bitops.onehotDecode(oneHotShift); //.slice(1, bigMant+1)
-        Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(sum.slice(2, bigMant+2), base, false, false);
+        Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(sum.slice(2, bigMant+2), base, false, false, true);
         DFEVar sumIsZero = isZeroExpAdjust.first, expAdjust = isZeroExpAdjust.second;        
         //Rounding to nearest even: with Enable, Guard, Round Sticky, g.rs-> round when 1.1x 0.11 e&r&(g|s)
         base.optimization.pushNoPipelining();
@@ -2271,7 +2272,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
             DFEVar z = check === 0;
             DFEVar ea = Bitops.onehotDecode(Bitops.trailing1Detect(Bitops.bitreverse(check).reinterpret(KernelBase.dfeUInt(i))));
             ea = ea - (z ? base.constant.var(ea.getType(), 1) : base.constant.zero(ea.getType()));
-            Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(check, base, false, false);
+            Pair<DFEVar, DFEVar> isZeroExpAdjust = leading0count(check, base, false, false, true);
             base.debug.simPrintf(z !== isZeroExpAdjust.first | ea !== isZeroExpAdjust.second, "%d %X %X %X %X %X\n", i, check, z, ea, isZeroExpAdjust.first, isZeroExpAdjust.second);
         }*/
         //rounding is only needed if the high bit is set for full rounding, or next to high bit is set (round becomes guard, sticky becomes round bit and sticky is 0)
