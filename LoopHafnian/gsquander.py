@@ -1728,7 +1728,7 @@ class UnitarySimulator(g.Component):
                         if num_qbits == 9: inputs[tensornames["qbits"]] |= ((target_qbits>>3)<<6)
                         elif num_qbits == 10: inputs[tensornames["qbits"]] |= ((adjcontrolqbits>>3)<<6) | ((target_qbits>>3)<<7)
                         inputs[tensornames["qbits"]] = inputs[tensornames["qbits"]].astype(np.uint16) | (deriv.astype(np.uint16) << 8)
-                    else: inputs[tensornames["qbits"]] = ((control_qbits!=target_qbits) + derivatives).astype(np.uint8)
+                    else: inputs[tensornames["qbits"]] = derivatives.astype(np.uint8)
                     #inputs[tensornames["controlqbits"]] = np.concatenate((np.repeat(np.hstack((adjcontrolqbits[:,np.newaxis]%8*2, adjcontrolqbits[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
                     #if num_qbits >= 9:
                     #    hightcq = (adjcontrolqbits//8 + (target_qbits//8)*2).astype(np.uint8) if num_qbits==10 else (target_qbits//8).astype(np.uint8)
@@ -1991,7 +1991,7 @@ def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbi
             tqbit, cqbit = target_qbits[i], control_qbits[i]
             aakey = (1 if tqbit == cqbit or cqbit is None else 3) + (i % 2)
             p, bp = UnitarySimulator.idxmap(num_qbits, tqbit, cqbit)
-            qmap = {}
+            qmap = {} #need to handle inner splits on 9 or more qubits
             for x, y in zip((tqpairs if tqbit == cqbit or cqbit is None else np.concatenate((cqpairs, bypasspairs))).flatten(),
                             (p if tqbit == cqbit or cqbit is None else np.concatenate((p, bp))).flatten()):
                 qmap[x] = y
@@ -2007,12 +2007,12 @@ def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbi
                     if aakey != 5 and re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in s8range+s8range2) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #unitary pairings
                         qbit = int(re.search("(?:read|write)\\s+(\\d+),", line).group(1))
                         line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(qmap[qbit]) + ",", line)
-                    elif aakey != 5 and re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in range(16)) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #gate params
-                        idx = int(re.search("read\\s+(\\d+),", line).group(1))
-                        line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(2*(i//2)+idx) + ",", line)
                     elif aakey != 5 and re.match(".unit Mem (?:East|West) (?:39)", unit) and (op.startswith(".read") or op.startswith(".write")): #derivatives
                         idx = int(re.search("read\\s+(\\d+),", line).group(1))
                         line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(i+idx) + ",", line)
+                    elif aakey != 5 and re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in range(16)) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #gate params, 0-9 units could regexp preempt so do last
+                        idx = int(re.search("read\\s+(\\d+),", line).group(1))
+                        line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(2*(i//2)+idx) + ",", line)
                     final_lines[unit][op].append(v + line[colon:])
         period = period + periods[aakey]
     with open(outaa, "w") as f:
@@ -2058,7 +2058,7 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 8
+    num_qbits = 9
     #UnitarySimulator.unit_test(num_qbits)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
     UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
