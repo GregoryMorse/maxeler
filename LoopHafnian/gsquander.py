@@ -1154,10 +1154,10 @@ class UnitarySimulator(g.Component):
         cur_offset = cur_block * num_inner_splits
         d, md = UnitarySimulator.get_correction_masks(num_qbits, second=False)
         allrows = g.split_vectors(unitary, [1]*num_inner_splits*pow2qb*2)
-        rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i]) if len(x) != 0], 0)
+        rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i][cur_offset:cur_offset+num_inner_splits]) if len(x) != 0], 0)
         ident = g.split_vectors(ident, [1]*ident.shape[0])
         with g.ResourceScope(name="correction", is_buffered=True, time=0) as pred:
-            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_block:cur_block+num_inner_splits] if len(x) != 0], 0), alus=[0], time=0)
+            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_offset:cur_offset+num_inner_splits] if len(x) != 0], 0), alus=[0], time=0)
             rows = g.sum(rows, dims=[0], alus=[1])
             rows = rows.write(name="correction", storage_req=outp_storage)
         return rows
@@ -1168,10 +1168,10 @@ class UnitarySimulator(g.Component):
         cur_offset = cur_block * num_inner_splits
         d, md = UnitarySimulator.get_correction_masks(num_qbits, second=True)
         allrows = g.split_vectors(unitary, [1]*num_inner_splits*pow2qb*2)
-        rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i]) if len(x) != 0], 0)
+        rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i][cur_offset:cur_offset+num_inner_splits]) if len(x) != 0], 0)
         ident = g.split_vectors(ident, [1]*ident.shape[0])
         with g.ResourceScope(name="correction2", is_buffered=True, time=0) as pred:
-            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_block:cur_block+num_inner_splits] if len(x) != 0], 0), alus=[4], output_streams=g.SG4[4], time=0)
+            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_offset:cur_offset+num_inner_splits] if len(x) != 0], 0), alus=[4], output_streams=g.SG4[4], time=0)
             rows = g.sum(rows, dims=[0], alus=[5], output_streams=g.SG4[4])
             rows = rows.write(name="correction2", storage_req=outp_storage)
         return rows
@@ -1184,9 +1184,9 @@ class UnitarySimulator(g.Component):
         rows = g.concat_vectors([y
             for i, x in enumerate(g.split_vectors(unitary, [pow2qb*2]*num_inner_splits))
             for j, y in enumerate(g.split_vectors(x, [1]*(pow2qb*2)))
-                if (j & 1) == 0 and j//2>=(i+cur_offset)*min(256, pow2qb) and j//2<(i+cur_offset+1)*min(256, pow2qb)], (pow2qb, min(256, pow2qb)))
+                if (j & 1) == 0 and j//2>=(i+cur_offset)*min(256, pow2qb) and j//2<(i+cur_offset+1)*min(256, pow2qb)], (pow2qb*num_inner_splits//((pow2qb+256-1)//256), min(256, pow2qb)))
         with g.ResourceScope(name="mask", is_buffered=True, time=0) as pred:
-            rows = g.mul(rows, g.concat_vectors([ident]*num_inner_splits, (pow2qb, min(256, pow2qb))), time=0)
+            rows = g.mul(rows, g.concat_vectors([ident]*num_inner_splits, (pow2qb*num_inner_splits//((pow2qb+256-1)//256), min(256, pow2qb))), time=0)
             rows = g.sum(rows, dims=[0])
             rows = rows.write(name="singledim", storage_req=outp_storage)
         #with g.ResourceScope(name="innerred", is_buffered=True, time=None, predecessors=[pred]) as pred:
@@ -1767,7 +1767,7 @@ class UnitarySimulator(g.Component):
                         invoke([device], iop[0] if gate_stamped else iop, 2, 0, None, None, None)
                         for i in range(0, num_gates, tensornames["chainsize"]):
                             invoke([device], iop[0] if gate_stamped else iop, 3, 0, None, None, None)                       
-                        res, _ = invoke([device], iop[0] if gate_stamped else iop, 4, 0, None, None, None)
+                        res, _ = invoke([device], iop[0] if gate_stamped else iop, 4 + (0 if output_unitary else chunk), 0, None, None, None)
                         outs.append(res[0][tensornames["unitaryres"]].reshape(pow2qb, 2, cols) if output_unitary else res[0][tensornames["unitaryres"]])
                     if output_unitary:
                         #print(np.ascontiguousarray(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]].reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.int32))
@@ -1986,6 +1986,8 @@ class UnitarySimulator(g.Component):
         print(times, accuracy, inittimesize)
 def get_max_gates(num_qbits, max_levels):
     max_gates = num_qbits+3*(num_qbits*(num_qbits-1)//2*max_levels)
+    return round_up_max_gates(max_gates)
+def round_up_max_gates(max_gates):
     if (max_gates % 80) != 0: max_gates += (80 - max_gates % 80)
     return max_gates
 def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbits):
@@ -2076,9 +2078,23 @@ def chain_aa(aafile, chainsize):
                 continue
             duplines.append(line)
             f.write(line)
+def on_the_fly_build(num_qbits, max_gates, output_unitary, target_qbits, control_qbits):
+    max_gates = round_up_max_gates(max_gates)
+    tensornames = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary, gate_stamped)
+    if not target_qbits is None and not control_qbits is None: 
+        iopname = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
+        UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iopname, tensornames)
 def main():
+    import sys
+    if len(sys.argv) >= 4:
+        num_qbits = int(sys.argv[1])
+        max_gates = int(sys.argv[2])
+        output_unitary = int(sys.argv[3]) != 0
+        target_qbits = None if len(sys.argv)==4 else [int(x) for x in sys.argv[4].split(",")]
+        control_qbits = None if len(sys.argv)==4 else [int(x) for x in sys.argv[5].split(",")]
+        on_the_fly_build(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
     max_levels=6
-    UnitarySimulator.build_all(max_levels, output_unitary=False)
+    #UnitarySimulator.build_all(max_levels, output_unitary=False)
     #UnitarySimulator.build_all(max_levels, output_unitary=True)
     #test()
     #UnitarySimulator.distrib_depend()
@@ -2088,7 +2104,7 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 9
+    num_qbits = 11
     #UnitarySimulator.unit_test(num_qbits)
     UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
