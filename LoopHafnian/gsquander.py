@@ -1205,7 +1205,7 @@ class UnitarySimulator(g.Component):
         chainsize = (max_gates+1)//2*2 if gate_stamped else min(chainsizes, key=lambda x: abs(x-idealchain)) #20 if num_qbits == 2 else (10 if num_qbits == 10 else (16 if num_qbits >= 5 else 20)) 
         #if num_qbits >= 8: chainsize = 40 #10 if num_qbits == 10 else 16
         #if (chainsize & 1) != 0: chainsize += 1
-        print("Number of qbits:", num_qbits, "Maximum gates:", max_gates, "Chain size:", chainsize)
+        print("Number of qbits:", num_qbits, "Maximum gates:", max_gates, "Chain size:", chainsize, "Gate stamped: ", gate_stamped, "ALU latching: ", alu_latch)
         with pgm_pkg.create_program_context("init_us") as pcinitunitary:
             if pow2qb*num_inner_splits == 8192:
                 unitaryinit = g.input_tensor(shape=(pow2qb*2, cols), dtype=g.float32, name="unitaryinit", layout="-1, H1(W), B1(1), A" + str(pow2qb//2*num_inner_splits) + "(0-" + str(pow2qb//2*num_inner_splits-1) + "), S16(0-15)") #get_slice8(WEST, 0, 7, 0)
@@ -1646,7 +1646,7 @@ class UnitarySimulator(g.Component):
             #"--ifetch-rule", "'VXM'='" + gen(excludes) + "'"]
             #"--ifetch-rule", "'VXM'='!mod(896, 30) || (!mod(896,112) || (!mod(896,414) || (!mod(896,478) || (!mod(896,560) || (!mod(896,865) || !mod(896,882))))))'"]
             fix_options = ["--no-auto-agt"] if num_qbits < 8 else ["--auto-agt-dim", "3"]#, #"--auto-agt-dim", "3", #"--auto-agt"
-            iops[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".0.iop"
+            iops[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
             metadata = ["--metadata", "chainsize," + str(chainsize), "--metadata", "cols," + str(cols)]
             assemblies = [("init_us", aa_options + ["--auto-agt-dim", "3"]),
                 ("init_gates", aa_options + ["--auto-agt-dim", "3"]),
@@ -1662,20 +1662,36 @@ class UnitarySimulator(g.Component):
         return {"iop": iops[0], "chainsize": chainsize, "max_gates": max_gates, "cols": cols, "unitary": unitaryinit.name, "gates": gatespack.name, "othergates": othergatespack.name,
             "qbits": qbitinfo.name,
             #"targetqbits": targetqbits.name, "controlqbits": controlqbits.name, "derivates": derivates.name,
-            "unitaryres": unitaryres.name} #, **({"hightcqbits" : hightcqbits.name} if num_qbits >= 9 else {})} #"unitaryrevres": unitaryrevres.name, 
-    def build_all(max_levels, if_exists=False, output_unitary=False):
-        import os, pickle
-        if not if_exists and os.path.exists("usiop/usdata"):
-            with open("usiop/usdata", 'rb') as f:
-                d = pickle.load(f)
-        else: d = {}
-        for num_qbits in range(2, 10+1):
-            max_gates = get_max_gates(num_qbits, max_levels)
-            if not (num_qbits, max_gates, output_unitary) in d:
-                d[(num_qbits, max_gates, output_unitary)] = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary=output_unitary)
-                with open("usiop/usdata", 'wb') as f:
-                    pickle.dump(d, f)
-        return d
+            "unitaryres": unitaryres.name} #, **({"hightcqbits" : hightcqbits.name} if num_qbits >= 9 else {})} #"unitaryrevres": unitaryrevres.name,
+    def gen_iop(num_qbits, num_gates, output_unitary, target_qbits=None, control_qbits=None):
+        import glob, os, re, subprocess
+        gate_stamped = not target_qbits is None and not control_qbits is None
+        for iop in glob.glob("usiop/us" + ("unit" if output_unitary else "") + "*-*" + (".*" if gate_stamped else "") + ".iop"):
+            m = re.match("^us" + ("unit" if output_unitary else "") + "(\\d+)-(\\d+)" + ("\\.(\\d+)" if gate_stamped else "") + "$", os.path.splitext(os.path.basename(iop))[0])
+            if not m is None and num_qbits == int(m.group(1)) and num_gates <= int(m.group(2)):
+                #prog = runtime.IOProgram(iop)
+                result = subprocess.run(["iop-utils", "metadata", iop], check=True, capture_output=True, text=True, universal_newlines=True).stdout.split("\n")
+                for x in result:
+                    if x.startswith("cols: "): cols = int(x[x.index(':')+1:])
+                    elif x.startswith("chainsize: "): chainsize = int(x[x.index(':')+1:])
+                    elif x.startswith("target_qbits: "): tqbits = [int(z) for z in x[x.index(':')+1:].split(",")]
+                    elif x.startswith("control_qbits: "): cqbits = [int(z) for z in x[x.index(':')+1:].split(",")]
+                if gate_stamped and (not np.array_equal(target_qbits, tqbits) or not np.array_equal(control_qbits, cqbits)): continue
+                return {"iop": iop, "chainsize": chainsize, "max_gates": int(m.group(2)), "cols": cols, "unitary": "unitaryinit", "gates": "gate", "othergates": "othergate",
+                    "qbits": "qbits", "unitaryres": "unitaryfin" if output_unitary else "traces"}
+        return UnitarySimulator.on_the_fly_build(num_qbits, num_gates, output_unitary, target_qbits, control_qbits)
+    def on_the_fly_build(num_qbits, max_gates, output_unitary, target_qbits, control_qbits):
+        gate_stamped = not target_qbits is None and not control_qbits is None
+        max_gates = round_up_max_gates(max_gates)
+        tensornames = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary, gate_stamped)
+        if gate_stamped:
+            idx = 0
+            while True:
+                iopname = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + "." + str(idx) + ".iop"
+                if not os.path.exists(iopname): break
+                idx += 1
+            tensornames = UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iopname, tensornames)
+        return tensornames
     def compile_gate_stamped(num_qbits, target_qbits, control_qbits, iopname, tensornames):
         if not os.path.exists("usiop/topo_0/us"): os.mkdir("usiop/topo_0/us")
         chain_aa_gate_structure("usiop/topo_0/us/" + "us.aa", tensornames["aafiles"][3:7], num_qbits, target_qbits, control_qbits)
@@ -1702,9 +1718,10 @@ class UnitarySimulator(g.Component):
                 *(["--program-package", "usiop/dev_0/temp_" + str(i-1) + ".iop"] if i != 0 else []),
                 "--output-iop", iopname if i == len(assemblies)-1 else "usiop/dev_0/temp_" + str(i) + ".iop", *asm[1]])
             print(cmd); assert os.system(cmd) == 0
+        return {"iop" if x == "aafiles" else x: iopname if x == "aafiles" else tensornames[x] for x in tensornames}
     def get_unitary_sim(num_qbits, max_gates, tensornames=None, output_unitary=False, gate_stamped=False):
         pow2qb = 1 << num_qbits
-        if tensornames is None: tensornames = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary, gate_stamped)
+        if tensornames is None: tensornames = {} if gate_stamped else UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary)
         iop = [None] if gate_stamped else runtime.IOProgram(tensornames["iop"])
         driver = runtime.Driver()
         device = driver.next_available_device() # driver.devices[1]
@@ -1721,9 +1738,11 @@ class UnitarySimulator(g.Component):
                 num_inner_splits = (pow2qb+320-1)//320
                 def actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives):
                     if gate_stamped and iop[0] is None:
-                        iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
-                        UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iop[0], tensornames)
-                        iop[0] = runtime.IOProgram(iop[0])
+                        #iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
+                        #UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iop[0], tensornames)
+                        tnames = UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
+                        for x in tnames: tensornames[x] = tnames[x]
+                        iop[0] = runtime.IOProgram(tensornames["iop"])
                         device.load_all(iop[0], unsafe_keep_entry_points=True)
                     num_gates = len(parameters)
                     padgates = 0 if (num_gates % tensornames["chainsize"]) == 0 else tensornames["chainsize"] - (num_gates % tensornames["chainsize"])
@@ -1891,24 +1910,23 @@ class UnitarySimulator(g.Component):
             actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives)
             if len(allres) != 0 and not np.allclose(allres[-1], origresult[0]): print("Chain different", chaincheck)
             allres.append(origresult[0])
-    def checkacc():
+    def checkacc(max_levels, output_unitary):
         #2 qbits works to chain 50, 3 to 22
-        use_identity, max_levels = False, 6
-        output_unitary = True
-        d = UnitarySimulator.build_all(max_levels, output_unitary=output_unitary)
+        use_identity = False
         acc, acc32 = {}, {}
         for num_qbits in range(2, 10+1):
             max_gates = get_max_gates(num_qbits, max_levels)
             pow2qb = 1 << num_qbits
-            func, result, closefunc = UnitarySimulator.get_unitary_sim(num_qbits, max_gates, d[(num_qbits, max_gates, output_unitary)], output_unitary=output_unitary)
+            func, result, closefunc = UnitarySimulator.get_unitary_sim(num_qbits, max_gates, None, output_unitary=output_unitary)
             u = np.eye(pow2qb) + 0j if use_identity else unitary_group.rvs(pow2qb)
             num_gates = 1 #max_gates
             parameters = np.random.random((num_gates, 3))
+            derivatives = np.zeros((num_gates,))
             for i in range(num_qbits):
                 for j in range(num_qbits):
                     #if i == j: continue
-                    func(u, num_qbits, parameters, np.array([i]*num_gates, dtype=np.uint8), np.array([j]*num_gates, dtype=np.uint8))
-                    oracle = process_gates(u, num_qbits, parameters, np.array([i]*num_gates, dtype=np.uint8), np.array([j]*num_gates, dtype=np.uint8))
+                    func(u, num_qbits, parameters, np.array([i]*num_gates, dtype=np.uint8), np.array([j]*num_gates, dtype=np.uint8), derivatives)
+                    oracle = process_gates(u, num_qbits, parameters, np.array([i]*num_gates, dtype=np.uint8), np.array([j]*num_gates, dtype=np.uint8), derivatives)
                     if not output_unitary: oracle = trace_corrections(oracle, num_qbits)
                     if not np.allclose(result[0], oracle): print("Fail", num_qbits, i, j, result[0][~np.isclose(result[0], oracle)], oracle[~np.isclose(result[0], oracle)])
             acc[num_qbits] = {}; acc32[num_qbits] = {}
@@ -1917,12 +1935,13 @@ class UnitarySimulator(g.Component):
                 parameters = np.random.random((num_gates, 3))
                 target_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)])
                 control_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)])
-                func(u, num_qbits, parameters, target_qbits, control_qbits)
-                oracle = process_gates(u, num_qbits, parameters, target_qbits, control_qbits)
+                derivatives = np.zeros((num_gates,))
+                func(u, num_qbits, parameters, target_qbits, control_qbits, derivatives)
+                oracle = process_gates(u, num_qbits, parameters, target_qbits, control_qbits, derivatives)
                 if not output_unitary: oracle = oracle = trace_corrections(oracle, num_qbits)
                 if not np.allclose(result[0], oracle): print("Fail", num_qbits, num_gates)
                 acc[num_qbits][num_gates] = (np.amax(np.abs(oracle-result[0])), np.amax(np.abs(oracle-result[0])/np.abs(oracle)))
-                oracle32 = process_gates32(u, num_qbits, parameters, target_qbits, control_qbits)
+                oracle32 = process_gates32(u, num_qbits, parameters, target_qbits, control_qbits, derivatives)
                 if not output_unitary: oracle32 = oracle = trace_corrections(oracle32, num_qbits)
                 acc32[num_qbits][num_gates] = (np.amax(np.abs(oracle-oracle32)), np.amax(np.abs(oracle-oracle32)/np.abs(oracle)))
             if not closefunc is None: closefunc()
@@ -1939,13 +1958,11 @@ class UnitarySimulator(g.Component):
             ax.legend()
             fig.savefig("us_acc" + ("abs" if i==0 else "rel") + ".svg", format='svg')
         print(acc)
-    def perfcompare():
+    def perfcompare(max_levels, output_unitary):
         import timeit
         max_levels, batch_size = 6, 20
-        output_unitary = False
-        d = UnitarySimulator.build_all(max_levels, output_unitary=output_unitary)
-        use_identity, max_levels = False, 6
-        initfuncs = {"Groq": lambda nqb, mg: UnitarySimulator.get_unitary_sim(nqb, mg, d[(nqb, mg, output_unitary)])}
+        use_identity = False
+        initfuncs = {"Groq": lambda nqb, mg: UnitarySimulator.get_unitary_sim(nqb, mg, None, output_unitary=output_unitary)}
         testfuncs = {"Groq": None, "numpy": process_gates} #, "qiskit": qiskit_oracle}
         times, accuracy = {k: {} for k in testfuncs}, {k: {} for k in testfuncs}
         inittimesize = {"Groq": {}}
@@ -1957,6 +1974,7 @@ class UnitarySimulator(g.Component):
             target_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)])
             control_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)])
             parameters = np.random.random((num_gates, 3))
+            derivatives = np.zeros((num_gates,))
             for testfunc in testfuncs:
                 if testfunc in initfuncs:
                     initres = [None]
@@ -1964,14 +1982,14 @@ class UnitarySimulator(g.Component):
                         initres[0] = initfuncs[testfunc](num_qbits, max_gates)
                     t = timeit.timeit(ifunc, number=1) 
                     func, result, closefunc = initres[0]
-                    inittimesize[testfunc][(num_qbits, max_gates)] = (t, os.path.getsize(d[(num_qbits, max_gates, output_unitary)]["iop"]))
+                    inittimesize[testfunc][(num_qbits, max_gates)] = (t, os.path.getsize(UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary)["iop"]))
                 else:
                     result = [None]
-                    def tf(u, n, p, t, c):
-                        result[0] = testfuncs[testfunc](u, n, p, t, c)
+                    def tf(u, n, p, t, c, d):
+                        result[0] = testfuncs[testfunc](u, n, p, t, c, d)
                     func, closefunc = tf, None
-                times[testfunc][num_qbits] = timeit.timeit(lambda: func(u, num_qbits, parameters, target_qbits, control_qbits), number=batch_size) / batch_size
-                if not output_unitary: result[0] = np.trace(np.real(result[0]))
+                times[testfunc][num_qbits] = timeit.timeit(lambda: func(u, num_qbits, parameters, target_qbits, control_qbits, derivatives), number=batch_size) / batch_size
+                if not output_unitary and testfunc != "Groq": result[0] = trace_corrections(result[0], num_qbits)
                 accuracy[testfunc][num_qbits] = result[0] 
                 print(testfunc, num_qbits, times[testfunc][num_qbits], accuracy[testfunc][num_qbits])
                 if not closefunc is None: closefunc()
@@ -2078,12 +2096,6 @@ def chain_aa(aafile, chainsize):
                 continue
             duplines.append(line)
             f.write(line)
-def on_the_fly_build(num_qbits, max_gates, output_unitary, target_qbits, control_qbits):
-    max_gates = round_up_max_gates(max_gates)
-    tensornames = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary, gate_stamped)
-    if not target_qbits is None and not control_qbits is None: 
-        iopname = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
-        UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iopname, tensornames)
 def main():
     import sys
     if len(sys.argv) >= 4:
@@ -2092,10 +2104,8 @@ def main():
         output_unitary = int(sys.argv[3]) != 0
         target_qbits = None if len(sys.argv)==4 else [int(x) for x in sys.argv[4].split(",")]
         control_qbits = None if len(sys.argv)==4 else [int(x) for x in sys.argv[5].split(",")]
-        on_the_fly_build(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
+        UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
     max_levels=6
-    #UnitarySimulator.build_all(max_levels, output_unitary=False)
-    #UnitarySimulator.build_all(max_levels, output_unitary=True)
     #test()
     #UnitarySimulator.distrib_depend()
     #[UnitarySimulator.idxmapgather(x) for x in range(10)]; assert False
@@ -2104,13 +2114,13 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 11
+    num_qbits = 2
     #UnitarySimulator.unit_test(num_qbits)
     UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
-    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
-    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
-    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
-    #UnitarySimulator.checkacc()
-    #UnitarySimulator.perfcompare()
+    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
+    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
+    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
+    #UnitarySimulator.checkacc(max_levels, True)
+    UnitarySimulator.perfcompare(max_levels, False)
 if __name__ == "__main__":
     main()
