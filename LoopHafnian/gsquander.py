@@ -1136,7 +1136,7 @@ class UnitarySimulator(g.Component):
                 writefn(g.broadcast_lane_0(tobcast, permutor_req=1 if reversedir else 0, dispatch_set=inst.DispatchSet.SET_0, old_bitmap=[inst.NEW_SRC]*width, mask_bitmap=mask_bitmap, input_streams=outpstream, output_streams=outpstream, time=0))
     def get_correction_masks(num_qbits, second=False):
         pow2qb = 1 << num_qbits
-        num_inner_splits = (pow2qb+320-1)//320
+        num_inner_splits = (pow2qb+256-1)//256
         if not second: m = [(c ^ (1<<i), c) for i in range(num_qbits) for c in range(pow2qb)]
         else: m = [(((1<<i)+(1<<j)) ^ c, c) for i in range(num_qbits-1) for j in range(i+1, num_qbits) for c in range(pow2qb)]
         d = {x: [[] for _ in range(num_inner_splits)] for x in range(1<<num_qbits)}
@@ -1147,38 +1147,44 @@ class UnitarySimulator(g.Component):
         sortkeys = list(sorted(md))
         for x in md: md[x] = (sortkeys.index(x), {x: i for i, x in enumerate(sorted(md[x]))})
         return d, md
-    def compute_correction(unitary, num_qbits, ident, outp_storage):
+    def compute_correction(unitary, num_qbits, ident, outp_storage, cur_block=0):
         pow2qb = 1 << num_qbits
-        num_inner_splits = (pow2qb+320-1)//320
+        num_inner_splits = (pow2qb+256-1)//256
+        if pow2qb * num_inner_splits > 8192: num_inner_splits = 8192 // pow2qb
+        cur_offset = cur_block * num_inner_splits
         d, md = UnitarySimulator.get_correction_masks(num_qbits, second=False)
         allrows = g.split_vectors(unitary, [1]*num_inner_splits*pow2qb*2)
         rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i]) if len(x) != 0], 0)
         ident = g.split_vectors(ident, [1]*ident.shape[0])
         with g.ResourceScope(name="correction", is_buffered=True, time=0) as pred:
-            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i] if len(x) != 0], 0), alus=[0], time=0)
+            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_block:cur_block+num_inner_splits] if len(x) != 0], 0), alus=[0], time=0)
             rows = g.sum(rows, dims=[0], alus=[1])
             rows = rows.write(name="correction", storage_req=outp_storage)
         return rows
-    def compute_correction2(unitary, num_qbits, ident, outp_storage):
+    def compute_correction2(unitary, num_qbits, ident, outp_storage, cur_block=0):
         pow2qb = 1 << num_qbits
-        num_inner_splits = (pow2qb+320-1)//320
+        num_inner_splits = (pow2qb+256-1)//256
+        if pow2qb * num_inner_splits > 8192: num_inner_splits = 8192 // pow2qb
+        cur_offset = cur_block * num_inner_splits
         d, md = UnitarySimulator.get_correction_masks(num_qbits, second=True)
         allrows = g.split_vectors(unitary, [1]*num_inner_splits*pow2qb*2)
         rows = g.concat([allrows[j*pow2qb*2+i*2] for i in d for j, x in enumerate(d[i]) if len(x) != 0], 0)
         ident = g.split_vectors(ident, [1]*ident.shape[0])
         with g.ResourceScope(name="correction2", is_buffered=True, time=0) as pred:
-            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i] if len(x) != 0], 0), alus=[4], output_streams=g.SG4[4], time=0)
+            rows = g.mul(rows, g.concat([ident[md[len(x)][0]*min(256, pow2qb)+md[len(x)][1][frozenset(x)]] for i in d for x in d[i][cur_block:cur_block+num_inner_splits] if len(x) != 0], 0), alus=[4], output_streams=g.SG4[4], time=0)
             rows = g.sum(rows, dims=[0], alus=[5], output_streams=g.SG4[4])
             rows = rows.write(name="correction2", storage_req=outp_storage)
         return rows
-    def compute_trace_real(unitary, num_qbits, ident, outp_storage): #using the copy could improve cycles
+    def compute_trace_real(unitary, num_qbits, ident, outp_storage, cur_block=0): #using the copy could improve cycles
         pow2qb = 1 << num_qbits
-        num_inner_splits = (pow2qb+320-1)//320
+        num_inner_splits = (pow2qb+256-1)//256
+        if pow2qb * num_inner_splits > 8192: num_inner_splits = 8192 // pow2qb
+        cur_offset = cur_block * num_inner_splits
         #effective shape is address order so (num_inner_splits, pow2qb, 2, min(256, pow2qb))
         rows = g.concat_vectors([y
             for i, x in enumerate(g.split_vectors(unitary, [pow2qb*2]*num_inner_splits))
             for j, y in enumerate(g.split_vectors(x, [1]*(pow2qb*2)))
-                if (j & 1) == 0 and j//2>=i*min(256, pow2qb) and j//2<(i+1)*min(256, pow2qb)], (pow2qb, min(256, pow2qb)))
+                if (j & 1) == 0 and j//2>=(i+cur_offset)*min(256, pow2qb) and j//2<(i+cur_offset+1)*min(256, pow2qb)], (pow2qb, min(256, pow2qb)))
         with g.ResourceScope(name="mask", is_buffered=True, time=0) as pred:
             rows = g.mul(rows, g.concat_vectors([ident]*num_inner_splits, (pow2qb, min(256, pow2qb))), time=0)
             rows = g.sum(rows, dims=[0])
@@ -1273,35 +1279,32 @@ class UnitarySimulator(g.Component):
                 resetzerosorig = g.zeros((320,), dtype=g.uint8, layout=get_slice1(WEST, 2, 0) + ", A1(4095)", name="resetzerosorig")
                 
             if not output_unitary:
-                identmat = g.eye(min(256, pow2qb), dtype=g.float32, layout=get_slice4(WEST, 4, 7, 0).replace(", S4", ", A" + str(min(256, pow2qb)) + "(" + str(4095-min(256, pow2qb)) + "-4094), S4"), name="identmat")
+                identmat = g.eye(min(256, pow2qb), dtype=g.float32, layout=get_slice4(WEST, 4, 7, 0).replace(", S4", ", A" + str(min(256, pow2qb)) + "(" + str(4080-min(256, pow2qb)) + "-4079), S4"), name="identmat")
                 cormat1 = UnitarySimulator.get_correction_masks(num_qbits, False)[1]
                 cormat2 = UnitarySimulator.get_correction_masks(num_qbits, True)[1]
                 cormatlen1 = sum(len(cormat1[k][1]) for k in cormat1)
                 cormatlen2 = sum(len(cormat2[k][1]) for k in cormat2)
-                correctionmat1 = g.from_data(np.array([[1.0 if y in x else 0.0 for y in range(min(256, pow2qb))] for k in sorted(cormat1) for x in cormat1[k][1].keys()], dtype=np.float32), layout=get_slice4(WEST, 4, 7, 0).replace(", S4", ", A" + str(cormatlen1) + "(" + str(4095-cormatlen1-min(256, pow2qb)) + "-" + str(4094-min(256, pow2qb)) + "), S4"), name="correctionmat1")
-                correctionmat2 = g.from_data(np.array([[1.0 if y in x else 0.0 for y in range(min(256, pow2qb))] for k in sorted(cormat2) for x in cormat2[k][1].keys()], dtype=np.float32), layout=get_slice4(EAST, 4, 7, 0).replace(", S4", ", A" + str(cormatlen2) + "(" + str(4095-cormatlen2) + "-4094), S4"), name="correctionmat2")
+                correctionmat1 = g.from_data(np.array([[1.0 if y in x else 0.0 for y in range(min(256, pow2qb))] for k in sorted(cormat1) for x in cormat1[k][1].keys()], dtype=np.float32), layout=get_slice4(WEST, 4, 7, 0).replace(", S4", ", A" + str(cormatlen1) + "(" + str(4080-cormatlen1-min(256, pow2qb)) + "-" + str(4079-min(256, pow2qb)) + "), S4"), name="correctionmat1")
+                correctionmat2 = g.from_data(np.array([[1.0 if y in x else 0.0 for y in range(min(256, pow2qb))] for k in sorted(cormat2) for x in cormat2[k][1].keys()], dtype=np.float32), layout=get_slice4(EAST, 4, 7, 0).replace(", S4", ", A" + str(cormatlen2) + "(" + str(4080-cormatlen2) + "-4079), S4"), name="correctionmat2")
                 outptrace = g.zeros((320,), dtype=g.float32, layout=get_slice4(WEST, 0, 3, 0) + ", A1(4091)", name="outptrace")
                 outpcorrection = g.zeros((320,), dtype=g.float32, layout=get_slice4(WEST, 0, 3, 0) + ", A1(4084)", name="outpcorrection")
-                outpcorrection2 = g.zeros((320,), dtype=g.float32, layout=get_slice4(WEST, 0, 3, 0) + ", A1(4083)", name="outpcorrection2")
+                outpcorrection2 = g.zeros((320,), dtype=g.float32, layout=get_slice4(WEST, 0, 3, 0) + ", A1(4079)", name="outpcorrection2")
                 g.add_mem_constraints([identmat, correctionmat1], [identmat, correctionmat1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             else: cormatlen1 = 0
             distmaps = [g.from_data(np.array([[i] + [16]*319 for i in range(16)], dtype=np.uint8), name="distmaps", layout=get_slice1(hemi, 37, 0) + ", A16(4080-4095)") for hemi in (WEST, EAST)]
             lowmask = g.from_data(np.array(([7]*2+[0]*14)*20, dtype=np.uint8), name="lowmask", layout=get_slice1(WEST, 0, 0) + ", A1(4087)")
             midmask = g.from_data(np.array(([0x38]*2+[0]*14)*20, dtype=np.uint8), name="midmask", layout=get_slice1(WEST, 1, 0) + ", A1(4087)")
-            if num_qbits >= 9: highmask = g.from_data(np.array(([0xC0]*2+[0]*14)*20, dtype=np.uint8), name="highmask", layout=get_slice1(WEST, 6, 0) + ", A1(" + str(4094-cormatlen1-min(256, pow2qb)) + ")")
-            shl1 = g.full((320,), 1, name="shl1", dtype=g.uint8, layout=get_slice1(WEST, 4, 0) + ", A1(" + str(4094-cormatlen1-min(256, pow2qb)) + ")")
+            if num_qbits >= 9: highmask = g.from_data(np.array(([0xC0]*2+[0]*14)*20, dtype=np.uint8), name="highmask", layout=get_slice1(WEST, 6, 0) + ", A1(" + str(4079-cormatlen1-min(256, pow2qb)) + ")")
+            shl1 = g.full((320,), 1, name="shl1", dtype=g.uint8, layout=get_slice1(WEST, 4, 0) + ", A1(" + str(4079-cormatlen1-min(256, pow2qb)) + ")")
             shr2 = g.full((320,), 2, name="shr2", dtype=g.uint8, layout=get_slice1(WEST, 3, 0) + ", A1(4087)")
             if num_qbits >= 9: shr5 = g.full((320,), 5, name="shr5", dtype=g.uint8, layout=get_slice1(WEST, 2, 0) + ", A1(4087)")
-            adjmap = g.from_data(np.array(([0, 1] + [16]*14)*20, dtype=np.uint8), name="adjmap", layout=get_slice1(WEST, 5, 0) + ", A1(" + str(4094-cormatlen1-min(256, pow2qb)) + ")")
+            adjmap = g.from_data(np.array(([0, 1] + [16]*14)*20, dtype=np.uint8), name="adjmap", layout=get_slice1(WEST, 5, 0) + ", A1(" + str(4079-cormatlen1-min(256, pow2qb)) + ")")
             
         with pgm_pkg.create_program_context("init_gates") as pcinit:
             us = UnitarySimulator(num_qbits, cols)
             #unitary = g.input_tensor(shape=(pow2qb*2, pow2qb), dtype=g.float32, name="unitary", layout=get_slice8(WEST, s8range[0], s8range[-1], 0))
             #physical shapes for 9, 10, 11 qbits are (2, 1024, 4, (256, 256)), (4, 2048, 4, (256, 256, 256, 256)), (7, 4096, 4, (304, 304, 304, 304, 304, 304, 224))
             g.reserve_tensor(pcinitunitary, pcinit, unitaryinit)
-            unitaryinitctxt = g.from_addresses(np.array(unitaryinit.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "unitaryinitreset")
-            #unitaryinitctxt = g.concat_vectors([g.concat_inner_splits(g.split_vectors(x, [1]*num_inner_splits)) for x in g.split_vectors(unitaryinitctxt.reshape(num_inner_splits, pow2qb*2, min(256, pow2qb)).transpose(1, 0, 2), [num_inner_splits]*(pow2qb*2))], (pow2qb*2, pow2qb))
-            unitaryinitctxt = g.concat_inner_splits(g.split(unitaryinitctxt, dim=0, num_splits=num_inner_splits))
             #gatescomb = g.input_tensor(shape=(max_gates+1)//2*2, 2*2*2, pow2qb), dtype=g.float32, name="gate", layout="-1, H2, S16(" + str(min(slices)) + "-" + str(max(slices)) + ")")
             #gates = g.input_tensor(shape=((max_gates+1)//2, 2*2*2, min(256, pow2qb)), dtype=g.float32, name="gate", layout="-1, A" + str((max_gates+1)//2*2) + "(0-" + str((max_gates+1)//2*2-1) + "), S16(0-15), B1(0), H1(E)") #get_slice16(EAST, list(range(16)), 0)) #, broadcast=True)
             #othergates = g.input_tensor(shape=((max_gates+1)//2, 2*2*2, min(256, pow2qb)), dtype=g.float32, name="othergate", layout="-1, A" + str((max_gates+1)//2*2) + "(0-" + str((max_gates+1)//2*2-1) + "), S16(0-15), B1(0), H1(W)") #get_slice16(WEST, list(range(16)), 0) #, broadcast=True)
@@ -1369,7 +1372,12 @@ class UnitarySimulator(g.Component):
                     targetqbits = g.split(g.concat(outpt, 0).reshape(20, num_inner_qbits, 16, 320).transpose(1, 0, 2, 3).reshape(20*num_inner_qbits*16, 320), [max_gates, num_inner_qbits*320-max_gates])[0]
                     controlqbits = g.split(g.concat(outpc, 0).reshape(20, num_inner_qbits, 16, 320).transpose(1, 0, 2, 3).reshape(20*num_inner_qbits*16, 320), [max_gates, num_inner_qbits*320-max_gates])[0]
                     if num_qbits >= 9: hightcqbits = g.split(g.concat(outph, 0).reshape(20, num_inner_qbits, 16, 320).transpose(1, 0, 2, 3).reshape(20*num_inner_qbits*16, 320), [max_gates, num_inner_qbits*320-max_gates])[0]
-            with g.ResourceScope(name="makecopy", is_buffered=True, time=None, predecessors=[pred]) as pred:
+        with pgm_pkg.create_program_context("copy_us") as pccopy:
+            g.reserve_tensor(pcinitunitary, pccopy, unitaryinit)
+            unitaryinitctxt = g.from_addresses(np.array(unitaryinit.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "unitaryinitreset")
+            #unitaryinitctxt = g.concat_vectors([g.concat_inner_splits(g.split_vectors(x, [1]*num_inner_splits)) for x in g.split_vectors(unitaryinitctxt.reshape(num_inner_splits, pow2qb*2, min(256, pow2qb)).transpose(1, 0, 2), [num_inner_splits]*(pow2qb*2))], (pow2qb*2, pow2qb))
+            unitaryinitctxt = g.concat_inner_splits(g.split(unitaryinitctxt, dim=0, num_splits=num_inner_splits))
+            with g.ResourceScope(name="makecopy", is_buffered=True, time=0) as pred:
                 unitary, copy, otherunitary, othercopy = us.copymatrix(unitaryinitctxt)
             if not gate_stamped:
                 #targetqbits = g.input_tensor(shape=(max_gates, 320), dtype=g.uint8, name="target_qbits", layout=get_slice1(WEST, 37, 0) + ", A" + str(max_gates) + "(0-" + str(max_gates-1) + ")")
@@ -1401,10 +1409,10 @@ class UnitarySimulator(g.Component):
                     suffix = str(target_qbit) + ("_" + str(control_qbit) if not control_qbit is None else "") + ("_rev" if c != 0 else "")
                     with pgm_pkg.create_program_context("us_gate"+suffix) as pc:
                         g.reserve_tensor(pcinitunitary, pcinit, unitaryinit)
-                        g.reserve_tensor(pcinit, pc, unitary)
-                        g.reserve_tensor(pcinit, pc, otherunitary)
-                        g.reserve_tensor(pcinit, pc, copy)
-                        g.reserve_tensor(pcinit, pc, othercopy)
+                        g.reserve_tensor(pccopy, pc, unitary)
+                        g.reserve_tensor(pccopy, pc, otherunitary)
+                        g.reserve_tensor(pccopy, pc, copy)
+                        g.reserve_tensor(pccopy, pc, othercopy)
                         g.reserve_tensor(pcinit, pc, gates)
                         g.reserve_tensor(pcinit, pc, othergates)
                         g.reserve_tensor(pcinit, pc, derivates)
@@ -1426,10 +1434,10 @@ class UnitarySimulator(g.Component):
                 target_qbit, control_qbit = 0, 1
                 #if not reversedir and target_qbit == 0 and control_qbit is None: print(gatemap[0].data, gatemap[1].data)            
                 g.reserve_tensor(pcinitunitary, pcinit, unitaryinit)
-                g.reserve_tensor(pcinit, pc, unitary)
-                g.reserve_tensor(pcinit, pc, otherunitary)
-                g.reserve_tensor(pcinit, pc, copy)
-                g.reserve_tensor(pcinit, pc, othercopy)
+                g.reserve_tensor(pccopy, pc, unitary)
+                g.reserve_tensor(pccopy, pc, otherunitary)
+                g.reserve_tensor(pccopy, pc, copy)
+                g.reserve_tensor(pccopy, pc, othercopy)
                 g.reserve_tensor(pcinit, pc, gates)
                 g.reserve_tensor(pcinit, pc, othergates)
                 g.reserve_tensor(pcinit, pc, targetqbits)
@@ -1547,35 +1555,36 @@ class UnitarySimulator(g.Component):
                 assert {(x.hemi, x.slice, x.offset) for x in targetqbitpairs1[i].storage_request.addresses.reshape(-1).tolist()} == {(g.Hemisphere.WEST if hemi==WEST else g.Hemisphere.EAST, x, i) for x in (42,) for i in range(pow2qb//2*num_inner_splits*(2 if num_qbits > 8 else 1))}
         
         #we return in raw address format, so the inner splits will be on the outer dimension!
-        with pgm_pkg.create_program_context("final_us") as pcfinal:
-            g.reserve_tensor(pcinitunitary, pcfinal, unitaryinit)
-            g.reserve_tensor(pcinit, pcfinal, unitary)
-            if not gate_stamped:
-                for x in (gateinc, gateinccount, gateincmask, targetqbitpairs0, targetqbitpairs1, controlqbitpairs0, controlqbitpairs1):
-                    for y in x: tensor.shared_memory_tensor(mem_tensor=y, name=y.name + "fin")
-                for x in resetgatemapsorig:
-                    for y in x: tensor.shared_memory_tensor(mem_tensor=y, name=y.name + "fin")
-                for x in (qbitinc, qbitinccount, resetqbitmaporig, resetzerosorig): tensor.shared_memory_tensor(mem_tensor=x, name=x.name + "fin")        
-            unitaryres = g.from_addresses(np.array(unitary.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "unitaryfin")
-            if not output_unitary:
-                g.reserve_tensor(pcinit, pcfinal, copy)
-                copyres = g.from_addresses(np.array(copy.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "copyfin")
-                ident = tensor.shared_memory_tensor(mem_tensor=identmat, name="ident")
-                cm1 = tensor.shared_memory_tensor(mem_tensor=correctionmat1, name="cm1")
-                cm2 = tensor.shared_memory_tensor(mem_tensor=correctionmat2, name="cm2")
-                with g.ResourceScope(name="trace", is_buffered=True, time=0) as pred:
-                    trace = UnitarySimulator.compute_trace_real(unitaryres, num_qbits, ident,
-                            tensor.shared_memory_tensor(mem_tensor=outptrace, name="outp").storage_request)
-                with g.ResourceScope(name="corrections", is_buffered=True, time=None, predecessors=[pred]) as pred:
-                    correction = UnitarySimulator.compute_correction(unitaryres, num_qbits, cm1,
-                            tensor.shared_memory_tensor(mem_tensor=outpcorrection, name="outpc").storage_request)
-                with g.ResourceScope(name="corrections2", is_buffered=True, time=1):
-                    unitaryres = g.stack(
-                        [trace, correction,
-                        UnitarySimulator.compute_correction2(copyres, num_qbits, cm2,
-                            tensor.shared_memory_tensor(mem_tensor=outpcorrection2, name="outpc2").storage_request)], 0)
-                    unitaryres.name = "traces"                        
-            unitaryres.set_program_output()
+        for block in range(pow2qb // cols if not output_unitary else 1):
+            with pgm_pkg.create_program_context("final_us" + ("" if output_unitary else str(block))) as pcfinal:
+                g.reserve_tensor(pcinitunitary, pcfinal, unitaryinit)
+                g.reserve_tensor(pccopy, pcfinal, unitary)
+                if not gate_stamped:
+                    for x in (gateinc, gateinccount, gateincmask, targetqbitpairs0, targetqbitpairs1, controlqbitpairs0, controlqbitpairs1):
+                        for y in x: tensor.shared_memory_tensor(mem_tensor=y, name=y.name + "fin")
+                    for x in resetgatemapsorig:
+                        for y in x: tensor.shared_memory_tensor(mem_tensor=y, name=y.name + "fin")
+                    for x in (qbitinc, qbitinccount, resetqbitmaporig, resetzerosorig): tensor.shared_memory_tensor(mem_tensor=x, name=x.name + "fin")        
+                unitaryres = g.from_addresses(np.array(unitary.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "unitaryfin")
+                if not output_unitary:
+                    g.reserve_tensor(pccopy, pcfinal, copy)
+                    copyres = g.from_addresses(np.array(copy.storage_request.addresses.reshape(-1, g.float32.size), dtype=object), min(256, pow2qb), g.float32, "copyfin")
+                    ident = tensor.shared_memory_tensor(mem_tensor=identmat, name="ident")
+                    cm1 = tensor.shared_memory_tensor(mem_tensor=correctionmat1, name="cm1")
+                    cm2 = tensor.shared_memory_tensor(mem_tensor=correctionmat2, name="cm2")
+                    with g.ResourceScope(name="trace", is_buffered=True, time=0) as pred:
+                        trace = UnitarySimulator.compute_trace_real(unitaryres, num_qbits, ident,
+                                tensor.shared_memory_tensor(mem_tensor=outptrace, name="outp").storage_request, cur_block=block)
+                    with g.ResourceScope(name="corrections", is_buffered=True, time=None, predecessors=[pred]) as pred:
+                        correction = UnitarySimulator.compute_correction(unitaryres, num_qbits, cm1,
+                                tensor.shared_memory_tensor(mem_tensor=outpcorrection, name="outpc").storage_request, cur_block=block)
+                    with g.ResourceScope(name="corrections2", is_buffered=True, time=1):
+                        unitaryres = g.stack(
+                            [trace, correction,
+                            UnitarySimulator.compute_correction2(copyres, num_qbits, cm2,
+                                tensor.shared_memory_tensor(mem_tensor=outpcorrection2, name="outpc2").storage_request, cur_block=block)], 0)
+                        unitaryres.name = "traces"                        
+                unitaryres.set_program_output()
         """
         with pgm_pkg.create_program_context("finalrev_us") as pcfinal:
             g.reserve_tensor(pcinitunitary, pcfinal, unitaryinit)
@@ -1597,12 +1606,14 @@ class UnitarySimulator(g.Component):
         iops = pgm_pkg.assemble(auto_agt_dim=0, skip_assembler=chainsize!=2)
         #pgm_pkg = g.ProgramPackage(name="us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates), output_dir="usiop", inspect_raw=debug, gen_vis_data=debug, check_stream_conflicts=debug, check_tensor_timing_conflicts=debug)
         if gate_stamped: return {
-            "aafiles": ["usiop/topo_0/" + name + "/" + name + ".aa" for name in ("init_us", "init_gates", "us_gate0", "us_gate0_rev", "us_gate0_1", "us_gate0_1_rev", "final_us")],         
-            "chainsize": chainsize, "max_gates": max_gates, "unitary": unitaryinit.name, "gates": gatespack.name, "othergates": othergatespack.name,
+            "aafiles": ["usiop/topo_0/" + name + "/" + name + ".aa" for name in ("init_us", "init_gates", "copy_us", "us_gate0", "us_gate0_rev", "us_gate0_1", "us_gate0_1_rev",
+                *(["final_us"] if output_unitary else ["final_us" + str(block) for block in range(pow2qb//cols)]))],         
+            "chainsize": chainsize, "max_gates": max_gates, "cols": cols, "unitary": unitaryinit.name, "gates": gatespack.name, "othergates": othergatespack.name,
             "qbits": qbitinfo.name, "unitaryres": unitaryres.name}
         if chainsize != 2:
             import shutil
-            for name in ("init_us", "init_gates", "us_gateuniversal", "final_us"):
+            for name in ("init_us", "init_gates", "copy_us", "us_gateuniversal",
+                *(["final_us"] if output_unitary else ["final_us" + str(block) for block in range(pow2qb//cols)])):
                 shutil.copyfile("usiop/topo_0/" + name + "/" + name + ".aa", "usiop/topo_0/" + name + "/" + name + ".0.aa")
             chain_aa("usiop/topo_0/us_gateuniversal/us_gateuniversal.0.aa", chainsize // 2)
             """
@@ -1635,22 +1646,20 @@ class UnitarySimulator(g.Component):
             #"--ifetch-rule", "'VXM'='" + gen(excludes) + "'"]
             #"--ifetch-rule", "'VXM'='!mod(896, 30) || (!mod(896,112) || (!mod(896,414) || (!mod(896,478) || (!mod(896,560) || (!mod(896,865) || !mod(896,882))))))'"]
             fix_options = ["--no-auto-agt"] if num_qbits < 8 else ["--auto-agt-dim", "3"]#, #"--auto-agt-dim", "3", #"--auto-agt"
-            iops[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".0.iop" 
-            cmds = [" ".join(["aa-latest",
-                "--input-aa", "usiop/topo_0/init_us/" + "init_us.0.aa", "--name", "init_us",
-                "--output-iop", "usiop/dev_0/temp_0.iop", "--auto-agt-dim", "3", *aa_options]),                
-                " ".join(["aa-latest",
-                "--input-aa", "usiop/topo_0/init_gates/" + "init_gates.0.aa", "--name", "init_gates",
-                "--output-iop", "usiop/dev_0/temp_1.iop", "--auto-agt-dim", "3", "--program-package", "usiop/dev_0/temp_0.iop", *aa_options]),
-                " ".join(["aa-latest",
-                "--input-aa",  "usiop/topo_0/us_gateuniversal/" + "us_gateuniversal.0.aa", "--name", "us_gateuniversal",
-                "--output-iop", "usiop/dev_0/temp_2.iop", "--program-package", "usiop/dev_0/temp_1.iop", *aa_options, *fix_options]),
-                " ".join(["aa-latest",
-                "--input-aa",  "usiop/topo_0/final_us/" + "final_us.0.aa", "--name", "final_us",
-                "--output-iop", iops[0], "--auto-agt-dim", "3", "--program-package", "usiop/dev_0/temp_2.iop", *aa_options])
-                ]
-            for cmd in cmds: print(cmd); assert os.system(cmd) == 0
-        return {"iop": iops[0], "chainsize": chainsize, "max_gates": max_gates, "unitary": unitaryinit.name, "gates": gatespack.name, "othergates": othergatespack.name,
+            iops[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".0.iop"
+            metadata = ["--metadata", "chainsize," + str(chainsize), "--metadata", "cols," + str(cols)]
+            assemblies = [("init_us", aa_options + ["--auto-agt-dim", "3"]),
+                ("init_gates", aa_options + ["--auto-agt-dim", "3"]),
+                ("copy_us", aa_options + ["--auto-agt-dim", "3"]),
+                ("us_gateuniversal", aa_options + fix_options),
+                *([("final_us", aa_options + ["--auto-agt-dim", "3"] + metadata)] if output_unitary else [("final_us" + str(block), aa_options + ["--auto-agt-dim", "3"] + (metadata if block == pow2qb//cols-1 else [])) for block in range(pow2qb//cols)])]
+            for i, asm in enumerate(assemblies):
+                cmd = " ".join(["aa-latest",
+                    "--input-aa", "usiop/topo_0/" + asm[0] + "/" + asm[0] + ".0.aa", "--name", asm[0],
+                    *(["--program-package", "usiop/dev_0/temp_" + str(i-1) + ".iop"] if i != 0 else []),
+                    "--output-iop", iops[0] if i == len(assemblies)-1 else "usiop/dev_0/temp_" + str(i) + ".iop", *asm[1]])
+                print(cmd); assert os.system(cmd) == 0
+        return {"iop": iops[0], "chainsize": chainsize, "max_gates": max_gates, "cols": cols, "unitary": unitaryinit.name, "gates": gatespack.name, "othergates": othergatespack.name,
             "qbits": qbitinfo.name,
             #"targetqbits": targetqbits.name, "controlqbits": controlqbits.name, "derivates": derivates.name,
             "unitaryres": unitaryres.name} #, **({"hightcqbits" : hightcqbits.name} if num_qbits >= 9 else {})} #"unitaryrevres": unitaryrevres.name, 
@@ -1667,6 +1676,32 @@ class UnitarySimulator(g.Component):
                 with open("usiop/usdata", 'wb') as f:
                     pickle.dump(d, f)
         return d
+    def compile_gate_stamped(num_qbits, target_qbits, control_qbits, iopname, tensornames):
+        if not os.path.exists("usiop/topo_0/us"): os.mkdir("usiop/topo_0/us")
+        chain_aa_gate_structure("usiop/topo_0/us/" + "us.aa", tensornames["aafiles"][3:7], num_qbits, target_qbits, control_qbits)
+        aa_options = [
+            "--no-metrics", "--stream-usage-dense", #incompatible with --program-package option: "--auto-extra-ifetch-slices", "--ifetch-from-self",
+            "--extra-ifetch-slice", "E38",
+            "--ifetch-in-idle-periods",
+            "--check-iq-conflicts", "--auto-repeat",
+            "--compress 'VXM'=1",
+            "--no-invariant-checks", #"--invariant-checks",
+            "--verbose-iop-stats", "--no-enable-mxm", "--verbose",
+            "--ifetch-slice-ordering", "closest-side"] #, "round-robin"]
+        fix_options = ["--no-auto-agt"] if num_qbits < 8 else ["--auto-agt-dim", "3"]#, #"--auto-agt-dim", "3", #"--auto-agt"         
+        metadata = ["--metadata", "chainsize," + str(tensornames["chainsize"]), "--metadata", "cols," + str(tensornames["cols"]),
+            "--metadata", "target_qbits," + ",".join(str(x) for x in target_qbits), "--metadata", "control_qbits," + ",".join(str(x) for x in control_qbits)]
+        assemblies = [("init_us", aa_options + ["--auto-agt-dim", "3"]),
+            ("init_gates", aa_options + ["--auto-agt-dim", "3"]),
+            ("copy_us", aa_options + ["--auto-agt-dim", "3"]),
+            ("us", aa_options + fix_options),
+            *[(os.path.splitext(os.path.basename(final_name))[0], aa_options + ["--auto-agt-dim", "3"] + (metadata if i == len(tensornames["aafiles"])-7-1 else [])) for i, final_name in enumerate(tensornames["aafiles"][7:])]]
+        for i, asm in enumerate(assemblies):
+            cmd = " ".join(["aa-latest",
+                "--input-aa", "usiop/topo_0/" + asm[0] + "/" + asm[0] + ".aa", "--name", asm[0],
+                *(["--program-package", "usiop/dev_0/temp_" + str(i-1) + ".iop"] if i != 0 else []),
+                "--output-iop", iopname if i == len(assemblies)-1 else "usiop/dev_0/temp_" + str(i) + ".iop", *asm[1]])
+            print(cmd); assert os.system(cmd) == 0
     def get_unitary_sim(num_qbits, max_gates, tensornames=None, output_unitary=False, gate_stamped=False):
         pow2qb = 1 << num_qbits
         if tensornames is None: tensornames = UnitarySimulator.build_chain(num_qbits, max_gates, output_unitary, gate_stamped)
@@ -1686,27 +1721,8 @@ class UnitarySimulator(g.Component):
                 num_inner_splits = (pow2qb+320-1)//320
                 def actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives):
                     if gate_stamped and iop[0] is None:
-                        if not os.path.exists("usiop/topo_0/us"): os.mkdir("usiop/topo_0/us")
-                        chain_aa_gate_structure("usiop/topo_0/us/" + "us.aa", tensornames["aafiles"][1:], num_qbits, target_qbits, control_qbits)
-                        aa_options = [
-                            "--no-metrics", "--stream-usage-dense", #incompatible with --program-package option: "--auto-extra-ifetch-slices", "--ifetch-from-self",
-                            "--extra-ifetch-slice", "E38",
-                            "--ifetch-in-idle-periods",
-                            "--check-iq-conflicts", "--auto-repeat",
-                            "--compress 'VXM'=1",
-                            "--no-invariant-checks", #"--invariant-checks",
-                            "--verbose-iop-stats", "--no-enable-mxm", "--verbose",
-                            "--ifetch-slice-ordering", "closest-side"] #, "round-robin"]
-                        fix_options = ["--no-auto-agt"] if num_qbits < 8 else ["--auto-agt-dim", "3"]#, #"--auto-agt-dim", "3", #"--auto-agt"
-                        iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop" 
-                        cmds = [" ".join(["aa-latest",
-                            "--input-aa", "usiop/topo_0/init_us/" + "init_us.aa", "--name", "init_us",
-                            "--output-iop", "usiop/dev_0/temp_0.iop", "--auto-agt-dim", "3", *aa_options]),                
-                            " ".join(["aa-latest",
-                            "--input-aa",  "usiop/topo_0/us/" + "us.aa", "--name", "us",
-                            "--output-iop", iop[0], "--program-package", "usiop/dev_0/temp_0.iop", *aa_options, *fix_options])
-                            ]
-                        for cmd in cmds: print(cmd); assert os.system(cmd) == 0
+                        iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
+                        UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iop[0], tensornames)
                         iop[0] = runtime.IOProgram(iop[0])
                         device.load_all(iop[0], unsafe_keep_entry_points=True)
                     num_gates = len(parameters)
@@ -1718,9 +1734,6 @@ class UnitarySimulator(g.Component):
                     control_qbits = np.concatenate((control_qbits, np.zeros(padqbits, dtype=control_qbits.dtype)))
                     derivatives = np.concatenate((derivatives, np.zeros(padqbits, dtype=derivatives.dtype)))
                     num_gates += padgates
-                    inputs = {}
-                    inputs[tensornames["unitary"]] = np.ascontiguousarray(u.astype(np.complex64)).view(np.float32).reshape(pow2qb, pow2qb, 2).transpose(0, 2, 1).reshape(pow2qb*2, pow2qb)
-                    invoke([device], iop[0] if gate_stamped else iop, 0, 0, [inputs])
                     inputs = {}
                     #inputs[tensornames["gates"]] = np.concatenate([np.repeat(gateparams[i].astype(np.complex64).view(np.float32).flatten(), min(256, pow2qb)) for i in range(0, num_gates, 2)] + [np.zeros((2*2*2*min(256, pow2qb)), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
                     inputs[tensornames["gates"]] = np.concatenate([gateparams[i].astype(np.complex64).view(np.float32).flatten() for i in range(0, num_gates, 2)] + [np.zeros((2*2*2), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
@@ -1736,6 +1749,7 @@ class UnitarySimulator(g.Component):
                         elif num_qbits == 10: inputs[tensornames["qbits"]] |= ((adjcontrolqbits>>3)<<6) | ((target_qbits>>3)<<7)
                         inputs[tensornames["qbits"]] = inputs[tensornames["qbits"]].astype(np.uint16) | (deriv.astype(np.uint16) << 8)
                     else: inputs[tensornames["qbits"]] = derivatives.astype(np.uint8)
+                    invoke([device], iop[0] if gate_stamped else iop, 1, 0, [inputs])
                     #inputs[tensornames["controlqbits"]] = np.concatenate((np.repeat(np.hstack((adjcontrolqbits[:,np.newaxis]%8*2, adjcontrolqbits[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
                     #if num_qbits >= 9:
                     #    hightcq = (adjcontrolqbits//8 + (target_qbits//8)*2).astype(np.uint8) if num_qbits==10 else (target_qbits//8).astype(np.uint8)
@@ -1743,22 +1757,23 @@ class UnitarySimulator(g.Component):
                     #derivs = np.array([0 if target_qbits[i]==control_qbits[i] else (i//2*2) ^ ((max_gates+1)//2*2) for i in range(num_gates)], dtype=np.uint16)
                     #inputs[tensornames["derivates"]] = np.concatenate((np.repeat(np.hstack(((derivs & 255).astype(np.uint8)[:,np.newaxis], (derivs >> 8).astype(np.uint8)[:,np.newaxis], np.array([[0]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))                    
                     #inputs[tensornames["derivates"]] = np.zeros((max_gates, 320), dtype=np.uint8)
-                    if not gate_stamped:
-                        invoke([device], iop, 1, 0, [inputs])
+                    cols = tensornames["cols"]
+                    outs = []
+                    for chunk in range(pow2qb // cols):
+                        inputs = {}
+                        curu = u[:,cols * chunk:cols * (chunk+1)]
+                        inputs[tensornames["unitary"]] = np.ascontiguousarray(curu.astype(np.complex64)).view(np.float32).reshape(pow2qb, cols, 2).transpose(0, 2, 1).reshape(pow2qb*2, cols)
+                        invoke([device], iop[0] if gate_stamped else iop, 0, 0, [inputs])                    
+                        invoke([device], iop[0] if gate_stamped else iop, 2, 0, None, None, None)
                         for i in range(0, num_gates, tensornames["chainsize"]):
-                            #progidx = int(1+1+(2+(2 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0) if (i&1)!=0 else 0) + target_qbits[i]//8*2 + (0 if target_qbits[i] == control_qbits[i] else 1+(2+(target_qbits[i]//8==0))*(adjcontrolqbits[i]//8)))
-                            #progidx = int(1+1+(1+(1 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0) if (i&1)!=0 else 0) + target_qbits[i]//8 + (0 if target_qbits[i] == control_qbits[i] else 2*(adjcontrolqbits[i]//8)))
-                            progidx = 1+1
-                            #np.set_printoptions(threshold=sys.maxsize, formatter={'int':hex})
-                            invoke([device], iop, progidx, 0, None, None, None)
-                        progidx = 1+1+1 #1+1+(1+(1 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0))*2+(num_gates&1) #1+1+(2+(2 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0))*2+(num_gates&1)
-                        res, _ = invoke([device], iop, progidx, 0, None, None, None)
-                    else: res, _ = invoke([device], iop[0], 1, 0, [inputs])
+                            invoke([device], iop[0] if gate_stamped else iop, 3, 0, None, None, None)                       
+                        res, _ = invoke([device], iop[0] if gate_stamped else iop, 4, 0, None, None, None)
+                        outs.append(res[0][tensornames["unitaryres"]].reshape(pow2qb, 2, cols) if output_unitary else res[0][tensornames["unitaryres"]])
                     if output_unitary:
                         #print(np.ascontiguousarray(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]].reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.int32))
-                        result[0] = np.ascontiguousarray(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]].reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.complex64).reshape(pow2qb, pow2qb).astype(np.complex128)
+                        result[0] = np.ascontiguousarray(np.concatenate(outs, axis=2).reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.complex64).reshape(pow2qb, pow2qb).astype(np.complex128)
                     else:
-                        result[0] = np.sum(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]], axis=1)
+                        result[0] = np.sum(np.sum(outs, axis=0), axis=1)
                 runfunc[0] = actual
         loaddata()
         actual = runfunc[0]
@@ -1975,7 +1990,7 @@ def get_max_gates(num_qbits, max_levels):
     return max_gates
 def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbits):
     import re
-    #aafiles is 6 programs: [init_gates, us_gate0, us_gate0_rev, us_gate0_1, us_gate0_1_rev, trace]
+    #aafiles is 4 programs: [us_gate0, us_gate0_rev, us_gate0_1, us_gate0_1_rev]
     unit_directives = [".read", ".write", ".data"]
     periods = {}
     preserve_lines, unit_lines = [], {}
@@ -1998,19 +2013,17 @@ def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbi
             if len(line) == 0 or line[0] == '\n' or line[0] == '.' or line[:2] == '//': continue
             period = max(period, int(line[0:line.index(':')]))
         periods[aakey] = period + 1
-    final_lines, period = unit_lines[0], periods[0]
+    final_lines, period = {}, 0 #unit_lines[0], periods[0]
     tqpairs, _ = UnitarySimulator.idxmap(num_qbits, 0, None)
     cqpairs, bypasspairs = UnitarySimulator.idxmap(num_qbits, 0, 1)
-    for i in range(len(target_qbits) + 1):
-        if i == len(target_qbits): aakey = 5
-        else:
-            tqbit, cqbit = target_qbits[i], control_qbits[i]
-            aakey = (1 if tqbit == cqbit or cqbit is None else 3) + (i % 2)
-            p, bp = UnitarySimulator.idxmap(num_qbits, tqbit, cqbit)
-            qmap = {}
-            for x, y in zip((tqpairs if tqbit == cqbit or cqbit is None else np.concatenate((cqpairs, bypasspairs))).flatten(),
-                            (p if tqbit == cqbit or cqbit is None else np.concatenate((p, bp))).flatten()):
-                qmap[x] = y
+    for i in range(len(target_qbits)):
+        tqbit, cqbit = target_qbits[i], control_qbits[i]
+        aakey = (0 if tqbit == cqbit or cqbit is None else 2) + (i % 2)
+        p, bp = UnitarySimulator.idxmap(num_qbits, tqbit, cqbit)
+        qmap = {}
+        for x, y in zip((tqpairs if tqbit == cqbit or cqbit is None else np.concatenate((cqpairs, bypasspairs))).flatten(),
+                        (p if tqbit == cqbit or cqbit is None else np.concatenate((p, bp))).flatten()):
+            qmap[x] = y
         for unit in unit_lines[aakey]:
             if not unit in final_lines: final_lines[unit] = {}
             for op in unit_lines[aakey][unit]:
@@ -2020,14 +2033,14 @@ def chain_aa_gate_structure(outaa, aafiles, num_qbits, target_qbits, control_qbi
                         final_lines[unit][op].append(line); continue
                     colon = line.index(':')
                     v = str(int(line[0:colon])+period)
-                    if aakey != 5 and re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in s8range+s8range2) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #unitary pairings
+                    if re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in s8range+s8range2) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #unitary pairings
                         qbit = int(re.search("(?:read|write)\\s+(\\d+),", line).group(1))
                         mapped = qmap[qbit % (1<<num_qbits)] + ((1<<num_qbits) * (qbit // (1<<num_qbits))) #handle the inner splits which are on the outermost dimension
                         line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(mapped) + ",", line)
-                    elif aakey != 5 and re.match(".unit Mem (?:East|West) (?:39)", unit) and (op.startswith(".read") or op.startswith(".write")): #derivatives
+                    elif re.match(".unit Mem (?:East|West) (?:39)", unit) and (op.startswith(".read") or op.startswith(".write")): #derivatives
                         idx = int(re.search("read\\s+(\\d+),", line).group(1))
                         line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(i+idx) + ",", line)
-                    elif aakey != 5 and re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in range(16)) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #gate params, 0-9 units could regexp preempt so do last
+                    elif re.match(".unit Mem (?:East|West) (?:" + "|".join(str(x) for x in range(16)) + ")", unit) and (op.startswith(".read") or op.startswith(".write")): #gate params, 0-9 units could regexp preempt so do last
                         idx = int(re.search("read\\s+(\\d+),", line).group(1))
                         line = re.sub("((?:read|write)\\s+)\\d+,", "\\g<1>" + str(2*(i//2)+idx) + ",", line)
                     final_lines[unit][op].append(v + line[colon:])
@@ -2075,11 +2088,11 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 11
+    num_qbits = 9
     #UnitarySimulator.unit_test(num_qbits)
-    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
+    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
     #UnitarySimulator.checkacc()
     #UnitarySimulator.perfcompare()
