@@ -1493,7 +1493,7 @@ class UnitarySimulator(g.Component):
                         alures = [tensor.create_alu_request(i) for i in range(16)]
                         #with g.ResourceScope(name="setgatherdistros1_" + str(c), is_buffered=False, time=None):
                         qmapW_st = g.split(g.stack([qmap]*(1+1+(1+1 if not control_qbit is None else 0)+2), 0).read(streams=g.SG1_W[0], time=0), splits=[1, 1] + ([1, 1] if not control_qbit is None else []) + [2])
-                        if not control_qbit is None and num_qbits >=9: qmapE_st = g.split(g.stack([qmap]*(1+1), 0).read(streams=g.SG1_E[0], time=1+1+(1+1)+8), splits=[1, 1])
+                        if not control_qbit is None and num_qbits >=9: qmapE_st = g.split(g.stack([qmap]*(1+1), 0).read(streams=g.SG1_E[0], time=1+1+(1+1)+2), splits=[1, 1])
                         for i in range(2):
                             g.mem_gather(tqbits, qmapW_st[0+i], output_streams=[g.SG1_E[1]]).write(name="targetqbitdistro" + str(i) + suffix, storage_req=tqbitdistro[reversedir][i].storage_request)
                             if not control_qbit is None:
@@ -1875,12 +1875,14 @@ class UnitarySimulator(g.Component):
                         print_utils.infoc(str(oracleres - result))
     def chain_test(num_qbits, max_gates, output_unitary=False, gate_stamped=False):
         pow2qb = 1 << num_qbits
-        num_gates, use_identity = 2, False # max_gates, False
+        num_gates, use_identity = max_gates, False
         u = np.eye(pow2qb) + 0j if use_identity else unitary_group.rvs(pow2qb)
         target_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)], dtype=np.uint8)
         control_qbits = np.array([np.random.randint(num_qbits) for _ in range(num_gates)], dtype=np.uint8)
+        control_qbits = target_qbits
         derivatives = np.zeros((num_gates,), dtype=np.uint8) #np.array([np.random.randint(2) for _ in range(num_gates)], dtype=np.uint8)
         parameters = np.random.random((num_gates, 3))
+        #parameters = np.zeros((num_gates, 3))
         oracleres = [None]
         def oracle():
             oracleres[0] = process_gates32(u, num_qbits, parameters, target_qbits, control_qbits, derivatives)
@@ -1893,6 +1895,8 @@ class UnitarySimulator(g.Component):
         oracleres, result = oracleres[0], origresult[0]
         #np.set_printoptions(formatter={'int':hex, 'complexfloat':lambda x:float(np.real(x)).hex()+'+'+float(np.imag(x)).hex()+'j'}, threshold=sys.maxsize, floatmode='unique')
         if not np.array_equal(oracleres, result): print(oracleres - result, oracleres, result, np.ascontiguousarray(oracleres.astype(np.complex64)).view(np.int32), u)
+        oracleres.tofile("oracle.txt", sep=",")
+        result.tofile("result.txt", sep=",")
         if np.allclose(result, oracleres, rtol=1e-04, atol=1e-07):
             print_utils.success("\nQuantum Simulator Chain Test Success ...")
         else:
@@ -2114,13 +2118,13 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 2
+    num_qbits = 9
     #UnitarySimulator.unit_test(num_qbits)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
     UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
-    #UnitarySimulator.checkacc(max_levels, True)
-    UnitarySimulator.perfcompare(max_levels, False)
+    UnitarySimulator.checkacc(max_levels, False)
+    #UnitarySimulator.perfcompare(max_levels, False)
 if __name__ == "__main__":
     main()
