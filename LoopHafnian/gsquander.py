@@ -1193,6 +1193,32 @@ class UnitarySimulator(g.Component):
         #    #rows = g.sum(g.concat_vectors([rows.reshape(pow2qb, min(256, pow2qb)), *([g.zeros((3, min(256, pow2qb)), dtype=g.float32, layout="-1, S12")]*pow2qb)], (4, pow2qb, min(256, pow2qb))).transpose(1,0,2), dims=None, time=0).write(name="trace", layout="-1, S4")
         #    rows = g.sum(g.concat_vectors([rows.reshape(1, min(256, pow2qb)), g.zeros((3, min(256, pow2qb)), dtype=g.float32, layout="-1, S12")], (4, min(256, pow2qb))), dims=[0,1], time=0).write(name="trace", layout="-1, S4, H1(W)")
         return rows
+    def gen_dynamic_trace_formula(num_qbits):
+        pow2qb = 1 << num_qbits
+        num_inner_splits = (pow2qb+256-1)//256
+        if pow2qb * num_inner_splits > 8192: num_inner_splits = 8192 // pow2qb
+        cols = min(256, pow2qb) * num_inner_splits
+        unitary = np.arange(pow2qb*2*num_inner_splits).reshape(pow2qb*2, num_inner_splits).T
+        for block in range(pow2qb // cols):
+            cur_offset = block * num_inner_splits
+            rows = [y//2
+                for i, x in enumerate(unitary)
+                for j, y in enumerate(x)
+                    if (j & 1) == 0 and j//2>=(i+cur_offset)*min(256, pow2qb) and j//2<(i+cur_offset+1)*min(256, pow2qb)]
+            d, md = UnitarySimulator.get_correction_masks(num_qbits, second=False)
+            masks = {frozenset(d[x][i]) for x in d for i in range(len(d[x])) if len(d[x][i]) != 0}
+            check = {x: i for i, x in enumerate(sorted(masks, key=lambda z: (len(z), z)))}
+            ordered = sorted(((i, j) for i in d for j, x in enumerate(d[i][cur_offset:cur_offset+num_inner_splits]) if len(x) != 0), key=lambda z: check[frozenset(d[z[0]][z[1]+cur_offset])])
+            rows1 = [(j*pow2qb*2+i*2)//2 for i, j in ordered]
+            #rows1 = [(j*pow2qb*2+i*2)//2 for i in d for j, x in enumerate(d[i][cur_offset:cur_offset+num_inner_splits]) if len(x) != 0]
+            d, md = UnitarySimulator.get_correction_masks(num_qbits, second=True)
+            rows2 = [(j*pow2qb*2+i*2)//2 for i in d for j, x in enumerate(d[i][cur_offset:cur_offset+num_inner_splits]) if len(x) != 0]
+            if block == 0: rowsorig, rowsorig1, rowsorig2 = rows, rows1, rows2
+            #assert rows == [x + 8192 // (pow2qb // cols)//256 * 256*block for x in rowsorig]
+            #assert list(sorted(rows1)) == list(sorted([(x+1024*block) % 8192 for x in rows1]))
+            print([x ^ y for x, y in zip(rows1, rowsorig1)])
+            #assert rows2 == rowsorig2, (num_qbits, block)
+        assert False
     def build_chain(num_qbits, max_gates, output_unitary=False, gate_stamped=False, alu_latch=True):
         pow2qb = 1 << num_qbits
         debug = False
@@ -1291,7 +1317,7 @@ class UnitarySimulator(g.Component):
                 outpcorrection2 = g.zeros((320,), dtype=g.float32, layout=get_slice4(WEST, 0, 3, 0) + ", A1(4079)", name="outpcorrection2")
                 g.add_mem_constraints([identmat, correctionmat1], [identmat, correctionmat1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             else: cormatlen1 = 0
-            distmaps = [g.from_data(np.array([[i] + [16]*319 for i in range(16)], dtype=np.uint8), name="distmaps", layout=get_slice1(hemi, 37, 0) + ", A16(4080-4095)") for hemi in (WEST, EAST)]
+            distmaps = [g.from_data(np.array([[i] + [16]*319 for i in range(16)], dtype=np.uint8), name="distmaps", layout=get_slice1(hemi, 37, 1) + ", A16(4080-4095)") for hemi in (WEST, EAST)]
             lowmask = g.from_data(np.array(([7]*2+[0]*14)*20, dtype=np.uint8), name="lowmask", layout=get_slice1(WEST, 0, 0) + ", A1(4087)")
             midmask = g.from_data(np.array(([0x38]*2+[0]*14)*20, dtype=np.uint8), name="midmask", layout=get_slice1(WEST, 1, 0) + ", A1(4087)")
             if num_qbits >= 9: highmask = g.from_data(np.array(([0xC0]*2+[0]*14)*20, dtype=np.uint8), name="highmask", layout=get_slice1(WEST, 6, 0) + ", A1(" + str(4079-cormatlen1-min(256, pow2qb)) + ")")
@@ -1895,8 +1921,6 @@ class UnitarySimulator(g.Component):
         oracleres, result = oracleres[0], origresult[0]
         #np.set_printoptions(formatter={'int':hex, 'complexfloat':lambda x:float(np.real(x)).hex()+'+'+float(np.imag(x)).hex()+'j'}, threshold=sys.maxsize, floatmode='unique')
         if not np.array_equal(oracleres, result): print(oracleres - result, oracleres, result, np.ascontiguousarray(oracleres.astype(np.complex64)).view(np.int32), u)
-        oracleres.tofile("oracle.txt", sep=",")
-        result.tofile("result.txt", sep=",")
         if np.allclose(result, oracleres, rtol=1e-04, atol=1e-07):
             print_utils.success("\nQuantum Simulator Chain Test Success ...")
         else:
@@ -2101,6 +2125,7 @@ def chain_aa(aafile, chainsize):
             duplines.append(line)
             f.write(line)
 def main():
+    #for num_qbits in range(11, 13+1): UnitarySimulator.gen_dynamic_trace_formula(num_qbits)
     import sys
     if len(sys.argv) >= 4:
         num_qbits = int(sys.argv[1])
@@ -2118,13 +2143,15 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 9
+    num_qbits = 11
     #UnitarySimulator.unit_test(num_qbits)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
     UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
-    UnitarySimulator.checkacc(max_levels, False)
+    #UnitarySimulator.checkacc(max_levels, False)
+    #UnitarySimulator.checkacc(max_levels, True)
     #UnitarySimulator.perfcompare(max_levels, False)
+    #UnitarySimulator.perfcompare(max_levels, True)
 if __name__ == "__main__":
     main()
