@@ -1761,7 +1761,7 @@ class UnitarySimulator(g.Component):
                 #for i in range(1+1+(2+(2 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0))*2+2):
                 #    device.load(iop[i], unsafe_keep_entry_points=True)
                 if not gate_stamped: device.load_all(iop, unsafe_keep_entry_points=True)
-                num_inner_splits = (pow2qb+320-1)//320
+                num_inner_splits = (pow2qb+256-1)//256
                 def actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives):
                     if gate_stamped and iop[0] is None:
                         #iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
@@ -1942,7 +1942,7 @@ class UnitarySimulator(g.Component):
         #2 qbits works to chain 50, 3 to 22
         use_identity = False
         acc, acc32 = {}, {}
-        for num_qbits in range(2, 10+1):
+        for num_qbits in range(2, (11 if output_unitary else 10)+1):
             max_gates = get_max_gates(num_qbits, max_levels)
             pow2qb = 1 << num_qbits
             func, result, closefunc = UnitarySimulator.get_unitary_sim(num_qbits, max_gates, None, output_unitary=output_unitary)
@@ -2143,12 +2143,12 @@ def main():
     #10 qbits max for single bank, 11 qbits requires dual chips [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 7, 26, 104]
     #import math; [math.ceil(((1<<x)*int(math.ceil((1<<x)/320)))/8192) for x in range(15)]
     #UnitarySimulator.validate_alus()
-    num_qbits = 11
+    #num_qbits = 11
     #UnitarySimulator.unit_test(num_qbits)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
     #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
     #UnitarySimulator.checkacc(max_levels, False)
     #UnitarySimulator.checkacc(max_levels, True)
     #UnitarySimulator.perfcompare(max_levels, False)
