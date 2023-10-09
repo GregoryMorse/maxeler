@@ -739,6 +739,11 @@ def power_traces(mat):
 def hafnian_eff(mat, isInt=False, isLoop=False, isGlynn=False):
   if (len(mat) & 1) != 0: return 0
   n = len(mat) // 2
+  if len(mat) % 2 != 0:
+      assert isLoop #and mat[n] == mat[:,n]
+      oddMode = True
+      odd_vx = mat[n]
+      mat = matix(mat, list(range(n)) + list(range(n+1, 2*n+1)))
   import functools, math
   if isInt: fact = math.factorial(n); nfact = multiprod([fact] * n)
   if n == 0: return 1
@@ -780,7 +785,7 @@ def hafnian_eff(mat, isInt=False, isLoop=False, isGlynn=False):
     if isInt: poly, powfact, fixfact, = [1], nfact, fact
     else: poly, fixfact = [1], 1
     z = 0
-    for j in range(1, n+1):
+    for j in range(1, 2*n+1 if oddMode else n+1):
       if isInt: fixfact //= j; powfact //= fact
       else: fixfact *= j
       poly = mulPolyR(lbda, poly, None)
@@ -788,7 +793,7 @@ def hafnian_eff(mat, isInt=False, isLoop=False, isGlynn=False):
         if isInt: z += ((poly[n] * fixfact) * powfact) << (n-j)
         else: z += poly[n] / fixfact
     h += -z if ((len(X) if isGlynn else (n - len(X))) & 1) != 0 else z
-  if isGlynn: h = (h >> (n-1)) if isInt else (h / 2**(n-1))
+  if isGlynn: h = (h >> (n-(0 if oddMode else 1))) if isInt else (h / 2**(n-1))
   return (h >> n) // (fact * nfact) if isInt else h
 def run_haftest():
     haftest = (
@@ -800,10 +805,19 @@ def run_haftest():
   ([[0, 4.7, 4.6, 4.5], [4.7, 0, 2.1, 0.4], [4.6, 2.1, 0, 1.2], [4.5, 0.4, 1.2, 0]], 16.93),
   ([[0, 0, 1, -1, 1, 0, -1, -1, -1, 0, -1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1], [0, 0, 1, 0, 0, -1, -1, -1, -1, 0, 1, 1, 1, 1, 0, -1, -1, 0, 0, 1, 1, -1, 0, 0], [-1, -1, 0, 1, 0, 1, -1, 1, -1, 1, 0, 0, 1, -1, 0, 0, 0, -1, 0, -1, 1, 0, 0, 0], [1, 0, -1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1, -1, -1, -1, -1, 1, 0, -1], [-1, 0, 0, -1, 0, 0, 1, -1, 0, 1, -1, -1, -1, 1, 1, 0, 1, 1, 1, 0, -1, 1, -1, -1], [0, 1, -1, -1, 0, 0, 1, -1, -1, -1, 0, -1, 1, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, -1], [1, 1, 1, 0, -1, -1, 0, -1, -1, 0, 1, 1, -1, 0, 1, -1, 0, 0, 1, -1, 0, 0, 0, -1], [1, 1, -1, -1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, -1, 1, 0, 0], [1, 1, 1, -1, 0, 1, 1, 0, 0, -1, 1, -1, 1, 1, 1, 0, -1, -1, -1, -1, 0, 1, 1, -1], [0, 0, -1, 0, -1, 1, 0, -1, 1, 0, 1, 0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 1, -1, -1], [1, -1, 0, 0, 1, 0, -1, 0, -1, -1, 0, 0, 1, 0, 0, -1, 0, -1, -1, -1, -1, -1, 1, -1], [-1, -1, 0, 0, 1, 1, -1, -1, 1, 0, 0, 0, -1, 0, 0, -1, 0, -1, -1, 0, 1, -1, 0, 0], [0, -1, -1, -1, 1, -1, 1, 0, -1, 0, -1, 1, 0, 1, -1, -1, 1, -1, 1, 0, 1, -1, 1, -1], [-1, -1, 1, 0, -1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, -1, 1, -1, -1, 0, 1, 0, -1, -1], [-1, 0, 0, 0, -1, 0, -1, 0, -1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, -1, -1, 0, -1, -1], [0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, -1, 0, 0, 1, -1, -1, -1, 0, -1, -1], [0, 1, 0, -1, -1, 1, 0, -1, 1, -1, 0, 0, -1, -1, -1, 0, 0, -1, 1, 0, 0, -1, -1, 1], [-1, 0, 1, 1, -1, 0, 0, 0, 1, 1, 1, 1, 1, 1, -1, -1, 1, 0, 1, 1, -1, -1, -1, 1], [0, 0, 0, 1, -1, 0, -1, -1, 1, 0, 1, 1, -1, 1, -1, 1, -1, -1, 0, 1, 1, 0, 0, -1], [0, -1, 1, 1, 0, -1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, -1, -1, 0, 0, 0, 1, 0], [-1, -1, -1, 1, 1, 0, 0, 1, 0, 0, 1, -1, -1, -1, 1, 1, 0, 1, -1, 0, 0, 0, 0, 0], [0, 1, 0, -1, -1, 0, 0, -1, -1, -1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0], [-1, 0, 0, 0, 1, 0, 0, 0, -1, 1, -1, 0, -1, 1, 1, 1, 1, 1, 0, -1, 0, -1, 0, 1], [-1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, -1, -1, 1, 0, 0, 0, -1, 0]], -6773))
     import timeit
-    for mat, sol in haftest:
+    import numpy as np
+    from thewalrus import hafnian, loop_hafnian
+    #https://oeis.org/A066224 Bisection of A000085.
+    #[loop_hafnian(np.ones((x,x))) for x in range(1, 35, 2)]
+    r = np.random.randint(0, 2, (5, 5))
+    print([loop_hafnian(np.ones((x,x))) for x in range(1, 9, 2)])
+    print([loop_hafnian(np.ones((x,x)), glynn=False) for x in range(1, 9, 2)])
+    print([hafnian_eff(np.ones((x,x))) for x in range(1, 9, 2)])
+    print(loop_hafnian(r), hafnian_eff(r))
+    for mat, sol in haftest:    
       #assert hafnian(mat) == sol
-      #import numpy as np;from thewalrus import hafnian
       #print(hafnian(np.array(mat), loop=True))
+      assert hafnian(np.array(mat)) == sol
       assert hafnian_perf_match(mat) == sol
       assert hafnian_ryser_time(mat) == sol
       assert hafnian_eff(mat, isInt=isinstance(sol, int)) == sol, (hafnian_eff(mat), sol)
@@ -1007,39 +1021,12 @@ def get_slice16(drctn, slices, bank=0):
     return "-1, H1(" + ("W" if drctn==WEST else "E") + "), S16(" + str(min(slices)) + "-" + str(max(slices)) + "), B1(" + str(bank) + ")"
 def alu_for_hemi(alu, drctn): return alu if drctn==WEST else 15-alu
 def sg4_for_hemi(sg4, drctn): return sg4 if drctn==WEST else (9-sg4) % 8 #[(9-x)%8 for x in range(8)] vs list(range(8))
-def dump_groq_doc():
-    import os, pydoc, pkgutil, groq, importlib, functools, shutil
-    try: os.mkdir("groqdoc")
-    except FileExistsError: pass
-    os.chdir("groqdoc")
-    def import_submodules(package, recursive=True):
-        if isinstance(package, str):
-            package = importlib.import_module(package)
-        results = {}
-        for loader, name, is_pkg in pkgutil.walk_packages(package.__path__):
-            full_name = package.__name__ + '.' + name
-            try:
-                results[full_name] = importlib.import_module(full_name)
-            except ModuleNotFoundError: continue
-            except FileNotFoundError: continue
-            if recursive and is_pkg:
-                results.update(import_submodules(full_name))
-        return results    
-    for module in import_submodules(groq):
-        if not module.startswith("groq."): continue
-        attr = functools.reduce(lambda x, y: getattr(x, y), [groq] + module.split('.')[1:])
-        setattr(attr, "__all__", dir(attr))
-        pydoc.writedoc(module)
-    groq.__all__ = dir(groq)
-    pydoc.writedoc(groq)
-    os.chdir("..")
-    shutil.make_archive("groqdoc", 'zip', "groqdoc")
-def compile_unit_test(name):
+def compile_unit_test(name, debug=True):
     print_utils.infoc("\nCompiling model ...")
     # Compile program to generate IOP. Also generate groqview JSON dump file and
     # check for potential stream conflicts.
     iop_file = g.compile(
-        base_name=name, gen_vis_data=True, check_stream_conflicts=True, #tree_conflicts=True, inspect_raw=True
+        base_name=name, gen_vis_data=debug, check_stream_conflicts=debug, #tree_conflicts=True, inspect_raw=True
     )
     g.write_visualizer_data(name)
     json_file = name + "/visdata.json"
@@ -1075,26 +1062,29 @@ def invoke(devices, iop, pgm_num, ep_num, tensors, lastouts=None, buffers=None):
                 outs[idx][output_tensor.name] = result_tensor
     return outs, [input_buffers, output_buffers]
 class VecNormalize(g.Component):
-    def __init__(self, chunks, dim, lastvn=None, **kwargs):
+    def __init__(self, chunks, dim, lastvn=None, innerdim=None, **kwargs):
         super().__init__(**kwargs)
         self.chunks, self.dim = chunks, dim
+        if innerdim is None: innerdim = dim
         self.consts = []
         for drctn in (WEST, EAST):
             dirstr = "W" if drctn == WEST else "E"
             if lastvn is None or lastvn == True or lastvn == False:
                 self.consts.append({
-                    "signshift": g.from_data(np.array([[32-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 0, 3, drctn), name="signshift" + dirstr),
-                    "floatbias": g.from_data(np.array([[127-1]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="floatbias" + dirstr),
-                    "initexp": g.from_data(np.array([[(127+23)<<23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="initexp" + dirstr), 
-                    "subval": g.from_data(np.array([[1<<23]*dim], dtype=np.float32), layout=get_slice4(drctn, 0, 3, drctn), name="subval" + dirstr), 
-                    "shiftexp": g.from_data(np.array([[23]*dim], dtype=np.uint32), layout=get_slice4(drctn, 0, 3, drctn), name="shiftexp" + dirstr),
-                    "shiftcomp": g.from_data(np.array([[7]*dim], dtype=np.uint8), layout=get_slice1(drctn, 3, drctn), name="shiftcomp" + dirstr),
-                    "shiftmask": g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="shiftmask" + dirstr),
-                    "zeros": g.zeros(shape=(1,dim), dtype=g.int8, layout=get_slice1(drctn, 0, drctn), name="zeros" + dirstr),
-                    "maps": g.from_data(np.concatenate([np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320) for i in range(16)]), layout=get_slice1(drctn, 43, drctn)),
-                    "perms": g.from_data(np.concatenate([np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320) for i in range(10)]), layout=get_slice1(drctn, 42, drctn)),
+                    "signshift": g.from_data(np.array([[32-1]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, drctn)), name="signshift" + dirstr),
+                    "floatbias": g.from_data(np.array([[127-1]*innerdim], dtype=np.uint32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, drctn)), name="floatbias" + dirstr),
+                    "initexp": g.from_data(np.array([[(127+23)<<23]*innerdim], dtype=np.uint32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, drctn)), name="initexp" + dirstr), 
+                    "subval": g.from_data(np.array([[1<<23]*innerdim], dtype=np.float32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, drctn)), name="subval" + dirstr), 
+                    "shiftexp": g.from_data(np.array([[23]*innerdim], dtype=np.uint32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 0, 3, drctn)), name="shiftexp" + dirstr),
+                    "shiftcomp": g.from_data(np.array([[7]*innerdim], dtype=np.uint8), storage_req=tensor.create_storage_request(layout=get_slice1(drctn, 3, drctn)), name="shiftcomp" + dirstr),
+                    "shiftmask": g.from_data(np.array([[(1<<7)-1]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 8, 11, drctn)), name="shiftmask" + dirstr),
+                    "zeros": g.from_data(np.zeros((1,innerdim), dtype=np.int8), storage_req=tensor.create_storage_request(layout=get_slice1(drctn, 0, drctn)), name="zeros" + dirstr),
+                    "maps": g.from_data(np.concatenate([np.array((list(range(i, 16)) + list(range(0, i)))*20, dtype=np.uint8).reshape(1, 320) for i in range(16)]), storage_req=tensor.create_storage_request(layout=get_slice1(drctn, 43, drctn))),
+                    "perms": g.from_data(np.concatenate([np.array(inst.encode_permute_map(list(range(16*i, 160))+list(range(0, 16*i))+list(range(160+16*i, 320))+list(range(160, 160+16*i))), dtype=np.uint8).reshape(1, 320) for i in range(10)]), storage_req=tensor.create_storage_request(layout=get_slice1(drctn, 42, drctn))),
                 })
-            else: self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvn.consts[drctn][key], name="post" + lastvn.consts[drctn][key].name) for key in lastvn.consts[drctn]})
+            else:
+                self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvn.consts[drctn][key], name="post" + lastvn.consts[drctn][key].name) for key in lastvn.consts[drctn]})
+                if dim != innerdim: self.consts = [{key: g.from_addresses(x[key].storage_request.addresses.reshape(-1, x[key].dtype.size), innerdim, x[key].dtype, x[key].name + str(innerdim)) for key in x} for x in self.consts]
             g.add_mem_constraints(list(self.consts[drctn].values()), list(self.consts[drctn].values()), g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.logtworeqs, self.biasreqs, self.shftreqs, self.shiftedreqs, self.selreqs, self.cmpreqs, self.permreqs = [], [], [], [], [], [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
@@ -1138,14 +1128,14 @@ class VecNormalize(g.Component):
                 x = g.concat_inner_splits([logtworesult[drctn*2+plane]]*16).read(streams=g.SG4[4*plane], time=0)
                 x = g.distribute_8(x, map=g.concat_inner_splits(g.split_vectors(self.consts[drctn]["maps"], [1]*16)), distributor_req=drctn*4+2*plane, bypass8=0b11110000, map_stream_req=g.SG1[(4*plane+1)*4])
                 x = g.transpose_null(x, transposer_req=drctn*2+plane, stream_order=[0,1,2,3])
-                x = g.concat_vectors(g.split_inner_splits(x), (16, 320))
+                x = g.concat_vectors(g.split_inner_splits(x), (16, curvec[-1].shape[-1]))
                 x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(8*plane, drctn)], output_streams=g.SG4[4*plane])
                 x = extract_uint8(x)
                 maxresult.append(x.write(name="maxlogtwo" + dirstr, storage_req=self.permreqs[drctn*2+plane]))
             with g.ResourceScope(name="maxlogtwofin" + dirstr, is_buffered=True, time=t+134, predecessors=None) as pred:
-                x = g.concat_inner_splits([maxresult[drctn*2+plane].reshape(1, 320)]*10)#.read(streams=g.SG4[4*plane])
+                x = g.concat_inner_splits([maxresult[drctn*2+plane].reshape(1, curvec[-1].shape[-1])]*10)#.read(streams=g.SG4[4*plane])
                 x = g.permute_inner(x, permute_map=g.concat_inner_splits(g.split_vectors(self.consts[drctn]["perms"], [1]*10)), permutor_req=drctn, input_streams=[g.SG1[0], g.SG1[24]], output_streams=g.SG1[0], time=0)
-                x = g.concat_vectors(g.split_inner_splits(x), (10, 320))
+                x = g.concat_vectors(g.split_inner_splits(x), (10, curvec[-1].shape[-1]))
                 x = g.reduce_max(x, dims=[0], alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[0])
                 cmpr = g.greater_equal(x, self.consts[drctn]["shiftcomp"].read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 x = g.vxm_identity(x, alus=[alu_for_hemi(3, drctn)], output_streams=g.SG4[sg4_for_hemi(3, drctn)])
@@ -1180,7 +1170,7 @@ class VecNormalize(g.Component):
                 lshifts = g.left_shift(g.concat_inner_splits(g.split_inner_splits(allsels[drctn*2+plane])[1:]+[self.consts[drctn]["zeros"]]).read(streams=g.SG4[sg4_for_hemi(2, drctn)]), diff, alus=[alu_for_hemi(2, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 maskedshifts = g.bitwise_and(lshifts, g.concat_inner_splits(g.split_vectors(extract_int8([self.consts[drctn]["shiftmask"]]*self.chunks), [1]*self.chunks)).read(streams=g.SG4[sg4_for_hemi(4, drctn)]), alus=[alu_for_hemi(5, drctn)], output_streams=g.SG4[sg4_for_hemi(2, drctn)])
                 res = g.bitwise_or(maskedshifts, nextshifts.read(streams=g.SG1[4*sg4_for_hemi(3, drctn)]), alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(0, drctn)])
-                result.append(g.concat_vectors(g.split_inner_splits(res), (self.chunks, self.dim)).write(name="finalres" + dirstr, layout=get_slice1(drctn, 43, plane)))
+                result.append(g.concat(g.split_inner_splits(res)).write(name="finalres" + dirstr, layout=get_slice1(drctn, 43, plane)))
         g.add_mem_constraints(resnorm + maxfinresult + allsels, resnorm + maxfinresult + allsels, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(absresult + logtworesult, absresult + logtworesult + tvec, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         g.add_mem_constraints(resnorm, tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1191,6 +1181,7 @@ class VecNormalize(g.Component):
     def unit_test(chunks, dim):
         with g.ProgramContext() as pc:
             vn = VecNormalize(chunks, dim*2*2)
+            #vn = VecNormalize(chunks, dim*2*2, innerdim=dim*2)
             tvec, tnorm = [], []
             for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
                 dirstr = ("W" if drctn == WEST else "E") + str(plane) + "P"
@@ -1245,24 +1236,27 @@ class VecNormalize(g.Component):
         oracle()
         assert all(np.all(oracleres[i][j] == results[i][j]) for i in range(parallel) for j in range(2))        
 class VecMatMul(g.Component):
-    def __init__(self, chunks, dim, lastvmm=None, **kwargs):
+    def __init__(self, chunks, dim, lastvmm=None, innerdim=None, **kwargs):
         super().__init__(**kwargs)
         self.chunks, self.dim = chunks, dim
+        if innerdim is None: innerdim = dim
         self.consts = []
-        self.vn = VecNormalize(chunks, dim, lastvmm if lastvmm is None or lastvmm == True or lastvmm == False else lastvmm.vn)
+        self.vn = VecNormalize(chunks, dim, lastvmm if lastvmm is None or lastvmm == True or lastvmm == False else lastvmm.vn, innerdim)
         for drctn in (WEST, EAST):
             dirstr = "W" if drctn == WEST else "E"
             if lastvmm is None or lastvmm==True or lastvmm==False:
                 self.consts.append({
-                    "maskqrt": g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="maskqrt" + dirstr),
-                    "maskqrttoppre": g.from_data(np.array([[(1<<7)-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 32, 35, drctn), name="maskqrttoppre" + dirstr),
-                    "maskqrttop": g.from_data(np.array([[-1]*dim], dtype=np.int32), layout=get_slice4(drctn, 32, 35, drctn), name="maskqrttop" + dirstr), 
-                    "shiftqrtpre": g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 12, 15, drctn), name="shiftqrtpre" + dirstr), 
-                    "shiftqrt": g.from_data(np.array([[7]*dim], dtype=np.int32), layout=get_slice4(drctn, 8, 11, drctn), name="shiftqrt" + dirstr), 
-                    "zerospre": g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 0), name="zerospre" + dirstr),
-                    "zeros": g.zeros(shape=(1,dim), dtype=g.int32, layout=get_slice4(drctn, 4, 7, 1), name="zeros" + dirstr)
+                    "maskqrt": g.from_data(np.array([[(1<<7)-1]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 8, 11, drctn)), name="maskqrt" + dirstr),
+                    "maskqrttoppre": g.from_data(np.array([[(1<<7)-1]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 32, 35, drctn)), name="maskqrttoppre" + dirstr),
+                    "maskqrttop": g.from_data(np.array([[-1]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 32, 35, drctn)), name="maskqrttop" + dirstr), 
+                    "shiftqrtpre": g.from_data(np.array([[7]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 12, 15, drctn)), name="shiftqrtpre" + dirstr), 
+                    "shiftqrt": g.from_data(np.array([[7]*innerdim], dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 8, 11, drctn)), name="shiftqrt" + dirstr), 
+                    "zerospre": g.from_data(np.zeros((1,innerdim), dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, 0)), name="zerospre" + dirstr),
+                    "zeros": g.from_data(np.zeros((1,innerdim), dtype=np.int32), storage_req=tensor.create_storage_request(layout=get_slice4(drctn, 4, 7, 1)), name="zeros" + dirstr)
                 })
-            else: self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvmm.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
+            else:
+                self.consts.append({key: tensor.shared_memory_tensor(mem_tensor=lastvmm.consts[drctn][key], name="post" + lastvmm.consts[drctn][key].name) for key in lastvmm.consts[drctn]})
+                if innerdim != dim: self.consts = [{key: g.from_addresses(x[key].storage_request.addresses.reshape(-1, x[key].dtype.size), innerdim, x[key].dtype, x[key].name + str(innerdim)) for key in x} for x in self.consts]
             g.add_mem_constraints([self.consts[drctn]["maskqrttop"]], [self.consts[drctn]["maskqrttoppre"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["shiftqrt"]], [self.consts[drctn]["maskqrt"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints([self.consts[drctn]["zerospre"]], [self.consts[drctn]["zeros"]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1302,6 +1296,7 @@ class VecMatMul(g.Component):
         #4+9+3+13+34+19 - 6 = 76 #-6 because the S4(8-11)
         #mxm_rqs = [tensor.create_mxm_request(planes=[x], num_planes=1) for x in range(4)]
         #g.latch(maskqrt[1-drctn].read(streams=g.SG4[sg4_for_hemi(3, drctn)]), alu=3)
+        print([tmat[drctn*2+plane].physical_shape for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1))])
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             if plane == 0:
                 split_result = []
@@ -1392,7 +1387,10 @@ class VecMatMul(g.Component):
                 g.add_mem_constraints([vmm.consts[drctn]["maskqrttop"], vmm.consts[drctn]["maskqrttoppre"]], [tmat[drctn*2+plane]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)        
 
             parallel = len(tvec)*2
-            result_mt, resnorm, _ = vmm.build(tvec, tmat, tnorm)
+            with g.ResourceScope(name="mm_init", is_buffered=False, time=0, predecessors=None) as pred:
+                g.clear_mxm(planes=[0,1,2,3], time=0)
+            with g.ResourceScope(name="vecmatmul", is_buffered=False, time=24, predecessors=None) as pred:
+                result_mt, resnorm, _ = vmm.build(tvec, tmat, tnorm)
             for x in result_mt: x.set_program_output()
             for x in resnorm: x.set_program_output()
             iop_file, json_file = compile_unit_test("vecmatmul")
@@ -1642,6 +1640,7 @@ class VectorsToComplexMatrix(g.Component):
         self.distmap = ([g.from_data(np.array(list(range(16))*10+[16]*160, dtype=np.uint8), layout=get_slice1(hemi, 42+i)) for hemi in (WEST, EAST) for i in range(2)],
                         [g.from_data(np.array([16]*160+list(range(16))*10, dtype=np.uint8), layout=get_slice1(hemi, 42+i)) for hemi in (WEST, EAST) for i in range(2)])
         self.normmask = [g.from_data(np.array([[1 if i == j+1 else 0 for i in range(dim)]*4 for j in range(dim//2-1)], dtype=np.uint8), layout=get_slice1(hemi, 0)) for hemi in (WEST, EAST)]
+        self.permmap = [g.from_data(np.array(inst.encode_permute_map(list(range(40))+list(range(80, 120))+list(range(160, 200))+list(range(240, 280))+list(range(40, 80))+list(range(120, 160))+list(range(200, 240))+list(range(280, 320)))).astype(np.uint8), layout=get_slice1(hemi, 43)) for hemi in (WEST, EAST)]
         g.add_mem_constraints(self.distmap[0] + self.imagpermmap, self.distmap[1] + self.imagpermmap, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         self.negate_tensor = []
         for hemi in (WEST, EAST):
@@ -1650,11 +1649,15 @@ class VectorsToComplexMatrix(g.Component):
             for i in range(4):
                 self.negate_tensor[hemi].append(g.from_data(np.array([1]*dim+[-1]*dim+[1]*dim+[-1]*dim, dtype=np.int8).reshape(1, dim*2*2), layout=get_slice1(hemi, i)))
         g.add_mem_constraints(self.normmask, [x[0] for x in self.negate_tensor], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        self.finmatreqs = []
+        self.finmatreqs, self.normreqs = [], []
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             self.finmatreqs.append([])
-            for _ in range(4+1): #1 extra temporary buffer to avoid distributor conflicts
-                self.finmatreqs[drctn*2+plane].append(tensor.create_storage_request(layout=get_slice16(drctn, s16rangeW if drctn==WEST else s16rangeE, plane)))
+            for idx in range(4+1): #1 extra temporary buffer to avoid distributor conflicts
+                #self.finmatreqs[drctn*2+plane].append(tensor.create_storage_request(layout=get_slice16(drctn, s16rangeW if drctn==WEST else s16rangeE, plane)))                 
+                base = dim//2 * [1,3,0,2,dim//2][idx]
+                self.finmatreqs[drctn*2+plane].append(tensor.create_storage_request(storage=tensor.Storage(np.array([g.Address(g.WEST if drctn==WEST else g.EAST, (s16rangeW if drctn==WEST else s16rangeE)[(i//(dim//2)*dim*2+base+i%(dim//2))%16], 100+(i//(dim//2)*dim*2+base+i%(dim//2))//16+plane*4096) for i in range(chunks*dim//2)]).reshape(1, -1, 1)), physical_shape=g.PhysicalShape(1, chunks*dim//2, g.int8.size, 320)))
+            self.normreqs.append(tensor.create_storage_request(layout=get_slice1(drctn, 1, plane)))
+            
     def build(self, tvec, tnorm, inittime=0):
         t = inittime
         vecmatperm, res = [], []
@@ -1681,8 +1684,8 @@ class VectorsToComplexMatrix(g.Component):
                 #    splt = g.concat_vectors(np.array(g.split_vectors(splt, [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2), (self.chunks*self.dim//2, self.dim*2*2))
                 #    vecmatperm[hemi*2+i] = splt.write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(i), storage_req=self.finmatreqs[hemi*2+i][0])
                 perm = g.split(g.permute_inner(g.concat(tvec[hemi*2+0] + tvec[hemi*2+1], 0), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0), num_splits=2)
-                vecmatperm.append(perm[0].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][1]))
-                vecmatperm.append(perm[1].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][1]))
+                vecmatperm.append(perm[0].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][2]))
+                vecmatperm.append(perm[1].write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][2]))
                 #perm = g.split_vectors(g.permute_inner(g.concat_vectors(tvec[hemi*2+0] + tvec[hemi*2+1], (self.chunks*self.dim, self.dim*2*2)), self.imagpermmap[hemi], hemi, [g.SG1[0], g.SG1[24]], g.SG1[0], time=0), [self.chunks]*self.dim)
                 #vecmatperm.append(g.concat_vectors(perm[:self.dim//2], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(0), storage_req=self.finmatreqs[hemi*2+1][0]))
                 #vecmatperm.append(g.concat_vectors(perm[self.dim//2:], (self.chunks*self.dim//2, self.dim*2*2)).write(name="vecmatperm" + ("W" if hemi==WEST else "E") + str(1), storage_req=self.finmatreqs[hemi*2+0][0]))
@@ -1739,11 +1742,12 @@ class VectorsToComplexMatrix(g.Component):
             with g.ResourceScope(name="distmask" + str(j), is_buffered=True, time=None, predecessors=[pred]) as pred:
                 for hemi in (WEST, EAST):
                     for i in range(2):
-                        halves = g.split(vecmatperm[hemi*2+i+(4 if j>=2 else 0)].reshape(self.chunks*self.dim//2//16, 16, 320), dim=1, num_splits=2)
-                        #halves = np.hsplit(np.array(g.split_vectors(vecmatperm[hemi*2+i], [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2//16, 16), 2)
-                        half1 = g.distribute_8(halves[0], self.distmap[j%2][hemi*2], distributor_req=hemi*4+i*2, map_stream_req=g.SG1[i*2*8])
-                        half2 = g.distribute_8(halves[1], self.distmap[j%2][hemi*2+1], distributor_req=hemi*4+i*2+1, map_stream_req=g.SG1[(i*2+1)*8])
-                        combined = g.transpose_null(g.concat([half1, half2], 1), transposer_req=hemi*2+i, stream_order=list(range(16)), time=i*(23+1+self.chunks*self.dim//2//16))
+                        #halves = g.split(vecmatperm[hemi*2+i+(4 if j>=2 else 0)].reshape(self.chunks*self.dim//2//16, 16, 320), dim=1, num_splits=2)
+                        ##halves = np.hsplit(np.array(g.split_vectors(vecmatperm[hemi*2+i], [1]*(self.chunks*self.dim//2))).reshape(self.chunks*self.dim//2//16, 16), 2)
+                        #half1 = g.distribute_8(halves[0], self.distmap[j%2][hemi*2], distributor_req=hemi*4+i*2, map_stream_req=g.SG1[i*2*8])
+                        #half2 = g.distribute_8(halves[1], self.distmap[j%2][hemi*2+1], distributor_req=hemi*4+i*2+1, map_stream_req=g.SG1[(i*2+1)*8])
+                        #combined = g.transpose_null(g.concat([half1, half2], 1), transposer_req=hemi*2+i, stream_order=list(range(16)), time=i*(23+1+self.chunks*self.dim//2//16))
+                        combined = g.transpose_null(g.distribute_8(vecmatperm[hemi*2+i+(4 if j>=2 else 0)].reshape(self.chunks*self.dim//2//8, 8, 320), self.distmap[j%2][hemi*2], distributor_req=hemi*4+i*2, map_stream_req=g.SG1[i*2*8]), stream_order=list(range(8)), time=i*(23+1+self.chunks*self.dim//2//8))
                         res.append(combined.reshape(self.chunks, self.dim//2, 320).write(name="vecmatdist" + str(j) + ("W" if hemi==WEST else "E") + str(i), storage_req=self.finmatreqs[hemi*2+i][j]))
         g.add_mem_constraints(vecmatperm + res + flatten_zip(tvec), vecmatperm + res + self.imagpermmap + self.distmap[0] + self.distmap[1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         normres = []
@@ -1752,8 +1756,12 @@ class VectorsToComplexMatrix(g.Component):
                 for drctn in (WEST, EAST):
                     normvec = g.concat_vectors(tnorm[drctn*2+plane], (self.dim//2-1, self.dim*2*2)).read(streams=g.SG4[sg4_for_hemi(0, drctn)], time=0)
                     normvec = g.sum(g.mask(self.normmask[drctn].read(streams=g.SG1[4*sg4_for_hemi(1, drctn)]), normvec, alus=[alu_for_hemi(0, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)]), dims=0, alus=[alu_for_hemi(1, drctn)], output_streams=g.SG4[sg4_for_hemi(1, drctn)])
-                    normres.append(normvec.write(name="normfin" + ("W" if drctn==WEST else "E") + str(plane), layout=get_slice1(1, drctn)))
-        g.add_mem_constraints(normres, normres + self.normmask + [x[0] for x in self.negate_tensor], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+                    normvec = g.permute_inner(normvec, permute_map=self.permmap[drctn], permutor_req=drctn, input_streams=[g.SG1[sg4_for_hemi(1, drctn)*4], g.SG1[24]], output_streams=g.SG1[0])
+                    normres.append(normvec.write(name="normfin" + ("W" if drctn==WEST else "E") + str(plane), storage_req=self.normreqs[drctn*2+plane]))
+                    #if not normres[-1].storage_request.addresses is None:
+                    #    normres[-1] = g.from_addresses(np.array(normres[-1].storage_request.addresses.reshape(-1, normres[-1].dtype.size), dtype=object), dim*2, normres[-1].dtype, "normres" + ("W" if hemi==WEST else "E") + str(plane))
+        normres[1], normres[2] = normres[2], normres[1] #order must remain consistent as (WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)
+        g.add_mem_constraints(normres, normres + [x[1] for x in self.negate_tensor], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             g.add_mem_constraints(tnorm[drctn*2+plane], normres, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         t += 0
@@ -1769,7 +1777,7 @@ class VectorsToComplexMatrix(g.Component):
                 vecs.append([]); norms.append([])
                 for i in range(dim//2):
                     vecs[drctn*2+plane].append(g.input_tensor(shape=(chunks, dim*2*2), dtype=g.int8, name="A" + dirstr + str(i), layout=get_slice1(drctn, 43, plane)))
-                    if i!=0: norms[drctn*2+plane].append(g.input_tensor(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr + str(i), layout=get_slice1(drctn, 1)))
+                    if i!=0: norms[drctn*2+plane].append(g.input_tensor(shape=(1, dim*2*2), dtype=g.uint8, name="norm" + dirstr + str(i), layout=get_slice1(drctn, 1, plane)))
             g.add_mem_constraints(vecs[WEST*2] + vecs[WEST*2+1], vecs[WEST*2] + vecs[WEST*2+1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(vecs[EAST*2] + vecs[EAST*2+1], vecs[EAST*2] + vecs[EAST*2+1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
             g.add_mem_constraints(norms[WEST*2] + norms[WEST*2+1], norms[WEST*2] + norms[WEST*2+1], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -1815,6 +1823,7 @@ class VectorsToComplexMatrix(g.Component):
         else:
             print_utils.err("\nVector To Complex Matrix Unit Test Failure")
             print([[np.allclose(result[j][0,i], oracleres[j][0,i]) for i in range(160)] for j in range(4)])
+            print(result[0][0,80], oracleres[0][0,80])
             #print_utils.infoc(str([(oracleres[i][oracleres[i] != result[i]], result[i][oracleres[i] != result[i]]) for i in range(parallel)]))    
 class AdvanceGrayCode(g.Component):        
     def __init__(self, chunks, dim, lastagc=None, **kwargs):
@@ -2080,6 +2089,8 @@ class LoopCorrections(g.Component):
             g.add_mem_constraints(self.tnorm, self.tnorm, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         if lastlc == True: lastlc = False
         self.VMM = VecMatMul(self.chunks, self.dim*2*2, lastlc if lastlc is None or lastlc == False else lastlc.VMM)
+        self.finVMM = VecMatMul(self.chunks, self.dim*2*2, lastlc if lastlc is None or lastlc == False else lastlc.finVMM, self.dim*2)
+        self.vcm = VectorsToComplexMatrix(self.chunks, self.dim, lastlc if lastlc is None or lastlc == False else lastlc.vcm)
         self.agc = AdvanceGrayCode(self.chunks, self.dim, lastlc if lastlc is None or lastlc == False else lastlc.agc)
         for drctn, plane in ((WEST, 0), (WEST, 1), (EAST, 0), (EAST, 1)):
             g.add_mem_constraints([self.VMM.consts[drctn]["maskqrttop"], self.VMM.consts[drctn]["maskqrttoppre"]], [self.tmat[drctn*2+plane]], g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
@@ -2092,7 +2103,9 @@ class LoopCorrections(g.Component):
         pred = None
         diag_mt, norm = self.tvec, self.tnorm
         curt = 0
-        with g.ResourceScope(name="vecmatmul", is_buffered=False, time=0, predecessors=None) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
+        with g.ResourceScope(name="mm_init", is_buffered=True, time=0, predecessors=None) as pred:
+            g.clear_mxm(planes=[0,1,2,3], time=0)
+        with g.ResourceScope(name="vecmatmul", is_buffered=True, time=None, predecessors=[pred]) as pred: #0 if pred is None else None, predecessors=None if pred is None else [pred]) as pred:
             for i in range(self.matpow):
                 diag_mt, norm, curt = self.VMM.build(diag_mt, self.tmat, norm, curt)
                 results_mt.append(diag_mt); results_norm.append(norm)
@@ -2100,12 +2113,14 @@ class LoopCorrections(g.Component):
         g.add_mem_constraints(flat, flat + self.cx_diag, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
         flat = [y for x in results_norm for y in x]
         g.add_mem_constraints(flat, flat + self.agc.tcounter + self.agc.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
-        with g.ResourceScope(name="matnormfin", is_buffered=True, time=0, predecessors=None) as pred:
-            finmat, finnorm, _ = VectorsToComplexMatrix(self.chunks, self.dim).build([[results_mt[j][i] for j in range(self.matpow+1)] for i in range(4)], [[results_norm[j][i] for j in range(self.matpow)] for i in range(4)])
-        with g.ResourceScope(name="vecmatfin", is_buffered=True, time=0, predecessors=None) as pred:
-            finresult_mt, finresnorm_mt, curt = self.VMM.build(self.cx_diag, finmat, finnorm, curt)
-        with g.ResourceScope(name="advgraycode", is_buffered=False, time=0, predecessors=None) as pred:
-            self.tvec, self.tmat, curt = self.agc.build(self.tvec, self.tmat, curt)
+        with g.ResourceScope(name="matnormfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            finmat, finnorm, _ = self.vcm.build([[results_mt[j][i] for j in range(self.matpow+1)] for i in range(4)], [[results_norm[j][i] for j in range(self.matpow)] for i in range(4)])
+        g.add_mem_constraints(finnorm, flat + finnorm + self.agc.tcounter + self.agc.tgcode, g.MemConstraintType.NOT_MUTUALLY_EXCLUSIVE)
+        with g.ResourceScope(name="vecmatfin", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            finresult_mt, finresnorm_mt, _ = self.finVMM.build(self.cx_diag, finmat, finnorm, 0)
+        with g.ResourceScope(name="advgraycode", is_buffered=True, time=None, predecessors=[pred]) as pred:
+            self.tvec, self.tmat, _ = self.agc.build(self.tvec, self.tmat, 0)
+        """
         result_combined = g.concat_vectors(results_mt[-1], (4, self.chunks, self.dim*2*2))
         norm_combined = g.concat_vectors(results_norm[-1], (4, self.dim*2*2))
         result_combined.name = "result_combined"
@@ -2113,6 +2128,15 @@ class LoopCorrections(g.Component):
         result_combined.set_program_output()
         norm_combined.set_program_output()
         return result_combined, norm_combined
+        """
+        finresult_mt = g.concat_vectors(finresult_mt, (4, self.chunks, self.dim*2))
+        print([x.physical_shape for x in finresnorm_mt]) 
+        finresnorm_mt = g.stack(finresnorm_mt, 0)
+        finresult_mt.name = "finresult"
+        finresnorm_mt.name = "finresnorm"
+        finresult_mt.set_program_output()
+        finresnorm_mt.set_program_output()
+        return finresult_mt, finresnorm_mt 
     def loop_correction_gen(mat):
       if (len(mat) & 1) != 0: return 0
       n = len(mat) // 2
@@ -2282,12 +2306,18 @@ class LoopCorrections(g.Component):
     def unit_test(chunks, dim):
         import timeit
         loopCorrection, worstCase, useCplx, longDoubleOracle, matpow = True, False, True, False, dim//2-1
-        with g.ProgramContext() as pc:
+        if True:
             lc = LoopCorrections(chunks, dim, matpow, True)
             tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
             parallel = len(tvec)*2
-            result_mt, resnorm = lc.build()
-            iop_file, json_file = compile_unit_test("lc")
+            iop_file = "/tmp/groqapi-morse/lc-0j2r3jq3/lc.iop"
+        else:
+            with g.ProgramContext() as pc:
+                lc = LoopCorrections(chunks, dim, matpow, True)
+                tvec, tmat, cx_diag = lc.tvec, lc.tmat, lc.cx_diag
+                parallel = len(tvec)*2
+                result_mt, resnorm = lc.build()
+                iop_file, json_file = compile_unit_test("lc", debug=False)
         runner = tsp.create_tsp_runner(iop_file)
         if loopCorrection:
             if useCplx:
@@ -2357,12 +2387,18 @@ class LoopCorrections(g.Component):
             res = runner(**inputs)
             results[0] = []
             for i in range(parallel//2):
-                result = bits_to_num(res[result_mt.name][i], 7)
-                norm = res[resnorm.name][i].reshape(dim*2*2)
+                #result = bits_to_num(res[result_mt.name][i], 7)
+                #norm = res[resnorm.name][i].reshape(dim*2*2)
+                #normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
+                #results[0].append(vector_complex_to_real(normed[:dim*2]))
+                #results[0].append(vector_complex_to_real(normed[dim*2:]))
+                result = bits_to_num(res["finresult"][i], 7)
+                norm = res["finresnorm"][i].reshape(dim*2*2)
+                print(result.shape, norm.shape, exp_inpvecs[i].shape)
                 #the results come back truncating the lower 7*(chunks-1) bits
                 normed = renormalize_doubles(result, exp_inpvecs[i] - norm.astype(np.int32))
-                results[0].append(vector_complex_to_real(normed[:dim*2]))
-                results[0].append(vector_complex_to_real(normed[dim*2:]))
+                results[0].append(vector_complex_to_real(normed[:dim]))
+                results[0].append(vector_complex_to_real(normed[dim:]))
         print_utils.infoc("\nRunning on HW ...")
         #print_utils.cprint("Single Groq Chip Parallelism: " + str(parallel) + " Double precision " + ("Complex" if useCplx else "Real") + " (" + str(dim) + ") Vector multiplied by (" + str(dim) + "x" + str(dim) + ") Matrix raised to power " + str(matpow) + " Oracle intermediate precision: " + ("LongDouble" if longDoubleOracle else "Double") + " Program File Size for " + iop_file + ": " + str(os.path.getsize(iop_file)), "")
         oracle()
@@ -2484,8 +2520,7 @@ def pt_mm(chunks, dim):
     if retval != 0: assert False, retval
     runner = tsp.create_tsp_runner(model_iop)
     assert np.all(res == runner(**{"tvec": vecdata, "tmat": matdata})["res"])
-def main():
-    #dump_groq_doc(); assert False
+def main():    
     dim = 80 #dim X dim complex matrix
     bitsize = 64 #for fixed point representation will round up to nearest multiple of 7
     chunks = (bitsize + 7-1)//7 #ceiling division to be exact
