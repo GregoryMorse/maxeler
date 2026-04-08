@@ -1,0 +1,94 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib64/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# mypy
+.mypy_cache/
+
+# ── C / C++ ──────────────────────────────────────────────────────────────────
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.gch
+*.pch
+
+# ── Java / MaxCompiler ───────────────────────────────────────────────────────
+*.class
+*.jar
+target/
+
+# MaxCompiler build outputs
+*.max
+*.h5
+*.bit
+*.xclbin
+*.mxo
+
+# Maxeler workspace build artefacts
+*/dist/
+*/scratch/
+*/log/
+**/.slic/
+
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── CMake ────────────────────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+_deps/
+
+# ── Groq SDK artefacts ───────────────────────────────────────────────────────
+groqdoc.zip
+groqdoc/
+*.iop
+*.aa
+
+# ── Miscellaneous ────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
