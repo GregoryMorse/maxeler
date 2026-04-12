@@ -181,7 +181,7 @@ class GeneralizedCliffordsBSimulationStrategy(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 0)
+        super().__init__(interferometer_matrix, seed, lib=0)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -198,7 +198,7 @@ class GeneralizedCliffordsBSimulationStrategyChinHuh(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 1)
+        super().__init__(interferometer_matrix, seed, lib=1)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -215,7 +215,7 @@ class GeneralizedCliffordsBSimulationStrategySingleDFE(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 2)
+        super().__init__(interferometer_matrix, seed, lib=2)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -232,7 +232,7 @@ class GeneralizedCliffordsBSimulationStrategyDualDFE(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 3)
+        super().__init__(interferometer_matrix, seed, lib=3)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -248,7 +248,7 @@ class GeneralizedCliffordsBSimulationStrategyMultiSingleDFE(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 4)
+        super().__init__(interferometer_matrix, seed, lib=4)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -265,7 +265,7 @@ class GeneralizedCliffordsBSimulationStrategyMultiDualDFE(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 5)
+        super().__init__(interferometer_matrix, seed, lib=5)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -282,7 +282,7 @@ class GeneralizedCliffordsBSimulationStrategyDouble(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 6)
+        super().__init__(interferometer_matrix, seed, lib=6)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -299,7 +299,7 @@ class GeneralizedCliffordsBSimulationStrategyBBFGDouble(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 7)
+        super().__init__(interferometer_matrix, seed, lib=7)
 
 
     def simulate(self, input_state, samples_number: int = 1):
@@ -316,7 +316,7 @@ class GeneralizedCliffordsBSimulationStrategyBBFGLongDouble(
 ):
     def __init__(self, interferometer_matrix, seed):
 
-        super().__init__(interferometer_matrix, 8)
+        super().__init__(interferometer_matrix, seed, lib=8)
 
 
     def simulate(self, input_state, samples_number: int = 1):
