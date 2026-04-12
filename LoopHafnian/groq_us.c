@@ -642,7 +642,7 @@ int initialize_groq(unsigned int num_qbits, unsigned int num_gates)
         if (status) {
             printf("ERROR: allocate iobuffer array %d\n", status);
             return 1;
-        }                                            
+        }
         status = groq_allocate_iobuffer_array(driver, outpSize, 1, ptindex+((j<=1||j>=num_programs-1) ? 0 : 2), &outputBuffers[d][j]);
         if (status) {
             printf("ERROR: allocate iobuffer array %d\n", status);
@@ -673,8 +673,8 @@ float* bytesToFloat(unsigned char* c) //endianness dependent method
 //https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
 unsigned int log2(unsigned int v)
 {
-    register unsigned int r; // result of log2(v) will go here
-    register unsigned int shift;
+    /*register*/ unsigned int r; // result of log2(v) will go here
+    /*register*/ unsigned int shift;
     
     r =     (v > 0xFFFF) << 4; v >>= r;
     shift = (v > 0xFF  ) << 3; v >>= shift; r |= shift;
@@ -797,8 +797,10 @@ void* dataPrepFunc(void* arg)
     struct PreProcessGates* ppGates = (struct PreProcessGates*)arg;
     int realGateNum = (ppGates->gatesNum + chain_size - 1) / chain_size * chain_size;
     size_t hemigates = (ppGates->mx_gates+1)/2;
+#if defined(USE_GROQ_HOST_FUNCS) || !defined(GS)
     size_t num_inner_qbits = (ppGates->mx_gates+320-1)/320;
     size_t mx_gates320 = num_inner_qbits*320;
+#endif
 #ifdef USE_GROQ_HOST_FUNCS
 #ifdef GS
     size_t gateinputsz = hemigates*2*8*4+mx_gates320;
@@ -1230,8 +1232,8 @@ int main(int argc, char* argv[])
         }
         free(data);
         free(gates);
-        releive_groq();
     }
+    releive_groq();
     return 0;
 }
 #endif
