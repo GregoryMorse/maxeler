@@ -1451,10 +1451,10 @@ class UnitarySimulator(g.Component):
                         gatesctxt = [g.from_addresses(np.array((othergates if reversedir else gates).storage_request.addresses.reshape(-1, g.float32.size)), 320, g.float32, "gates" + str(reversedir) + suffix) for reversedir in range(2)]
                         derivs = g.from_addresses(np.array(derivates.storage_request.addresses.reshape(-1, g.uint8.size)), 320, g.uint8, "derivates" + suffix)
                         with g.ResourceScope(name="rungate" + str(c), is_buffered=True, time=0) as pred:
-                            newus = UnitarySimulator(num_qbits, cols, alu_latch, reversedir, us)
-                            unitaryctxt[reversedir] = g.concat_inner_splits(g.split(unitaryctxt[reversedir], dim=0, num_splits=num_inner_splits))
-                            copyctxt[reversedir] = g.concat_inner_splits(g.split(copyctxt[reversedir], dim=0, num_splits=num_inner_splits))
-                            newus.build(unitaryctxt[reversedir], copyctxt[reversedir], target_qbit, control_qbit, g.split(gatesctxt[reversedir], splits=8)[0], derivdistro=g.split(derivs, splits=1)[0])
+                            with UnitarySimulator(num_qbits, cols, alu_latch, reversedir, us, use_as_context=True) as newus:
+                                unitaryctxt[reversedir] = g.concat_inner_splits(g.split(unitaryctxt[reversedir], dim=0, num_splits=num_inner_splits))
+                                copyctxt[reversedir] = g.concat_inner_splits(g.split(copyctxt[reversedir], dim=0, num_splits=num_inner_splits))
+                                newus.build(unitaryctxt[reversedir], copyctxt[reversedir], target_qbit, control_qbit, g.split(gatesctxt[reversedir], splits=8)[0], derivdistro=g.split(derivs, splits=1)[0])
                     reversedir = not reversedir
         else:
             #for target_qbit, control_qbit in ((0, None), (0, 1)) + (((8, None), (8, 1)) if num_qbits >= 9 else ()) + (((0, 9), (8, 9)) if num_qbits >= 10 else ()):
@@ -1550,10 +1550,10 @@ class UnitarySimulator(g.Component):
                             gs.write(name="realgatemap" + str(i+2) + suffix, storage_req=realgmap[reversedir][i+2].storage_request)
                     tcmap = [list(reversed(x)) if reversedir else x for x in ((tqbitdistro[reversedir], tqbitpairs0, tqbitpairs1, cqbitdistro[reversedir], cqbitpairs0, cqbitpairs1) + ((tcqbitdistro[reversedir], cqbithighsel) if num_qbits >= 9 else ()) if not control_qbit is None else (tqbitdistro[reversedir], tqbitpairs0, tqbitpairs1))]
                     with g.ResourceScope(name="rungate" + str(c), is_buffered=True, time=None, predecessors=[pred]) as pred:
-                        newus = UnitarySimulator(num_qbits, cols, alu_latch, reversedir, us)
-                        unitaryctxt[reversedir] = g.concat_inner_splits(g.split(unitaryctxt[reversedir], dim=0, num_splits=num_inner_splits))
-                        copyctxt[reversedir] = g.concat_inner_splits(g.split(copyctxt[reversedir], dim=0, num_splits=num_inner_splits))
-                        newus.build(unitaryctxt[reversedir], copyctxt[reversedir], target_qbit, control_qbit, g.concat(realgmap[reversedir]), None, tcmap, None, inittime=c)
+                        with UnitarySimulator(num_qbits, cols, alu_latch, reversedir, us, use_as_context=True) as newus:
+                            unitaryctxt[reversedir] = g.concat_inner_splits(g.split(unitaryctxt[reversedir], dim=0, num_splits=num_inner_splits))
+                            copyctxt[reversedir] = g.concat_inner_splits(g.split(copyctxt[reversedir], dim=0, num_splits=num_inner_splits))
+                            newus.build(unitaryctxt[reversedir], copyctxt[reversedir], target_qbit, control_qbit, g.concat(realgmap[reversedir]), None, tcmap, None, inittime=c)
                     with g.ResourceScope(name="incgate" + str(c), is_buffered=True, time=None, predecessors=[pred]) as pred:
                         updinc = g.stack([ginc256[reversedir]]*2, 0).add(g.stack([ginccount[reversedir]]*len(gmap[reversedir]), 0), time=0, alus=[3 if reversedir else 0], overflow_mode=g.OverflowMode.MODULAR)
                         updmap = g.split(g.stack(gmap[reversedir], 0).add(g.stack([ginc[reversedir]]*2, 0), alus=[7 if reversedir else 4], overflow_mode=g.OverflowMode.MODULAR).add(g.mask_bar(updinc, g.stack([gincmask[reversedir]]*2, 0))), dim=0, num_splits=2)
@@ -1634,6 +1634,7 @@ class UnitarySimulator(g.Component):
         print_utils.infoc("\nAssembling model ...")
         #iops = pgm_pkg.assemble(auto_agt_dim=3)
         iops = pgm_pkg.assemble(auto_agt_dim=0, skip_assembler=chainsize!=2)
+        del us
         #pgm_pkg = g.ProgramPackage(name="us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates), output_dir="usiop", inspect_raw=debug, gen_vis_data=debug, check_stream_conflicts=debug, check_tensor_timing_conflicts=debug)
         if gate_stamped: return {
             "aafiles": ["usiop/topo_0/" + name + ".aa" for name in ("init_us", "init_gates", "copy_us", "us_gate0", "us_gate0_rev", "us_gate0_1", "us_gate0_1_rev",
@@ -1871,13 +1872,13 @@ class UnitarySimulator(g.Component):
                     #if target_qbit == control_qbit: control_qbit = None
                     print(target_qbit, control_qbit, derivative)
                     with g.ProgramContext() as pc:
-                        us = UnitarySimulator(num_qbits, cols, alu_latch=alu_latch)
-                        unitary = g.input_tensor(shape=(pow2qb*2, cols), dtype=g.float32, name="unitary", layout=get_slice8(WEST, 0, 7, 0 if pow2qb*num_inner_splits <= 4096 else None))
-                        gate = g.input_tensor(shape=(1, 2*2*2, innerdim), dtype=g.float32, name="gates", layout=get_slice16(EAST, list(range(16)), 0))
-                        derivs = g.input_tensor(shape=(1, innerdim), dtype=g.uint8, name="derivs", layout=get_slice1(EAST, 0, 0))
-                        output, _ = us.build(unitary, None, target_qbit, control_qbit, gate, derivdistro=derivs)
-                        output.set_program_output()
-                        iop_file, json_file = compile_unit_test("usunit", debug=False)
+                        with UnitarySimulator(num_qbits, cols, alu_latch=alu_latch, use_as_context=True) as us:
+                            unitary = g.input_tensor(shape=(pow2qb*2, cols), dtype=g.float32, name="unitary", layout=get_slice8(WEST, 0, 7, 0 if pow2qb*num_inner_splits <= 4096 else None))
+                            gate = g.input_tensor(shape=(1, 2*2*2, innerdim), dtype=g.float32, name="gates", layout=get_slice16(EAST, list(range(16)), 0))
+                            derivs = g.input_tensor(shape=(1, innerdim), dtype=g.uint8, name="derivs", layout=get_slice1(EAST, 0, 0))
+                            output, _ = us.build(unitary, None, target_qbit, control_qbit, gate, derivdistro=derivs)
+                            output.set_program_output()
+                            iop_file, json_file = compile_unit_test("usunit", debug=False)
                     runner = tsp.create_tsp_runner(iop_file)
                     u = np.eye(pow2qb) + 0j if use_identity else unitary_group.rvs(pow2qb)
                     parameters = np.random.random(3)
