@@ -1761,75 +1761,78 @@ class UnitarySimulator(g.Component):
         iop = [None] if gate_stamped else runtime.IOProgram(tensornames["iop"])
         driver = runtime.Driver()
         device = driver.next_available_device() # driver.devices[1]
+        device.open()
         result = [None]
         import contextlib
-        with contextlib.ExitStack() as exitstack:
-            device_ = exitstack.enter_context(device)
-            def closedevice(): exitstack.close()
-            runfunc = [None]
-            def loaddata():
-                #for i in range(1+1+(2+(2 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0))*2+2):
-                #    device.load(iop[i], unsafe_keep_entry_points=True)
-                if not gate_stamped: device.load_all(iop, unsafe_keep_entry_points=True)
-                num_inner_splits = (pow2qb+256-1)//256
-                def actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives):
-                    if gate_stamped and iop[0] is None:
-                        #iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
-                        #UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iop[0], tensornames)
-                        tnames = UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
-                        for x in tnames: tensornames[x] = tnames[x]
-                        iop[0] = runtime.IOProgram(tensornames["iop"])
-                        device.load_all(iop[0], unsafe_keep_entry_points=True)
-                    num_gates = len(parameters)
-                    padgates = 0 if (num_gates % tensornames["chainsize"]) == 0 else tensornames["chainsize"] - (num_gates % tensornames["chainsize"])
-                    gateparams = [make_u3(parameters[i,:]) if target_qbits[i] == control_qbits[i] else make_cry(parameters[i,:]) for i in range(num_gates)] + [np.eye(2, dtype=np.complex128)]*padgates
-                    num_inner_qbits = (max_gates+320-1)//320*320
-                    padqbits = 0 if (num_gates % num_inner_qbits) == 0 else num_inner_qbits - (num_gates % num_inner_qbits)
-                    target_qbits = np.concatenate((target_qbits, np.zeros(padqbits, dtype=target_qbits.dtype)))
-                    control_qbits = np.concatenate((control_qbits, np.zeros(padqbits, dtype=control_qbits.dtype)))
-                    derivatives = np.concatenate((derivatives, np.zeros(padqbits, dtype=derivatives.dtype)))
-                    num_gates += padgates
+        exitstack = contextlib.ExitStack()
+        device_ = exitstack.enter_context(device)
+        def closedevice(): exitstack.close()
+        runfunc = [None]
+        def loaddata():
+            #for i in range(1+1+(2+(2 if num_qbits >= 9 else 0)+(2 if num_qbits >= 10 else 0))*2+2):
+            #    device.load(iop[i], unsafe_keep_entry_points=True)
+            if not gate_stamped:
+                device.load_all(iop, unsafe_keep_entry_points=True)
+                #for prog in iop: device.load(prog, unsafe_keep_entry_points=True)
+            num_inner_splits = (pow2qb+256-1)//256
+            def actual(u, num_qbits, parameters, target_qbits, control_qbits, derivatives):
+                if gate_stamped and iop[0] is None:
+                    #iop[0] = "usiop/" + "us" + ("unit" if output_unitary else "") + str(num_qbits) + "-" + str(max_gates) + ".iop"
+                    #UnitarySimulator.compile_gate_stamped(num_qbits, target_qbits, control_qbits, iop[0], tensornames)
+                    tnames = UnitarySimulator.gen_iop(num_qbits, max_gates, output_unitary, target_qbits, control_qbits)
+                    for x in tnames: tensornames[x] = tnames[x]
+                    iop[0] = runtime.IOProgram(tensornames["iop"])
+                    device.load_all(iop[0], unsafe_keep_entry_points=True)
+                num_gates = len(parameters)
+                padgates = 0 if (num_gates % tensornames["chainsize"]) == 0 else tensornames["chainsize"] - (num_gates % tensornames["chainsize"])
+                gateparams = [make_u3(parameters[i,:]) if target_qbits[i] == control_qbits[i] else make_cry(parameters[i,:]) for i in range(num_gates)] + [np.eye(2, dtype=np.complex128)]*padgates
+                num_inner_qbits = (max_gates+320-1)//320*320
+                padqbits = 0 if (num_gates % num_inner_qbits) == 0 else num_inner_qbits - (num_gates % num_inner_qbits)
+                target_qbits = np.concatenate((target_qbits, np.zeros(padqbits, dtype=target_qbits.dtype)))
+                control_qbits = np.concatenate((control_qbits, np.zeros(padqbits, dtype=control_qbits.dtype)))
+                derivatives = np.concatenate((derivatives, np.zeros(padqbits, dtype=derivatives.dtype)))
+                num_gates += padgates
+                inputs = {}
+                #inputs[tensornames["gates"]] = np.concatenate([np.repeat(gateparams[i].astype(np.complex64).view(np.float32).flatten(), min(256, pow2qb)) for i in range(0, num_gates, 2)] + [np.zeros((2*2*2*min(256, pow2qb)), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
+                inputs[tensornames["gates"]] = np.concatenate([gateparams[i].astype(np.complex64).view(np.float32).flatten() for i in range(0, num_gates, 2)] + [np.zeros((2*2*2), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
+                #inputs[tensornames["othergates"]] = np.concatenate([np.repeat(gateparams[i].astype(np.complex64).view(np.float32).flatten(), min(256, pow2qb)) for i in range(1, num_gates, 2)] + [np.zeros((2*2*2*min(256, pow2qb)), dtype=np.float32)]*((max_gates+1)//2-num_gates//2))
+                inputs[tensornames["othergates"]] = np.concatenate([gateparams[i].astype(np.complex64).view(np.float32).flatten() for i in range(1, num_gates, 2)] + [np.zeros((2*2*2), dtype=np.float32)]*((max_gates+1)//2-num_gates//2))
+                derivatives = np.where(control_qbits!=target_qbits, derivatives, 0)
+                if not gate_stamped:
+                    #inputs[tensornames["targetqbits"]] = np.concatenate((np.repeat(np.hstack((target_qbits.astype(np.uint8)[:,np.newaxis]%8*2, target_qbits.astype(np.uint8)[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
+                    adjcontrolqbits = np.where(control_qbits==target_qbits, 0, (control_qbits - (control_qbits > target_qbits)).astype(np.uint8))
+                    deriv = (control_qbits!=target_qbits) + derivatives
+                    inputs[tensornames["qbits"]] = (target_qbits & 7) | ((adjcontrolqbits & 7) << 3)
+                    if num_qbits == 9: inputs[tensornames["qbits"]] |= ((target_qbits>>3)<<6)
+                    elif num_qbits == 10: inputs[tensornames["qbits"]] |= ((adjcontrolqbits>>3)<<6) | ((target_qbits>>3)<<7)
+                    inputs[tensornames["qbits"]] = inputs[tensornames["qbits"]].astype(np.uint16) | (deriv.astype(np.uint16) << 8)
+                else: inputs[tensornames["qbits"]] = derivatives.astype(np.uint8)
+                invoke([device], iop[0] if gate_stamped else iop, 1, 0, [inputs])
+                #inputs[tensornames["controlqbits"]] = np.concatenate((np.repeat(np.hstack((adjcontrolqbits[:,np.newaxis]%8*2, adjcontrolqbits[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
+                #if num_qbits >= 9:
+                #    hightcq = (adjcontrolqbits//8 + (target_qbits//8)*2).astype(np.uint8) if num_qbits==10 else (target_qbits//8).astype(np.uint8)
+                #    inputs[tensornames["hightcqbits"]] = np.concatenate((np.repeat(np.hstack((hightcq[:,np.newaxis]*2, hightcq[:,np.newaxis]*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
+                #derivs = np.array([0 if target_qbits[i]==control_qbits[i] else (i//2*2) ^ ((max_gates+1)//2*2) for i in range(num_gates)], dtype=np.uint16)
+                #inputs[tensornames["derivates"]] = np.concatenate((np.repeat(np.hstack(((derivs & 255).astype(np.uint8)[:,np.newaxis], (derivs >> 8).astype(np.uint8)[:,np.newaxis], np.array([[0]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))                    
+                #inputs[tensornames["derivates"]] = np.zeros((max_gates, 320), dtype=np.uint8)
+                cols = tensornames["cols"]
+                outs = []
+                for chunk in range(pow2qb // cols):
                     inputs = {}
-                    #inputs[tensornames["gates"]] = np.concatenate([np.repeat(gateparams[i].astype(np.complex64).view(np.float32).flatten(), min(256, pow2qb)) for i in range(0, num_gates, 2)] + [np.zeros((2*2*2*min(256, pow2qb)), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
-                    inputs[tensornames["gates"]] = np.concatenate([gateparams[i].astype(np.complex64).view(np.float32).flatten() for i in range(0, num_gates, 2)] + [np.zeros((2*2*2), dtype=np.float32)]*((max_gates+1)//2-(num_gates-num_gates//2)))
-                    #inputs[tensornames["othergates"]] = np.concatenate([np.repeat(gateparams[i].astype(np.complex64).view(np.float32).flatten(), min(256, pow2qb)) for i in range(1, num_gates, 2)] + [np.zeros((2*2*2*min(256, pow2qb)), dtype=np.float32)]*((max_gates+1)//2-num_gates//2))
-                    inputs[tensornames["othergates"]] = np.concatenate([gateparams[i].astype(np.complex64).view(np.float32).flatten() for i in range(1, num_gates, 2)] + [np.zeros((2*2*2), dtype=np.float32)]*((max_gates+1)//2-num_gates//2))
-                    derivatives = np.where(control_qbits!=target_qbits, derivatives, 0)
-                    if not gate_stamped:
-                        #inputs[tensornames["targetqbits"]] = np.concatenate((np.repeat(np.hstack((target_qbits.astype(np.uint8)[:,np.newaxis]%8*2, target_qbits.astype(np.uint8)[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
-                        adjcontrolqbits = np.where(control_qbits==target_qbits, 0, (control_qbits - (control_qbits > target_qbits)).astype(np.uint8))
-                        deriv = (control_qbits!=target_qbits) + derivatives
-                        inputs[tensornames["qbits"]] = (target_qbits & 7) | ((adjcontrolqbits & 7) << 3)
-                        if num_qbits == 9: inputs[tensornames["qbits"]] |= ((target_qbits>>3)<<6)
-                        elif num_qbits == 10: inputs[tensornames["qbits"]] |= ((adjcontrolqbits>>3)<<6) | ((target_qbits>>3)<<7)
-                        inputs[tensornames["qbits"]] = inputs[tensornames["qbits"]].astype(np.uint16) | (deriv.astype(np.uint16) << 8)
-                    else: inputs[tensornames["qbits"]] = derivatives.astype(np.uint8)
-                    invoke([device], iop[0] if gate_stamped else iop, 1, 0, [inputs])
-                    #inputs[tensornames["controlqbits"]] = np.concatenate((np.repeat(np.hstack((adjcontrolqbits[:,np.newaxis]%8*2, adjcontrolqbits[:,np.newaxis]%8*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
-                    #if num_qbits >= 9:
-                    #    hightcq = (adjcontrolqbits//8 + (target_qbits//8)*2).astype(np.uint8) if num_qbits==10 else (target_qbits//8).astype(np.uint8)
-                    #    inputs[tensornames["hightcqbits"]] = np.concatenate((np.repeat(np.hstack((hightcq[:,np.newaxis]*2, hightcq[:,np.newaxis]*2+1, np.array([[16]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))
-                    #derivs = np.array([0 if target_qbits[i]==control_qbits[i] else (i//2*2) ^ ((max_gates+1)//2*2) for i in range(num_gates)], dtype=np.uint16)
-                    #inputs[tensornames["derivates"]] = np.concatenate((np.repeat(np.hstack(((derivs & 255).astype(np.uint8)[:,np.newaxis], (derivs >> 8).astype(np.uint8)[:,np.newaxis], np.array([[0]*14]*num_gates, dtype=np.uint8))), 20, axis=0).reshape(-1, 320), np.zeros((max_gates-num_gates, 320), dtype=np.uint8)))                    
-                    #inputs[tensornames["derivates"]] = np.zeros((max_gates, 320), dtype=np.uint8)
-                    cols = tensornames["cols"]
-                    outs = []
-                    for chunk in range(pow2qb // cols):
-                        inputs = {}
-                        curu = u[:,cols * chunk:cols * (chunk+1)]
-                        inputs[tensornames["unitary"]] = np.ascontiguousarray(curu.astype(np.complex64)).view(np.float32).reshape(pow2qb, cols, 2).transpose(0, 2, 1).reshape(pow2qb*2, cols)
-                        invoke([device], iop[0] if gate_stamped else iop, 0, 0, [inputs])                    
-                        invoke([device], iop[0] if gate_stamped else iop, 2, 0, None, None, None)
-                        for i in range(0, num_gates, tensornames["chainsize"]):
-                            invoke([device], iop[0] if gate_stamped else iop, 3, 0, None, None, None)                       
-                        res, _ = invoke([device], iop[0] if gate_stamped else iop, 4 + (0 if output_unitary else chunk), 0, None, None, None)
-                        outs.append(res[0][tensornames["unitaryres"]].reshape(pow2qb, 2, cols) if output_unitary else res[0][tensornames["unitaryres"]])
-                    if output_unitary:
-                        #print(np.ascontiguousarray(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]].reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.int32))
-                        result[0] = np.ascontiguousarray(np.concatenate(outs, axis=2).reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.complex64).reshape(pow2qb, pow2qb).astype(np.complex128)
-                    else:
-                        result[0] = np.sum(np.sum(outs, axis=0), axis=1)
-                runfunc[0] = actual
+                    curu = u[:,cols * chunk:cols * (chunk+1)]
+                    inputs[tensornames["unitary"]] = np.ascontiguousarray(curu.astype(np.complex64)).view(np.float32).reshape(pow2qb, cols, 2).transpose(0, 2, 1).reshape(pow2qb*2, cols)
+                    invoke([device], iop[0] if gate_stamped else iop, 0, 0, [inputs])                    
+                    invoke([device], iop[0] if gate_stamped else iop, 2, 0, None, None, None)
+                    for i in range(0, num_gates, tensornames["chainsize"]):
+                        invoke([device], iop[0] if gate_stamped else iop, 3, 0, None, None, None)                       
+                    res, _ = invoke([device], iop[0] if gate_stamped else iop, 4 + (0 if output_unitary else chunk), 0, None, None, None)
+                    outs.append(res[0][tensornames["unitaryres"]].reshape(pow2qb, 2, cols) if output_unitary else res[0][tensornames["unitaryres"]])
+                if output_unitary:
+                    #print(np.ascontiguousarray(res[0][tensornames["unitaryres" if (num_gates&1)==0 else "unitaryrevres"]].reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.int32))
+                    result[0] = np.ascontiguousarray(np.concatenate(outs, axis=2).reshape(num_inner_splits, pow2qb, 2, min(256, pow2qb)).transpose(1, 0, 3, 2)).view(np.complex64).reshape(pow2qb, pow2qb).astype(np.complex128)
+                else:
+                    result[0] = np.sum(np.sum(outs, axis=0), axis=1)
+            runfunc[0] = actual
         loaddata()
         actual = runfunc[0]
         return actual, result, closedevice
@@ -2154,10 +2157,10 @@ def main():
     #UnitarySimulator.validate_alus()
     num_qbits = 3
     #UnitarySimulator.unit_test(num_qbits)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
-    UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False, gate_stamped=True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), False)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True, gate_stamped=True)
+    #UnitarySimulator.chain_test(num_qbits, get_max_gates(num_qbits, max_levels), True)
     #UnitarySimulator.checkacc(max_levels, False)
     #UnitarySimulator.checkacc(max_levels, True)
     #UnitarySimulator.perfcompare(max_levels, False)
