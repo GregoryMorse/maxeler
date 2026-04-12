@@ -416,18 +416,27 @@ def average_partition(n, m): #n==m then tot is https://oeis.org/A178887 A178887	
             if check == nearcplxty: nearest.append(part)
             else: nearest, nearcplxty = [part], check
     return tot, timecplxty, avg, nearest, nearcplxty
+def trailing_zeros(n): return (n ^ (n-1)).bit_length()
 def verify_identities(nmax):
     import math, timeit
     gen_func = [lambda n: np.ones((0,0)) if n==0 else np.full((n, n), 1/n) + np.zeros((n, n)) *1j, #minimum permanent bound
                 lambda n: np.ones((n, n)) + np.ones((n, n)) *1j, #all ones real and complex
-                lambda n: np.ones((n, n)) + np.zeros((n, n)) *1j] #all ones
+                lambda n: np.ones((n, n)) + np.zeros((n, n)) *1j,
+                lambda n: (np.ones((n, n)) + np.zeros((n, n)) *1j) / abs(n + n*1j),                
+                lambda n: (np.ones((n, n)) + np.ones((n, n)) *1j) / abs(n + n*1j),
+                lambda n: (np.ones((n, n)) - np.ones((n, n)) *1j) / abs(n + n*1j),
+                lambda n: (np.ones((n, n))*np.sqrt(2) + np.zeros((n, n)) *1j) / abs(n + n*1j)] #all ones #np.power(2, -0.5) more accurate than 1/np.sqrt(2)
     oracle_func = [lambda n: math.factorial(n)/n**n,
                    lambda n: (1+1j)**n*math.factorial(n),
-                   lambda n: math.factorial(n)]
-    for i in range(2, len(gen_func)):
+                   lambda n: math.factorial(n),                   
+                   lambda n: math.factorial(n)/n**n/2**(n//2)/(1 if (n&1) == 0 else math.sqrt(2)),
+                   lambda n: math.factorial(n)*2**(n//2)*((-1)**((n-3)//4+1)+((-1)**(n//4) if (n&1) != 0 else 0)*1j)/abs(n + n*1j)**n,
+                   lambda n: math.factorial(n)*2**(n//2)*((-1)**((n-3)//4+1)+((-1)**((n-3)//4) if (n&1) != 0 else 0)*1j)/abs(n + n*1j)**n,
+                   lambda n: n]
+    for i in range(3, len(gen_func)):
         for x in range(0, nmax+1):
             n = 48 if x > 48 else x
-            mat = gen_func[i](n)
+            mat = gen_func[i](x if i == 0 or i == 3 or i == 4 or i == 5 or i == 6 else n)
             input_state = np.array([], dtype=np.int64) if x == 0 else np.hstack((np.array([x-n+1], dtype=np.int64), np.ones((n-1,), dtype=np.int64)))
             for part in partitions(x):
                 if len(part) > 1: continue
@@ -436,11 +445,11 @@ def verify_identities(nmax):
                 def save_result():
                     res[0] = permanent_Glynn_DFE(mat, input_state, output_state) 
                 r = timeit.timeit(save_result, number=1); res = res[0]
-                o = oracle_func[i](x)
-                print(x, r, res, o*1.0, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
+                o = permanent_Glynn_Inf(mat, input_state, output_state) #oracle_func[i](x)
+                print(x, r, res, o*1.0, o if o==0 else trailing_zeros(round(math.frexp(abs(o-res))[0]*2**53)), o if o==0 else abs(o-res)/abs(o), oracle_func[i](x) * 1.0)        
                 #assert o if o==0 else abs(o-res)/abs(o) < 1e-10
             #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
-#verify_identities(48); assert False
+verify_identities(96); assert False
 def random_realistic_input_states(photons, dim):
     indexes = set(np.random.choice(range(dim), photons, False))
     return np.array([1 if i in indexes else 0 for i in range(dim)])
@@ -502,9 +511,9 @@ def verify_timing(nmax, photons, shots=10, batchsize=1): #shots=None for repeate
       if not func.__name__ in results[key]: results[key][func.__name__] = []
       print("Verifying and Testing", func.__name__, "Photons", photons)
       for dim in xaxis:
-        if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
-          print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
-        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func in dfeFuncs:
+        #if func in dfeFuncs and dim == 0 or dim == 1 and not func in dfeFuncs:
+        #  print("Initialization time", func.__name__, timeit.timeit(lambda: func(A[dim][0], A[dim][1][photons], A[dim][2][photons]) if shots is None else func(A[dim][0], A[dim][1][photons], shots), number=1))
+        if len(res[key][func.__name__]) <= dim or len(results[key][func.__name__]) <= dim or func == permanent_Glynn_Inf: #func in dfeFuncs: # or func == permanent_Glynn_Inf:
           mplier = 5 if photons < 8 and func != permanent_Glynn_Inf else 1
           v = [None]
           #if func in dfeFuncs: print(check_power())
