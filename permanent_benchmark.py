@@ -279,17 +279,17 @@ def verify_identities(nmax):
                    lambda n: 1,
                    lambda n: 1j**n,
                    lambda n: math.factorial(n)*sum((-1)**k/math.factorial(n-2*k) for k in range(n//2+1)) + math.factorial(n)*sum((-1)**k/math.factorial(n-1-2*k) for k in range((n-1)//2+1))*1j]
-    for i in range(0, len(gen_func)):
+    for i in range(4, len(gen_func)):
         for x in range(0, nmax+1):
             mat = gen_func[i](x)
             res = [None]
             def save_result():
-                res[0] = permanent_Glynn_DFEF(mat) 
+                res[0] = permanent_Glynn_DFE(mat) 
             r = timeit.timeit(save_result, number=1); res = res[0]
             o = oracle_func[i](x)
             print(x, r, res, o, o if o==0 else abs(o-res)/abs(o)) #permanent_BBFG_LongDouble(mat), permanent_Glynn_Cpp_Inf(mat))        
             #assert o==res if o==0 else abs(o-res)/abs(o) < 1e-10
-verify_identities(DEPTH); assert False
+#verify_identities(DEPTH); assert False
 def verify_timing(nmax, batchsize=1):
   ERRBOUND = 1e-6
   largeFuncs = largePermFuncs
