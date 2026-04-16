@@ -122,7 +122,7 @@ public class PermanentTestManager extends XilinxAlveoU250Manager {
 		final PermanentTestManager manager = new PermanentTestManager(params);
         
         manager.getBuildConfig().setSynthesisStrategy(Utility.getHighPerfSynthStrategy());
-        manager.getBuildConfig().setImplementationStrategies(new ImplementationStrategy[] { Utility.chooseImplementationStrategies(true, false, params.getAddSubMul() == 3 && params.getStrategy() == 4)[4] });
+        manager.getBuildConfig().setImplementationStrategies(new ImplementationStrategy[] { Utility.chooseImplementationStrategies(true, false, params.getAddSubMul() == 3 && params.getStrategy() == 4)[1] });
         
 		manager.build();
 	}
