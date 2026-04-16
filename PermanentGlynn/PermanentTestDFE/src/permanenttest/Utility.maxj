@@ -2073,17 +2073,26 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
                     ~var.get(i+1) & (var.get(i) | ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3))), keep)); // & x.get(curSize-4)
             } else {
                 LP1_ints.add(setKeep(
+                    curSize > 6 && altMethod ? x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & (x.get(curSize-6) | ~x.get(curSize-7))) :
                     curSize > 6 && (size <= 8 || oldMethod || altMethod) ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5) & x.get(curSize-6))) :
                     curSize >= 5 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3) & (x.get(curSize-4) | ~x.get(curSize-5))) :
                     curSize >= 3 ? ~x.get(curSize-1) & (x.get(curSize-2) | ~x.get(curSize-3)) :
                     ~x.get(curSize-1), keep));
             }
-            if (size <= 8 || oldMethod) {
-                LP4s.add(curSize <= 4 ? null :
-                    setKeep(curSize <= 6 ? x === 0 :
-                    LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0), size > 8 && keep));
-                LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
-                    setKeep(LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7), size > 8 && keep));
+            if (size <= 8 || oldMethod || altMethod) {
+                if (altMethod) {
+                    DFEVar LP4 = curSize <= 6 ? null : x.get(curSize-1) ? base.constant.zero(KernelBase.dfeBool()) : setKeep(x.slice(0, 6) === 0, keep);
+                    LP4s.add(curSize <= 4 ? null :
+                        setKeep(curSize <= 6 ? x === 0 : curSize <= 7 ? LP4 : (x.get(curSize-2) ? base.constant.zero(KernelBase.dfeBool()) : setKeep(LP4, keep)), size > 8 && keep));
+                    LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
+                        setKeep(x.get(curSize-1) ? base.constant.zero(KernelBase.dfeBool()) : LP1_ints.get(LP1_ints.size()-1).reinterpret(KernelBase.dfeBool()), size > 8 && keep));
+                } else {
+                    LP4s.add(curSize <= 4 ? null :
+                        setKeep(curSize <= 6 ? x === 0 :
+                        LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~LP1_ints.get(LP1_ints.size()-1) & (curSize <= 7 ? ~x.get(curSize-7) : x.slice(curSize-8, 2) === 0), size > 8 && keep));
+                    LP1s.add(curSize <= 6 ? LP1_ints.get(LP1_ints.size()-1) :
+                        setKeep(LP1_ints.get(LP1_ints.size()-1) | LP3s.get(LP3s.size()-1) & LP2s.get(LP2s.size()-1) & ~x.get(curSize-7), size > 8 && keep));
+                }
                 if (size <= 8) {
                     base.optimization.popNoPipelining();
                     return new Pair<DFEVar, DFEVar>(base.optimization.limitFanout(
@@ -2109,7 +2118,7 @@ print([gpc_to_lut(x) for x in gen_gpc(6, 3)])
         List<DFEVar> V = new ArrayList<>(), Z0s = new ArrayList<>(), Z1s = new ArrayList<>(), Z2s = new ArrayList<>(), Z3s = new ArrayList<>();
         for (int i = 0; i < LP4s.size(); i += 2) {
             DFEVar VH;
-            if (oldMethod) {
+            if (oldMethod || altMethod) {
                 if (size <= 16) keep = false;
                 VH = LP4s.get(i) == null ? (LP3s.get(i) == null ? (LP2s.get(i) == null ? LP1s.get(i).reinterpret(KernelBase.dfeBool()) : LP2s.get(i)) : LP3s.get(i)) : LP4s.get(i);
                 V.add(i+1==LP4s.size() ? VH : setKeep(VH & (LP4s.get(i+1) == null ? (LP3s.get(i+1) == null ? (LP2s.get(i+1) == null ? LP1s.get(i+1) : LP2s.get(i+1)) : LP3s.get(i+1)) : LP4s.get(i+1)), keep));
