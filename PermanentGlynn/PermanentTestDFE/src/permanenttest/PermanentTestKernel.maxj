@@ -80,9 +80,9 @@ public class PermanentTestKernel extends Kernel {
                     lzc1 = optimization.pipeline(lzc1);
                     lzc2 = optimization.pipeline(lzc2);
                     outp = inp2z.cat(lzc2).cat(inp1z).cat(lzc1).reinterpret(dfeUInt(MathUtils.ceilLog2(inpX) + 1 + MathUtils.ceilLog2(inpY) + 1));
-                } else if (strategy == 1 || strategy == 2 || strategy == 3 || strategy == 4 || strategy == 5) {
-                    Utility.Pair<DFEVar, DFEVar> lzc1 = Utility.leading0count(inp1, this, strategy == 2, strategy == 1, strategy == 5);
-                    Utility.Pair<DFEVar, DFEVar> lzc2 = Utility.leading0count(inp2, this, strategy == 2, strategy == 1, strategy == 5);
+                } else if (strategy == 1 || strategy == 2 || strategy == 3 || strategy == 4 || strategy == 5 || strategy == 6) {
+                    Utility.Pair<DFEVar, DFEVar> lzc1 = Utility.leading0count(inp1, this, strategy == 2, strategy == 1 || strategy == 6, strategy == 5 || strategy == 6);
+                    Utility.Pair<DFEVar, DFEVar> lzc2 = Utility.leading0count(inp2, this, strategy == 2, strategy == 1 || strategy == 6, strategy == 5 || strategy == 6);
                     outp = lzc2.getFirst().cat(lzc2.getSecond()).cat(lzc1.getFirst()).cat(lzc1.getSecond()).reinterpret(dfeUInt(MathUtils.ceilLog2(inpX) + 1 + MathUtils.ceilLog2(inpY) + 1));
                 }     
             } else if (addSubMul == 2) {
