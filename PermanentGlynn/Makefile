@@ -92,5 +92,19 @@ CPUREPBIG:
 CPUSIMREPBIG:
 	@$(MAKE) run_sim MAXFILE_DIRS=../PermRepGlynnDFE/builds/simulation -C ./PermRepGlynnCPU/ SIM=true BIG=BIG
 
+SIMTEST:
+	@$(MAKE)  SIM -C ./PermanentTestDFE/
+
+CPUTEST:
+	@$(MAKE) MODE=release MAXFILE_DIRS=../PermanentTestDFE/builds/simulation -C ./PermanentTestCPU/ SIM=true
+	#@$(MAKE) MODE=release MAXFILE_DIRS=../PermanentTestDFE/builds/simulation -C ./PermanentTestCPU/
+
+CPUSIMTEST:
+	@$(MAKE) run_sim MAXFILE_DIRS=../PermanentTestDFE/builds/simulation -C ./PermanentTestCPU/ SIM=true
+  
+SIMLC:
+	@$(MAKE)  SIM -C ./LoopCorrectionDFE/
+
+
 .PHONY: all
 
