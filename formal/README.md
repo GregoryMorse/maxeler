@@ -14,6 +14,7 @@ The textbook determinant is included as well.
 | BB/FG (Glynn), `δ₀ = +1` | `glynn` | `glynn_correct` (`= 2ⁿ · perm`) |
 | Ryser, binary Gray code (Nijenhuis–Wilf) | `ryserGray` | `ryserGray_correct` |
 | BB/FG, binary Gray code | `glynnGray` | `glynnGray_correct` |
+| BB/FG, Gray code as in `permanent_benchmark.py` / Wikipedia | `glynnWiki` | `glynnWiki_correct` |
 | Ryser with repeated rows/columns | `ryserRep` | `ryserRep_correct` |
 | BB/FG with repeated rows/columns | `glynnRep` | `glynnRep_correct` |
 | Ryser with repetitions, n-ary Gray code | `ryserRepGray` | `ryserRepGray_correct` |
@@ -37,6 +38,40 @@ reference implementation:
   and the binomial weight is updated by exact integer division (`binomStep`), as
   in `piquassoboost/sampling/source/BBFGPermanentCalculatorRepeated.hpp`.
 
+`glynnWiki` is the loop of `permanent_glynn_gray_exact` in `permanent_benchmark.py`,
+which is the Gray-code form of Glynn's formula listed on Wikipedia. It fixes the
+*last* row to `+1`, toggles `δ[tz(i)]` in place, and alternates the term sign with
+the step counter `i`.
+
+### Complexity
+
+Each algorithm also has an instrumented version `…C : Costed R`, defined in
+`Defs.lean`. It returns the value together with the number of ring operations
+used. The `…_complexity` theorems state `algC A = ⟨alg A, exact count⟩`, so the
+instrumented program provably computes the algorithm's value with exactly that many
+operations.
+
+Cost model:
+- `+`, `−`, `×` and negation in `R` each cost 1;
+- a length-`k` vector add costs `k`;
+- `x^k` costs `k`;
+- integer bookkeeping is free: the Gray counter, trailing zeros, loop indices and
+  binomial updates.
+
+| Algorithm | Ring operations | Order |
+|---|---|---|
+| `permNaive` | `n!(n+1)` | `Θ(n·n!)` |
+| `detNaive` | `n!(n+2)` | `Θ(n·n!)` |
+| `ryser` | `n²2ⁿ⁻¹ + (n+2)2ⁿ` | `Θ(n²2ⁿ)` |
+| `glynn` (size `n+1`) | `2ⁿ((n+1)(2n+2)+2)` | `Θ(n²2ⁿ)` |
+| `ryserGray` | `(2ⁿ−1)(2n+3) + n + 1` | `Θ(n2ⁿ)` |
+| `glynnGray` (size `n+1`) | `(2ⁿ−1)(3n+6) + (n+1)² + (n+1)` | `Θ(n2ⁿ)` |
+| `glynnWiki` (size `n+1`) | `(2ⁿ−1)(3n+4) + (n+1)² + (n+1)` | `Θ(n2ⁿ)` |
+| `ryserRep` | `K(2pq + |M| + p + 3)`, `K = ∏(N_l+1)` | `Θ((pq+|M|)K)` |
+| `glynnRep` | `K(2pq + 2q + |N| + 3)`, `K = ∏(M_k+1)` | `Θ((pq+|N|)K)` |
+| `ryserRepGray` | `(K−1)(2p+|M|+4) + |M| + p + 1` | `Θ((p+|M|)K)` |
+| `glynnRepGray` | `(K−1)(3q+|N|+4) + q(2p+1) + |N| + q` | `Θ((q+|N|)K)` |
+
 The fixed-point FPGA implementation is **not** formalized.
 [`FPGA_VERIFICATION_PLAN.md`](FPGA_VERIFICATION_PLAN.md) sketches how an
 end-to-end error bound could be proved. It would cover the float-to-fixed
@@ -54,6 +89,8 @@ MaxelerPermanent/
   Repeated.lean           multiplicity formulas, canonical repeated matrix
   GrayCode.lean           binary and n-ary Gray codes: bijectivity, adjacency
   GrayAlgorithms.lean     loop invariants for the four Gray-code algorithms
+  Wiki.lean               the `permanent_benchmark.py` / Wikipedia BB/FG loop
+  Complexity.lean         cost model lemmas and exact operation counts
 comparator.json           Palomar / `lake comparator` configuration
 formalization.yaml        Palomar metadata
 scripts/                  Palomar pre-flight scripts (+ sync-challenge.py)

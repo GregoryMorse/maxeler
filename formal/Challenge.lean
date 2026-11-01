@@ -6,7 +6,7 @@ public import Mathlib.LinearAlgebra.Matrix.Determinant.Basic
 /-!
 # Advertised statements
 
-Correctness of exact permanent algorithms used for boson sampling simulation in
+Correctness and exact operation counts of exact permanent algorithms used for boson sampling simulation in
 *High performance Boson sampling simulation via data-flow engines*
 (Morse et al., New J. Phys. 26, 033033, 2024), and of the textbook determinant.
 
@@ -19,6 +19,8 @@ Repeated rows/columns are expressed through `A.submatrix r c` for arbitrary
 `r : Fin n → Fin p`, `c : Fin n → Fin q`: row `k` of `A` occurs `mult r k`
 times and column `l` occurs `mult c l` times.
 -/
+
+universe u
 
 @[expose] public section
 
@@ -232,6 +234,245 @@ def glynnRepGray {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
   (runSteps (glynnRepGrayStep A M N) ⟨init, 1, 1, ∏ l, init l ^ N l⟩
     (∏ k, (M k + 1) - 1)).acc
 
+/-! ## BB/FG in the form of `permanent_benchmark.py` (Wikipedia) -/
+
+/-- Loop state of `permanent_glynn_gray_exact` in `permanent_benchmark.py`: the sign
+vector `δ` (`true` = `+1`), the column sums and the accumulated total. -/
+structure WikiState (n : ℕ) (R : Type*) where
+  /-- `delta i = true` iff `δ_i = +1`, for the `n` rows whose sign varies -/
+  delta : Fin n → Bool
+  /-- running column sums `∑_i δ_i A i j` -/
+  sums : Fin (n + 1) → R
+  /-- accumulated total -/
+  acc : R
+
+/-- Toggle entry `i` (a natural-number index) of a Boolean vector, like
+`gcode[idx] = 1 - gcode[idx]`. -/
+def toggleAt {n : ℕ} (δ : Fin n → Bool) (i : ℕ) : Fin n → Bool :=
+  fun k => if k.val = i then !δ k else δ k
+
+/-- One step `i` of `permanent_glynn_gray_exact`: toggle `δ` at `idx = tz i`, add
+(if `δ_idx` became `+1`) or subtract twice row `idx` from the column sums, and add
+(`i` even) or subtract (`i` odd) the product of the column sums. -/
+def glynnWikiStep {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) (i : ℕ)
+    (s : WikiState n R) : WikiState n R :=
+  let idx := trailingZeros i
+  let delta := toggleAt s.delta idx
+  let sums := if (if h : idx < n then delta ⟨idx, h⟩ else false) then s.sums + 2 • natIdx A idx
+    else s.sums - 2 • natIdx A idx
+  let p := ∏ j, sums j
+  ⟨delta, sums, if i % 2 = 1 then s.acc - p else s.acc + p⟩
+
+/-- BB/FG in Gray-code order exactly as in `permanent_glynn_gray_exact`
+(`permanent_benchmark.py`; Wikipedia's Gray-code form of Glynn's formula): the last
+row has fixed sign `+1`, the term signs alternate with the step counter, and
+`δ` is toggled in place. Equals `2ⁿ · perm A` (before the division by `2ⁿ`). -/
+def glynnWiki {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : R :=
+  let init : Fin (n + 1) → R := fun j => ∑ i, A i j
+  (runSteps (glynnWikiStep A) ⟨fun _ => true, init, ∏ j, init j⟩ (2 ^ n - 1)).acc
+
+/-! ## Cost model
+
+`Costed α` pairs a value with the number of arithmetic operations in the ring
+used to compute it. The cost-instrumented programs `…C` below re-express each
+algorithm with explicit operation counts:
+
+* one addition, subtraction, negation or multiplication of ring elements costs `1`
+  (multiplying a matrix entry by a small integer coefficient or by `±1` also
+  counts as one multiplication; adding two length-`k` vectors costs `k`);
+* `bigSum s f` costs the costs of the terms plus `#s` additions (accumulating from
+  `0`), `bigProd s f` the costs of the factors plus `#s` multiplications;
+* `x ^ k` costs `k` multiplications (repeated multiplication, as in the C++ code);
+* integer bookkeeping (Gray-code counter, trailing zeros, binomial coefficient
+  updates, loop indices) and reading matrix entries are free.
+
+The theorems in `Challenge.lean` state `prog A = ⟨algorithm A, exact count⟩`: the
+instrumented program computes exactly the algorithm's value with that many ring
+operations. -/
+
+/-- A value together with the number of ring operations used to compute it. -/
+@[ext]
+structure Costed (α : Type u) where
+  /-- the computed value -/
+  val : α
+  /-- the number of ring operations used -/
+  cost : ℕ
+
+instance : Monad Costed where
+  pure a := ⟨a, 0⟩
+  bind x f := ⟨(f x.val).val, x.cost + (f x.val).cost⟩
+
+namespace Costed
+
+/-- A value computed with `k` operations. -/
+def tick {α : Type u} (a : α) (k : ℕ) : Costed α := ⟨a, k⟩
+
+/-- `∑ i ∈ s, f i`: the costs of the terms plus `#s` additions. -/
+def bigSum {ι : Type*} {α : Type u} [AddCommMonoid α] (s : Finset ι) (f : ι → Costed α) :
+    Costed α :=
+  ⟨∑ i ∈ s, (f i).val, (∑ i ∈ s, (f i).cost) + #s⟩
+
+/-- `∏ i ∈ s, f i`: the costs of the factors plus `#s` multiplications. -/
+def bigProd {ι : Type*} {α : Type u} [CommMonoid α] (s : Finset ι) (f : ι → Costed α) :
+    Costed α :=
+  ⟨∏ i ∈ s, (f i).val, (∑ i ∈ s, (f i).cost) + #s⟩
+
+/-- Build a vector entrywise: the costs of the entries. -/
+def vec {ι : Type*} [Fintype ι] {α : Type u} (f : ι → Costed α) : Costed (ι → α) :=
+  ⟨fun i => (f i).val, ∑ i, (f i).cost⟩
+
+/-- `for k in 1..T: s ← step k s`. -/
+def loop {σ : Type u} (step : ℕ → σ → Costed σ) (init : σ) : ℕ → Costed σ
+  | 0 => pure init
+  | t + 1 => loop step init t >>= step (t + 1)
+
+end Costed
+
+open Costed
+
+/-- Instrumented naive permanent. -/
+def permNaiveC {n : ℕ} (A : Matrix (Fin n) (Fin n) R) : Costed R :=
+  bigSum univ fun σ : Equiv.Perm (Fin n) => bigProd univ fun i => pure (A i (σ i))
+
+/-- Instrumented Leibniz determinant. -/
+def detNaiveC {n : ℕ} (A : Matrix (Fin n) (Fin n) R) : Costed R :=
+  bigSum univ fun σ : Equiv.Perm (Fin n) => do
+    let p ← bigProd univ fun i => pure (A i (σ i))
+    tick (((Equiv.Perm.sign σ : ℤ) : R) * p) 1
+
+/-- Instrumented Ryser formula (every subset's row sums computed from scratch). -/
+def ryserC {n : ℕ} (A : Matrix (Fin n) (Fin n) R) : Costed R :=
+  bigSum univ fun S : Finset (Fin n) => do
+    let p ← bigProd univ fun i => bigSum S fun j => pure (A i j)
+    tick ((-1) ^ (n - #S) * p) 1
+
+/-- Instrumented BB/FG formula (every sign vector's column sums from scratch). -/
+def glynnC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : Costed R :=
+  bigSum univ fun S : Finset (Fin n) => do
+    let p ← bigProd univ fun j => do
+      let c ← bigSum univ fun i : Fin n => tick (flipSign S i * A i.succ j) 1
+      tick (A 0 j + c) 1
+    tick ((-1) ^ #S * p) 1
+
+/-- Instrumented loop body of `ryserGray`. -/
+def ryserGrayStepC {n : ℕ} (A : Matrix (Fin n) (Fin n) R) (k : ℕ) (s : GrayState (Fin n) R) :
+    Costed (GrayState (Fin n) R) := do
+  let j := trailingZeros k
+  let sums ← if (grayCode k).testBit j then tick (s.sums + fun i => natIdx (A i) j) n
+    else tick (s.sums - fun i => natIdx (A i) j) n
+  let sign ← tick (-s.sign) 1
+  let p ← bigProd univ fun i => pure (sums i)
+  let t ← tick (sign * p) 1
+  tick ⟨sums, sign, s.acc + t⟩ 1
+
+/-- Instrumented `ryserGray`. -/
+def ryserGrayC {n : ℕ} (A : Matrix (Fin n) (Fin n) R) : Costed R := do
+  let p0 ← bigProd univ fun _ : Fin n => pure (0 : R)
+  let st ← loop (ryserGrayStepC A) ⟨0, 1, p0⟩ (2 ^ n - 1)
+  tick ((-1) ^ n * st.acc) 1
+
+/-- Instrumented loop body of `glynnGray`. -/
+def glynnGrayStepC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) (k : ℕ)
+    (s : GrayState (Fin (n + 1)) R) : Costed (GrayState (Fin (n + 1)) R) := do
+  let j := trailingZeros k
+  let sums ← if (grayCode k).testBit j then tick (s.sums - 2 • natIdx A (j + 1)) (2 * (n + 1))
+    else tick (s.sums + 2 • natIdx A (j + 1)) (2 * (n + 1))
+  let sign ← tick (-s.sign) 1
+  let p ← bigProd univ fun i => pure (sums i)
+  let t ← tick (sign * p) 1
+  tick ⟨sums, sign, s.acc + t⟩ 1
+
+/-- Instrumented `glynnGray`. -/
+def glynnGrayC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : Costed R := do
+  let init ← vec fun j => bigSum univ fun i => pure (A i j)
+  let p0 ← bigProd univ fun j => pure (init j)
+  let st ← loop (glynnGrayStepC A) ⟨init, 1, p0⟩ (2 ^ n - 1)
+  pure st.acc
+
+/-- Instrumented loop body of `glynnWiki`. -/
+def glynnWikiStepC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) (i : ℕ)
+    (s : WikiState n R) : Costed (WikiState n R) := do
+  let idx := trailingZeros i
+  let delta := toggleAt s.delta idx
+  let sums ← if (if h : idx < n then delta ⟨idx, h⟩ else false) then tick (s.sums + 2 • natIdx A idx) (2 * (n + 1))
+    else tick (s.sums - 2 • natIdx A idx) (2 * (n + 1))
+  let p ← bigProd univ fun j => pure (sums j)
+  let acc ← if i % 2 = 1 then tick (s.acc - p) 1 else tick (s.acc + p) 1
+  pure ⟨delta, sums, acc⟩
+
+/-- Instrumented `glynnWiki`. -/
+def glynnWikiC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : Costed R := do
+  let init ← vec fun j => bigSum univ fun i => pure (A i j)
+  let p0 ← bigProd univ fun j => pure (init j)
+  let st ← loop (glynnWikiStepC A) ⟨fun _ => true, init, p0⟩ (2 ^ n - 1)
+  pure st.acc
+
+/-- Instrumented Ryser formula with multiplicities. -/
+def ryserRepC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ) (N : Fin q → ℕ) :
+    Costed R :=
+  bigSum (Fintype.piFinset fun l => range (N l + 1)) fun s => do
+    let pr ← bigProd univ fun k => do
+      let r ← bigSum univ fun l => tick ((s l : R) * A k l) 1
+      tick (r ^ M k) (M k)
+    tick ((-1) ^ (∑ l, N l - ∑ l, s l) * ((∏ l, (N l).choose (s l) : ℕ) : R) * pr) 2
+
+/-- Instrumented BB/FG formula with multiplicities. -/
+def glynnRepC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) : Costed R :=
+  bigSum (Fintype.piFinset fun k => range (M k + 1)) fun d => do
+    let pr ← bigProd univ fun l => do
+      let c ← bigSum univ fun k => tick (((M k : R) - 2 * (d k : R)) * A k l) 1
+      let c' ← tick (A k0 l + c) 1
+      tick (c' ^ N l) (N l)
+    tick ((-1) ^ (∑ k, d k) * ((∏ k, (M k).choose (d k) : ℕ) : R) * pr) 2
+
+/-- Instrumented loop body of `ryserRepGray`. -/
+def ryserRepGrayStepC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) (t : ℕ) (st : RepState (Fin p) R) : Costed (RepState (Fin p) R) := do
+  let rad : Fin q → ℕ := fun l => N l + 1
+  let i := naryGrayIdx rad (t - 1)
+  let u := natIdx (naryGray rad (t - 1)) i
+  let v := natIdx (naryGray rad t) i
+  let sums ← if u < v then tick (st.sums + fun k => natIdx (A k) i) p
+    else tick (st.sums - fun k => natIdx (A k) i) p
+  let sign ← tick (-st.sign) 1
+  let binom := binomStep st.binom (natIdx N i) u v
+  let pr ← bigProd univ fun k => tick (sums k ^ M k) (M k)
+  let term ← tick (sign * (binom : R) * pr) 2
+  tick ⟨sums, sign, binom, st.acc + term⟩ 1
+
+/-- Instrumented `ryserRepGray`. -/
+def ryserRepGrayC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) : Costed R := do
+  let p0 ← bigProd univ fun k => tick ((0 : R) ^ M k) (M k)
+  let st ← loop (ryserRepGrayStepC A M N) ⟨0, 1, 1, p0⟩ (∏ l, (N l + 1) - 1)
+  tick ((-1) ^ (∑ l, N l) * st.acc) 1
+
+/-- Instrumented loop body of `glynnRepGray`. -/
+def glynnRepGrayStepC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) (t : ℕ) (st : RepState (Fin q) R) : Costed (RepState (Fin q) R) := do
+  let rad : Fin p → ℕ := fun k => M k + 1
+  let i := naryGrayIdx rad (t - 1)
+  let u := natIdx (naryGray rad (t - 1)) i
+  let v := natIdx (naryGray rad t) i
+  let sums ← if u < v then tick (st.sums - 2 • natIdx A i) (2 * q)
+    else tick (st.sums + 2 • natIdx A i) (2 * q)
+  let sign ← tick (-st.sign) 1
+  let binom := binomStep st.binom (natIdx M i) u v
+  let pr ← bigProd univ fun l => tick (sums l ^ N l) (N l)
+  let term ← tick (sign * (binom : R) * pr) 2
+  tick ⟨sums, sign, binom, st.acc + term⟩ 1
+
+/-- Instrumented `glynnRepGray`. -/
+def glynnRepGrayC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
+    (M : Fin p → ℕ) (N : Fin q → ℕ) : Costed R := do
+  let init ← vec fun l => do
+    let c ← bigSum univ fun k => tick ((M k : R) * A k l) 1
+    tick (A k0 l + c) 1
+  let p0 ← bigProd univ fun l => tick (init l ^ N l) (N l)
+  let st ← loop (glynnRepGrayStepC A M N) ⟨init, 1, 1, p0⟩ (∏ k, (M k + 1) - 1)
+  pure st.acc
+
 end MaxelerPermanent
 
 -- END DEFINITIONS
@@ -296,6 +537,75 @@ theorem glynnRepGray_correct {n p q : ℕ} (A : Matrix (Fin p) (Fin q) R)
     (r : Fin (n + 1) → Fin p) (c : Fin (n + 1) → Fin q) :
     2 ^ n * (A.submatrix r c).permanent =
       glynnRepGray A (r 0) (mult (r ∘ Fin.succ)) (mult c) := by
+  sorry
+
+/-- BB/FG in the Gray-code form of `permanent_benchmark.py` / Wikipedia (last row fixed,
+signs alternating with the step counter). -/
+theorem glynnWiki_correct {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    glynnWiki A = 2 ^ n * A.permanent := by
+  sorry
+
+/-- Naive permanent: `n! (n + 1)` ring operations. -/
+theorem permNaive_complexity {n : ℕ} (A : Matrix (Fin n) (Fin n) R) :
+    permNaiveC A = ⟨permNaive A, n.factorial * (n + 1)⟩ := by
+  sorry
+
+/-- Leibniz determinant: `n! (n + 2)` ring operations. -/
+theorem detNaive_complexity {n : ℕ} (A : Matrix (Fin n) (Fin n) R) :
+    detNaiveC A = ⟨detNaive A, n.factorial * (n + 2)⟩ := by
+  sorry
+
+/-- Direct Ryser: `Θ(n² 2ⁿ)` ring operations. -/
+theorem ryser_complexity {n : ℕ} (A : Matrix (Fin n) (Fin n) R) :
+    ryserC A = ⟨ryser A, n ^ 2 * 2 ^ (n - 1) + (n + 2) * 2 ^ n⟩ := by
+  sorry
+
+/-- Direct BB/FG on an `(n+1) × (n+1)` matrix: `Θ(n² 2ⁿ)` ring operations. -/
+theorem glynn_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    glynnC A = ⟨glynn A, 2 ^ n * ((n + 1) * (2 * n + 2) + 2)⟩ := by
+  sorry
+
+/-- Ryser in Gray-code order: `Θ(n 2ⁿ)` ring operations. -/
+theorem ryserGray_complexity {n : ℕ} (A : Matrix (Fin n) (Fin n) R) :
+    ryserGrayC A = ⟨ryserGray A, (2 ^ n - 1) * (2 * n + 3) + n + 1⟩ := by
+  sorry
+
+/-- BB/FG in Gray-code order: `Θ(n 2ⁿ)` ring operations for size `n + 1`. -/
+theorem glynnGray_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    glynnGrayC A = ⟨glynnGray A, (2 ^ n - 1) * (3 * n + 6) + (n + 1) ^ 2 + (n + 1)⟩ := by
+  sorry
+
+/-- `permanent_benchmark.py` BB/FG: `Θ(n 2ⁿ)` ring operations for size `n + 1`. -/
+theorem glynnWiki_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    glynnWikiC A = ⟨glynnWiki A, (2 ^ n - 1) * (3 * n + 4) + (n + 1) ^ 2 + (n + 1)⟩ := by
+  sorry
+
+/-- Ryser with multiplicities, direct: `Θ((pq + |M|) ∏ (N_l + 1))`. -/
+theorem ryserRep_complexity {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) :
+    ryserRepC A M N = ⟨ryserRep A M N,
+      (∏ l, (N l + 1)) * (2 * p * q + ∑ k, M k + p + 3)⟩ := by
+  sorry
+
+/-- BB/FG with multiplicities, direct: `Θ((pq + |N|) ∏ (M_k + 1))`. -/
+theorem glynnRep_complexity {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
+    (M : Fin p → ℕ) (N : Fin q → ℕ) :
+    glynnRepC A k0 M N = ⟨glynnRep A k0 M N,
+      (∏ k, (M k + 1)) * (2 * p * q + 2 * q + ∑ l, N l + 3)⟩ := by
+  sorry
+
+/-- Ryser with multiplicities, n-ary Gray code: `Θ((p + |M|) ∏ (N_l + 1))`. -/
+theorem ryserRepGray_complexity {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
+    (N : Fin q → ℕ) :
+    ryserRepGrayC A M N = ⟨ryserRepGray A M N,
+      (∏ l, (N l + 1) - 1) * (2 * p + ∑ k, M k + 4) + ∑ k, M k + p + 1⟩ := by
+  sorry
+
+/-- BB/FG with multiplicities, n-ary Gray code: `Θ((q + |N|) ∏ (M_k + 1))`. -/
+theorem glynnRepGray_complexity {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
+    (M : Fin p → ℕ) (N : Fin q → ℕ) :
+    glynnRepGrayC A k0 M N = ⟨glynnRepGray A k0 M N,
+      (∏ k, (M k + 1) - 1) * (3 * q + ∑ l, N l + 4) + q * (2 * p + 1) + ∑ l, N l + q⟩ := by
   sorry
 
 end MaxelerPermanent

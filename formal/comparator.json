@@ -11,8 +11,24 @@
     "MaxelerPermanent.ryserRep_correct",
     "MaxelerPermanent.glynnRep_correct",
     "MaxelerPermanent.ryserRepGray_correct",
-    "MaxelerPermanent.glynnRepGray_correct"
+    "MaxelerPermanent.glynnRepGray_correct",
+    "MaxelerPermanent.glynnWiki_correct",
+    "MaxelerPermanent.permNaive_complexity",
+    "MaxelerPermanent.detNaive_complexity",
+    "MaxelerPermanent.ryser_complexity",
+    "MaxelerPermanent.glynn_complexity",
+    "MaxelerPermanent.ryserGray_complexity",
+    "MaxelerPermanent.glynnGray_complexity",
+    "MaxelerPermanent.glynnWiki_complexity",
+    "MaxelerPermanent.ryserRep_complexity",
+    "MaxelerPermanent.glynnRep_complexity",
+    "MaxelerPermanent.ryserRepGray_complexity",
+    "MaxelerPermanent.glynnRepGray_complexity"
   ],
   "definition_names": [],
-  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+  "permitted_axioms": [
+    "propext",
+    "Quot.sound",
+    "Classical.choice"
+  ]
 }

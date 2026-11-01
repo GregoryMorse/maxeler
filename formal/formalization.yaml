@@ -89,7 +89,12 @@ status:
     (n+1)×(n+1) matrices, so no division by 2 is needed); both in binary Gray
     code order; the multiplicity formulas for perm (A.submatrix r c) with
     arbitrary row/column selections r, c; and both multiplicity formulas in
-    n-ary Gray-code order. Not formalized: floating/fixed-point arithmetic,
+    n-ary Gray-code order; the Gray-code BB/FG loop of permanent_benchmark.py
+    (Wikipedia form: last row fixed, signs alternating with the step counter);
+    and exact ring-operation counts for every algorithm in an explicit cost
+    model (integer bookkeeping free), giving Θ(n·n!), Θ(n²2ⁿ) for the direct
+    formulas, Θ(n2ⁿ) for the Gray-code ones, and the analogous multiplicity
+    bounds. Not formalized: floating/fixed-point arithmetic,
     the FPGA design, the parallel splitting of the Gray-code range into
     batches, and the Nijenhuis-Wilf variant of Ryser that shifts the row sums
     by half the row total.
@@ -178,6 +183,16 @@ alignment:
       module: "Challenge"
       status: proved
       note: "Mirrors the loop of BBFGPermanentCalculatorRepeated.hpp, including the exact-division binomial update."
+    - source: "Gray-code form of Glynn's formula (Wikipedia; permanent_benchmark.py)"
+      lean: "MaxelerPermanent.glynnWiki_correct"
+      module: "Challenge"
+      status: proved
+      note: "Mirrors permanent_glynn_gray_exact: in-place delta toggling, last row fixed, (-1)^k signs."
+    - source: "Operation counts of all algorithms"
+      lean: "MaxelerPermanent.ryserGray_complexity"
+      module: "Challenge"
+      status: proved
+      note: "One *_complexity theorem per algorithm; exact counts in the cost model of Defs.lean."
     - source: "Leibniz formula for the determinant"
       lean: "MaxelerPermanent.detNaive_correct"
       module: "Challenge"
