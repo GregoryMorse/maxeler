@@ -1,0 +1,18 @@
+{
+  "challenge_module": "Challenge",
+  "solution_module": "Solution",
+  "theorem_names": [
+    "MaxelerPermanent.permNaive_correct",
+    "MaxelerPermanent.detNaive_correct",
+    "MaxelerPermanent.ryser_correct",
+    "MaxelerPermanent.glynn_correct",
+    "MaxelerPermanent.ryserGray_correct",
+    "MaxelerPermanent.glynnGray_correct",
+    "MaxelerPermanent.ryserRep_correct",
+    "MaxelerPermanent.glynnRep_correct",
+    "MaxelerPermanent.ryserRepGray_correct",
+    "MaxelerPermanent.glynnRepGray_correct"
+  ],
+  "definition_names": [],
+  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+}

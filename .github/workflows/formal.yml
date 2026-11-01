@@ -1,0 +1,133 @@
+name: Lean formalization
+
+on:
+  push:
+    paths:
+      - "formal/**"
+      - ".github/workflows/formal.yml"
+  pull_request:
+    paths:
+      - "formal/**"
+      - ".github/workflows/formal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: formal
+
+jobs:
+  preflight:
+    name: Palomar pre-flight (sources, metadata, licence)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check Lean source requirements (module headers, line caps)
+        run: python3 scripts/check-lean-sources.py
+      - name: Check Challenge.lean definitions match the library
+        run: python3 scripts/sync-challenge.py --check
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        with:
+          ruby-version: "3.3.12"
+          bundler-cache: true
+          working-directory: formal
+      - name: Test the metadata validator
+        run: ruby test/validate_formalization_test.rb
+      - name: Validate formalization.yaml
+        run: ruby scripts/validate-formalization.rb
+      - name: Detect the formalization licence
+        run: |
+          bundle exec licensee detect LICENSE --json --no-packages --no-readme > "$RUNNER_TEMP/license.json"
+          ruby -rjson -e '
+            report = JSON.parse(File.read(ARGV.fetch(0)))
+            identifiers = report.fetch("licenses").map { |item| item.fetch("spdx_id") }
+            abort "LICENSE is not detected exactly as Apache-2.0" unless identifiers == ["Apache-2.0"]
+          ' "$RUNNER_TEMP/license.json"
+
+  build:
+    name: Build with Lean (no sorry outside Challenge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check Lean source requirements before builds
+        run: python3 scripts/check-lean-sources.py
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formal
+          build: true
+      - name: Reject sorry in the library and Solution
+        run: |
+          if grep -rnw --include='*.lean' -e 'sorry' MaxelerPermanent Solution.lean; then
+            echo "sorry found outside Challenge.lean" >&2
+            exit 1
+          fi
+      - name: Print axioms of the advertised theorems
+        run: |
+          cat > /tmp/Axioms.lean <<'LEAN'
+          import Solution
+          #print axioms MaxelerPermanent.glynnRepGray_correct
+          #print axioms MaxelerPermanent.ryserRepGray_correct
+          #print axioms MaxelerPermanent.ryserGray_correct
+          #print axioms MaxelerPermanent.glynnGray_correct
+          #print axioms MaxelerPermanent.detNaive_correct
+          LEAN
+          lake env lean /tmp/Axioms.lean | tee /tmp/axioms.txt
+          if grep -q sorryAx /tmp/axioms.txt; then exit 1; fi
+
+  comparator:
+    name: Palomar check (lake comparator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check Lean source requirements before builds
+        run: python3 scripts/check-lean-sources.py
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formal
+          build: false
+      - name: Install bubblewrap for lake comparator's sandbox
+        run: |
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq bubblewrap >/dev/null
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Run the toolchain's lake comparator
+        run: ./scripts/verify-comparator.sh
+
+  docs:
+    name: Build API documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9
+        with:
+          lake-package-directory: formal
+          build: false
+      - name: Build doc-gen4 output
+        working-directory: formal/docbuild
+        env:
+          MATHLIB_NO_CACHE_ON_UPDATE: "1"
+          DISABLE_EQUATIONS: "1"
+          DOCGEN_SRC: github
+        run: lake build MaxelerPermanent:docs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: api-documentation
+          path: formal/docbuild/.lake/build/doc
+          if-no-files-found: error
