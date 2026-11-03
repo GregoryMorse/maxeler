@@ -158,6 +158,19 @@ The loop hafnian is implemented via the power-trace method (polynomial complexit
 
 ---
 
+## Formal Verification (Lean 4)
+
+The [`formal/`](formal/) folder holds a Lean 4 / Mathlib formalization. It proves
+that the exact permanent algorithms behind these engines compute the permanent.
+It covers the naive formula, Ryser, BB/FG (Glynn), their binary Gray-code forms,
+the row/column-multiplicity (boson sampling) generalisations, and their n-ary
+Gray-code forms. It also includes the determinant. The folder carries Palomar
+registry metadata and a pre-flight CI workflow (`.github/workflows/formal.yml`).
+[`formal/FPGA_VERIFICATION_PLAN.md`](formal/FPGA_VERIFICATION_PLAN.md) sketches
+how the fixed-point DFE arithmetic could be verified.
+
+---
+
 ## Hardware and Software Requirements
 
 ### DFE (Maxeler / Xilinx Alveo U250)

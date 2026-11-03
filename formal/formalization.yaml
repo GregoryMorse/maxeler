@@ -1,0 +1,202 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/mathlib-initiative/formalization.yaml/main/schema/formalization.schema.json
+# formalization.yaml v0.4
+version: "v0.4"
+
+project:
+  name: "Exact permanent algorithms for boson sampling: Ryser, BB/FG (Glynn), Gray-code and multiplicity variants"
+  description: >-
+    Correctness over an arbitrary commutative ring of the exact permanent
+    algorithms used in the data-flow-engine boson sampling simulator of Morse et
+    al. (New J. Phys. 26, 033033, 2024). The results cover the textbook
+    permutation sums for the permanent and the determinant, Ryser's
+    inclusion-exclusion formula, and the Balasubramanian-Bax-Franklin-Glynn
+    (BB/FG) formula with the first sign fixed. Both are also proved when
+    evaluated in binary reflected Gray-code order with incremental row or
+    column sums: the traditional Nijenhuis-Wilf form for Ryser and the
+    single-sign-flip form for BB/FG. Further results cover the generalisations
+    to matrices with repeated rows and columns, which are sums over occupation
+    vectors weighted by products of binomial coefficients, and their
+    evaluation in reflected mixed-radix (n-ary) Gray-code order with
+    incrementally updated sums and an exact integer-division update of the
+    binomial weight, as in the generalised Clifford & Clifford sampler.
+  authors:
+    - "Gregory Morse"
+  license: "Apache-2.0"
+  responsible_maintainers:
+    - "Gregory Morse"
+
+classification:
+  arxiv: ["math.CO", "quant-ph"]
+  msc2020: ["15A15", "05A19", "68W30"]
+
+sources:
+  - title: "High performance Boson sampling simulation via data-flow engines"
+    authors:
+      - "Gregory Morse"
+      - "Tomasz Rybotycki"
+      - "Ágoston Kaposi"
+      - "Zoltán Kolarovszki"
+      - "Uroš Stojčić"
+      - "Tamás Kozsik"
+      - "Oskar Mencer"
+      - "Michał Oszmaniec"
+      - "Zoltán Zimborás"
+      - "Péter Rakyta"
+    id: "doi:10.1088/1367-2630/ad313b"
+    type: article
+    location: "New Journal of Physics 26, 033033 (2024)"
+    relationship: formalizes
+    note: >-
+      Formalizes the exact (infinite-precision) content of the permanent
+      algorithms: BB/FG with row/column multiplicities and its n-ary Gray-code
+      evaluation. The fixed-point FPGA arithmetic is not formalized; see
+      FPGA_VERIFICATION_PLAN.md.
+    license: "CC BY 4.0"
+    author_endorsement: participated
+  - title: "Combinatorial Mathematics (Carus Mathematical Monographs 14)"
+    authors:
+      - "Herbert J. Ryser"
+    type: book
+    location: "Mathematical Association of America, 1963"
+    relationship: independently-proves
+    note: "Ryser's formula for the permanent."
+  - title: "The permanent of a square matrix"
+    authors:
+      - "David G. Glynn"
+    id: "doi:10.1016/j.ejc.2010.01.010"
+    type: article
+    location: "European Journal of Combinatorics 31(7), 1887-1891 (2010)"
+    relationship: independently-proves
+    note: "The BB/FG formula with the first sign fixed."
+  - title: "Combinatorial Algorithms for Computers and Calculators (2nd ed.)"
+    authors:
+      - "Albert Nijenhuis"
+      - "Herbert S. Wilf"
+    type: book
+    location: "Academic Press, 1978"
+    relationship: independently-proves
+    note: "Ryser's formula evaluated in binary Gray-code order."
+
+related_formalizations:
+  - id: "Mathlib.LinearAlgebra.Matrix.Permanent"
+    relationship: builds-on
+    note: "Uses Mathlib's Matrix.permanent and Matrix.det as the reference definitions."
+
+status:
+  scope: >-
+    Proved over any commutative ring: permNaive = permanent; detNaive = det;
+    Ryser; BB/FG (with δ₀ = +1, stated as glynn A = 2ⁿ · perm A for
+    (n+1)×(n+1) matrices, so no division by 2 is needed); both in binary Gray
+    code order; the multiplicity formulas for perm (A.submatrix r c) with
+    arbitrary row/column selections r, c; and both multiplicity formulas in
+    n-ary Gray-code order; the Gray-code BB/FG loop of permanent_benchmark.py
+    (Wikipedia form: last row fixed, signs alternating with the step counter);
+    and exact ring-operation counts for every algorithm in an explicit cost
+    model (integer bookkeeping free), giving Θ(n·n!), Θ(n²2ⁿ) for the direct
+    formulas, Θ(n2ⁿ) for the Gray-code ones, and the analogous multiplicity
+    bounds. Not formalized: floating/fixed-point arithmetic,
+    the FPGA design, the parallel splitting of the Gray-code range into
+    batches, and the Nijenhuis-Wilf variant of Ryser that shifts the row sums
+    by half the row total.
+  sorry_count: 0
+  sorry_in_definitions: 0
+  axioms: []
+
+automation:
+  methods:
+    - method: agent
+      models: ["Claude"]
+      framework: "Claude Code"
+      tool_setup: "Autonomous coding agent with a Lean 4 toolchain and Mathlib, run in a cloud container"
+      cost:
+        wall_time: "one session"
+        spend_usd: "subscription-based"
+        hardware: "API-only"
+      prompting_notes: >-
+        Asked to formalize the naive, Ryser and Glynn permanents, their Gray-code
+        variants, and their multiplicity versions as used in the paper's code.
+  spend_usd: "subscription-based"
+  notes: >-
+    Statements and definitions were chosen to mirror the C++ reference
+    implementation (BBFGPermanentCalculatorRepeated.hpp) and the published
+    formulas. Proofs were written by the agent and checked by Lean.
+
+fidelity:
+  divergences: >-
+    The Gray-code algorithms are modelled as sequential loops over the whole
+    range; the C++ code splits the range into independent batches, which only
+    re-associates the sum. The Ryser Gray-code variant includes the k = 0 term
+    (a product of zero row sums), so the n = 0 case also returns 1. The repeated
+    BB/FG statement takes the fixed-sign row to be row 0 of the expanded matrix;
+    the C++ code picks a row of minimal multiplicity, which is a special case
+    after reordering rows. Results are stated with factors 2ⁿ rather than by
+    dividing by 2ⁿ.
+
+review:
+  status: "not yet reviewed"
+  reviewers:
+    - "none"
+  notes: >-
+    Statements are in Challenge.lean and are checked against Solution.lean by
+    lake comparator. No independent human audit has been performed yet.
+
+alignment:
+  namespace: "MaxelerPermanent"
+  statements:
+    - source: "Ryser's formula"
+      lean: "MaxelerPermanent.ryser_correct"
+      module: "Challenge"
+      status: proved
+      note: "Stated with (-1)^(n-|S|) inside the sum."
+    - source: "BB/FG formula (Glynn 2010; Morse et al. 2024, eq. for perm with δ₁ = 1)"
+      lean: "MaxelerPermanent.glynn_correct"
+      module: "Challenge"
+      status: proved
+      note: "Stated as glynn A = 2ⁿ · perm A."
+    - source: "Ryser in Gray-code order (Nijenhuis-Wilf)"
+      lean: "MaxelerPermanent.ryserGray_correct"
+      module: "Challenge"
+      status: proved
+      note: "Gray code k xor (k >> 1); flipped bit = trailing zeros of k."
+    - source: "BB/FG in Gray-code order"
+      lean: "MaxelerPermanent.glynnGray_correct"
+      module: "Challenge"
+      status: proved
+      note: "One row sign flips per step; column sums updated by ±2·row."
+    - source: "Ryser with row/column multiplicities"
+      lean: "MaxelerPermanent.ryserRep_correct"
+      module: "Challenge"
+      status: proved
+      note: "For perm (A.submatrix r c) with arbitrary selections r, c."
+    - source: "BB/FG with row/column multiplicities (Morse et al. 2024, Sec. 2)"
+      lean: "MaxelerPermanent.glynnRep_correct"
+      module: "Challenge"
+      status: proved
+      note: "Row 0 of the expanded matrix carries the fixed sign +1."
+    - source: "Ryser with multiplicities in n-ary Gray-code order"
+      lean: "MaxelerPermanent.ryserRepGray_correct"
+      module: "Challenge"
+      status: proved
+      note: "Reflected mixed-radix Gray code with incremental row sums and binomial weight."
+    - source: "BB/FG with multiplicities in n-ary Gray-code order (Morse et al. 2024)"
+      lean: "MaxelerPermanent.glynnRepGray_correct"
+      module: "Challenge"
+      status: proved
+      note: "Mirrors the loop of BBFGPermanentCalculatorRepeated.hpp, including the exact-division binomial update."
+    - source: "Gray-code form of Glynn's formula (Wikipedia; permanent_benchmark.py)"
+      lean: "MaxelerPermanent.glynnWiki_correct"
+      module: "Challenge"
+      status: proved
+      note: "Mirrors permanent_glynn_gray_exact: in-place delta toggling, last row fixed, (-1)^k signs."
+    - source: "Operation counts of all algorithms"
+      lean: "MaxelerPermanent.ryserGray_complexity"
+      module: "Challenge"
+      status: proved
+      note: "One *_complexity theorem per algorithm; exact counts in the cost model of Defs.lean."
+    - source: "Leibniz formula for the determinant"
+      lean: "MaxelerPermanent.detNaive_correct"
+      module: "Challenge"
+      status: proved
+      note: "Compared with Mathlib's Matrix.det."
+
+acknowledgements: "Mathlib (Matrix.permanent by Moritz Firsching, Matrix.det); the Palomar template by the Lean FRO."
