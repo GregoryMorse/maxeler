@@ -23,7 +23,15 @@
     "MaxelerPermanent.ryserRep_complexity",
     "MaxelerPermanent.glynnRep_complexity",
     "MaxelerPermanent.ryserRepGray_complexity",
-    "MaxelerPermanent.glynnRepGray_complexity"
+    "MaxelerPermanent.glynnRepGray_complexity",
+    "MaxelerPermanent.ryserShift_correct",
+    "MaxelerPermanent.ryserShiftGray_correct",
+    "MaxelerPermanent.ryserShift_complexity",
+    "MaxelerPermanent.ryserShiftGray_complexity",
+    "MaxelerPermanent.ryserNW_correct",
+    "MaxelerPermanent.glynnNorm_correct",
+    "MaxelerPermanent.ryserNW_complexity",
+    "MaxelerPermanent.glynnNorm_complexity"
   ],
   "definition_names": [],
   "permitted_axioms": [

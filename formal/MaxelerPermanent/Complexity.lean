@@ -18,6 +18,10 @@ ring operations:
 | `ryserGray` | `(2ⁿ - 1)(2n + 3) + n + 1` |
 | `glynnGray` (size `n+1`) | `(2ⁿ - 1)(3n + 6) + (n+1)² + (n+1)` |
 | `glynnWiki` (size `n+1`) | `(2ⁿ - 1)(3n + 4) + (n+1)² + (n+1)` |
+| `ryserShift` (size `n+1`) | `2ⁿ ((n+1)(n+6) + 2) + (n+1) n 2ⁿ⁻¹` |
+| `ryserNW` (size `n+1`) | `2ⁿ ((n+1)(n+5) + 2) + (n+1) n 2ⁿ⁻¹ + 2` |
+| `ryserShiftGray` (size `n+1`) | `(2ⁿ - 1)(3n + 6) + (n+1)(n+5)` |
+| `glynnNorm` (size `n+1`) | `(2ⁿ - 1)(3n + 4) + 2(n+1)² + 2(n+1) + 1` |
 | `ryserRep` | `K (2pq + |M| + p + 3)`, `K = ∏ (N_l + 1)` |
 | `glynnRep` | `K (2pq + 2q + |N| + 3)`, `K = ∏ (M_k + 1)` |
 | `ryserRepGray` | `(K - 1)(2p + |M| + 4) + |M| + p + 1` |
@@ -196,6 +200,69 @@ theorem glynnWikiC_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
     · intro k s
       simp [glynnWikiStepC]; ring
 
+/-! ## Shifted Ryser (Nijenhuis–Wilf) and normalized BB/FG -/
+
+theorem ryserShiftC_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShiftC A = ⟨ryserShift A, 2 ^ n * ((n + 1) * (n + 6) + 2) + (n + 1) * (n * 2 ^ (n - 1))⟩ := by
+  ext
+  · rfl
+  · simp only [ryserShiftC, cost_bigSum, cost_bind, cost_bigProd, cost_pure, cost_tick,
+      sum_const_zero, zero_add, sum_const, card_univ, Fintype.card_fin, smul_eq_mul,
+      Fintype.card_finset]
+    simp only [sum_add_distrib, ← mul_sum, sum_card_finset, sum_const, card_univ,
+      Fintype.card_finset, Fintype.card_fin, smul_eq_mul]
+    ring
+
+theorem ryserShiftGrayC_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShiftGrayC A = ⟨ryserShiftGray A, (2 ^ n - 1) * (3 * n + 6) + (n + 1) * (n + 5)⟩ := by
+  have hstep : ∀ k s, (ryserShiftGrayStepC A k s).val = ryserShiftGrayStep A k s := by
+    intro k s
+    simp only [ryserShiftGrayStepC, ryserShiftGrayStep, val_bind, val_ite, val_tick,
+      val_bigProd, val_pure]
+    split <;> rfl
+  ext
+  · simp only [ryserShiftGrayC, val_bind, val_tick, val_loop, val_bigProd, val_pure, val_vec,
+      val_bigSum]
+    rw [show (fun k s => (ryserShiftGrayStepC A k s).val) = ryserShiftGrayStep A from
+      funext fun k => funext fun s => hstep k s]
+    rfl
+  · simp only [ryserShiftGrayC, cost_bind, cost_tick, cost_bigProd, cost_pure, cost_vec,
+      cost_bigSum, sum_const_zero, zero_add, card_univ, Fintype.card_fin, add_zero, sum_const,
+      smul_eq_mul]
+    rw [cost_loop _ _ _ (3 * n + 6)]
+    · ring
+    · intro k s
+      simp [ryserShiftGrayStepC]; ring
+
+section Field
+
+variable {K : Type*} [Field K]
+
+theorem ryserNWC_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) :
+    ryserNWC A =
+      ⟨ryserNW A, 2 ^ n * ((n + 1) * (n + 5) + 2) + (n + 1) * (n * 2 ^ (n - 1)) + 2⟩ := by
+  ext
+  · rfl
+  · simp only [ryserNWC, cost_bigSum, cost_bind, cost_bigProd, cost_pure, cost_tick,
+      sum_const_zero, zero_add, sum_const, card_univ, Fintype.card_fin, smul_eq_mul,
+      Fintype.card_finset]
+    simp only [sum_add_distrib, ← mul_sum, sum_card_finset, sum_const, card_univ,
+      Fintype.card_finset, Fintype.card_fin, smul_eq_mul]
+    ring
+
+theorem glynnNormC_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (r : Fin (n + 1) → K) :
+    glynnNormC A r = ⟨glynnNorm A r,
+      (2 ^ n - 1) * (3 * n + 4) + 2 * (n + 1) ^ 2 + 2 * (n + 1) + 1⟩ := by
+  ext
+  · simp only [glynnNormC, val_bind, val_tick, val_vec, val_bigProd, val_pure, glynnWikiC_eq]
+    rfl
+  · simp only [glynnNormC, cost_bind, cost_tick, cost_vec, cost_bigProd, cost_pure,
+      glynnWikiC_eq, sum_const_zero, zero_add, sum_const, card_univ, Fintype.card_fin,
+      smul_eq_mul]
+    ring
+
+end Field
+
 /-! ## Multiplicities -/
 
 theorem ryserRepC_eq {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p → ℕ)
@@ -221,7 +288,7 @@ theorem ryserRepGrayC_eq {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (M : Fin p �
   have hstep : ∀ t s, (ryserRepGrayStepC A M N t s).val = ryserRepGrayStep A M N t s := by
     intro t s
     simp only [ryserRepGrayStepC, ryserRepGrayStep, val_bind, val_ite, val_tick,
-      val_bigProd, val_pure]
+      val_bigProd]
     split <;> rfl
   ext
   · simp only [ryserRepGrayC, val_bind, val_tick, val_loop, val_bigProd]
@@ -241,7 +308,7 @@ theorem glynnRepGrayC_eq {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
   have hstep : ∀ t s, (glynnRepGrayStepC A M N t s).val = glynnRepGrayStep A M N t s := by
     intro t s
     simp only [glynnRepGrayStepC, glynnRepGrayStep, val_bind, val_ite, val_tick,
-      val_bigProd, val_pure]
+      val_bigProd]
     split <;> rfl
   ext
   · simp only [glynnRepGrayC, val_bind, val_tick, val_loop, val_bigProd, val_pure, val_vec,

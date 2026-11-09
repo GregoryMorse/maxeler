@@ -17,6 +17,10 @@ The textbook determinant is included as well.
 | BB/FG, Gray code as in `permanent_benchmark.py` / Wikipedia | `glynnWiki` | `glynnWiki_correct` |
 | Ryser with repeated rows/columns | `ryserRep` | `ryserRep_correct` |
 | BB/FG with repeated rows/columns | `glynnRep` | `glynnRep_correct` |
+| Shifted Ryser (Nijenhuis–Wilf shift, ×2, no division) | `ryserShift` | `ryserShift_correct` (`= 2ⁿ · perm`) |
+| Shifted Ryser, binary Gray code (traditional Nijenhuis–Wilf loop) | `ryserShiftGray` | `ryserShiftGray_correct` |
+| Nijenhuis–Wilf as published (halves; field, `2 ≠ 0`) | `ryserNW` | `ryserNW_correct` |
+| Normalized BB/FG (`permanent_glynn_gray_fixpt`; field, `r i ≠ 0`) | `glynnNorm` | `glynnNorm_correct` |
 | Ryser with repetitions, n-ary Gray code | `ryserRepGray` | `ryserRepGray_correct` |
 | BB/FG with repetitions, n-ary Gray code | `glynnRepGray` | `glynnRepGray_correct` |
 
@@ -38,6 +42,19 @@ reference implementation:
   and the binomial weight is updated by exact integer division (`binomStep`), as
   in `piquassoboost/sampling/source/BBFGPermanentCalculatorRepeated.hpp`.
 
+**Shifted Ryser.** Nijenhuis–Wilf shift every row sum by half the row total,
+`x_i = a_{i,last} − ½∑_j a_{ij}`, and sum only over subsets of the first `n` columns:
+`perm A = (−1)ⁿ · 2 · ∑_S (−1)^|S| ∏_i (x_i + ∑_{j∈S} a_{ij})` (`ryserNW`). `ryserShift`
+and `ryserShiftGray` are the same with everything doubled, so they need no division
+and hold over any commutative ring. The proof observes that after `S ↦ Sᶜ` the shifted
+row sum is a BB/FG column sum of `Aᵀ` with the last sign fixed (`glynnLast_eq`).
+
+**Normalized BB/FG.** `glynnNorm A r = (∏ r_i) · glynnWiki (A with row i divided by r_i)`,
+which is what `permanent_glynn_gray_fixpt` does before converting to fixed point. Its
+exact content is `perm(diag(c)·A) = (∏ c_i) · perm A` (`permanent_scale_rows`). The
+fixed-point rounding is not modelled; note that the Python code divides by zero if a
+scale `r_i` is `0`, which the hypothesis `r i ≠ 0` excludes.
+
 `glynnWiki` is the loop of `permanent_glynn_gray_exact` in `permanent_benchmark.py`,
 which is the Gray-code form of Glynn's formula listed on Wikipedia. It fixes the
 *last* row to `+1`, toggles `δ[tz(i)]` in place, and alternates the term sign with
@@ -55,6 +72,7 @@ Cost model:
 - `+`, `−`, `×` and negation in `R` each cost 1;
 - a length-`k` vector add costs `k`;
 - `x^k` costs `k`;
+- a division (normalization, `/2`) costs 1;
 - integer bookkeeping is free: the Gray counter, trailing zeros, loop indices and
   binomial updates.
 
@@ -67,6 +85,10 @@ Cost model:
 | `ryserGray` | `(2ⁿ−1)(2n+3) + n + 1` | `Θ(n2ⁿ)` |
 | `glynnGray` (size `n+1`) | `(2ⁿ−1)(3n+6) + (n+1)² + (n+1)` | `Θ(n2ⁿ)` |
 | `glynnWiki` (size `n+1`) | `(2ⁿ−1)(3n+4) + (n+1)² + (n+1)` | `Θ(n2ⁿ)` |
+| `ryserShift` (size `n+1`) | `2ⁿ((n+1)(n+6)+2) + (n+1)n2ⁿ⁻¹` | `Θ(n²2ⁿ)` |
+| `ryserNW` (size `n+1`) | `2ⁿ((n+1)(n+5)+2) + (n+1)n2ⁿ⁻¹ + 2` | `Θ(n²2ⁿ)` |
+| `ryserShiftGray` (size `n+1`) | `(2ⁿ−1)(3n+6) + (n+1)(n+5)` | `Θ(n2ⁿ)` |
+| `glynnNorm` (size `n+1`) | `(2ⁿ−1)(3n+4) + 2(n+1)² + 2(n+1) + 1` | `Θ(n2ⁿ)` |
 | `ryserRep` | `K(2pq + |M| + p + 3)`, `K = ∏(N_l+1)` | `Θ((pq+|M|)K)` |
 | `glynnRep` | `K(2pq + 2q + |N| + 3)`, `K = ∏(M_k+1)` | `Θ((pq+|N|)K)` |
 | `ryserRepGray` | `(K−1)(2p+|M|+4) + |M| + p + 1` | `Θ((p+|M|)K)` |
@@ -90,6 +112,7 @@ MaxelerPermanent/
   GrayCode.lean           binary and n-ary Gray codes: bijectivity, adjacency
   GrayAlgorithms.lean     loop invariants for the four Gray-code algorithms
   Wiki.lean               the `permanent_benchmark.py` / Wikipedia BB/FG loop
+  Shifted.lean            shifted Ryser (Nijenhuis–Wilf) and normalized BB/FG
   Complexity.lean         cost model lemmas and exact operation counts
 comparator.json           Palomar / `lake comparator` configuration
 formalization.yaml        Palomar metadata

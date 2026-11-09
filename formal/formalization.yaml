@@ -94,10 +94,12 @@ status:
     and exact ring-operation counts for every algorithm in an explicit cost
     model (integer bookkeeping free), giving Θ(n·n!), Θ(n²2ⁿ) for the direct
     formulas, Θ(n2ⁿ) for the Gray-code ones, and the analogous multiplicity
-    bounds. Not formalized: floating/fixed-point arithmetic,
-    the FPGA design, the parallel splitting of the Gray-code range into
-    batches, and the Nijenhuis-Wilf variant of Ryser that shifts the row sums
-    by half the row total.
+    bounds; the Nijenhuis-Wilf shifted Ryser formula (doubled over any
+    commutative ring, in closed form and in Gray-code order, and as published
+    with halves over a field with 2 ≠ 0); and the row-normalized BB/FG of
+    permanent_benchmark.py (scale rows by nonzero r_i, multiply back by ∏ r_i).
+    Not formalized: floating/fixed-point arithmetic, the FPGA design, and the
+    parallel splitting of the Gray-code range into batches.
   sorry_count: 0
   sorry_in_definitions: 0
   axioms: []
@@ -188,6 +190,16 @@ alignment:
       module: "Challenge"
       status: proved
       note: "Mirrors permanent_glynn_gray_exact: in-place delta toggling, last row fixed, (-1)^k signs."
+    - source: "Ryser with row sums shifted by half the row total (Nijenhuis-Wilf)"
+      lean: "MaxelerPermanent.ryserNW_correct"
+      module: "Challenge"
+      status: proved
+      note: "As published, over a field with 2 ≠ 0; ryserShift_correct and ryserShiftGray_correct give the doubled form over any commutative ring, directly and in Gray-code order."
+    - source: "Row-normalized BB/FG (permanent_glynn_gray_fixpt in permanent_benchmark.py)"
+      lean: "MaxelerPermanent.glynnNorm_correct"
+      module: "Challenge"
+      status: proved
+      note: "Exact arithmetic only; the 2^62 fixed-point scaling and rounding are not modelled."
     - source: "Operation counts of all algorithms"
       lean: "MaxelerPermanent.ryserGray_complexity"
       module: "Challenge"
