@@ -31,6 +31,11 @@ one takes `R = ℂ`. Matrices are indexed by `Fin n`.
 * `ryserRepGray`, `glynnRepGray` — the multiplicity formulas evaluated in
   n-ary Gray-code order with incremental row/column sums and an incrementally
   updated binomial weight, as in `BBFGPermanentCalculatorRepeated.hpp`.
+* `ryserShift`, `ryserShiftGray`, `ryserNW` — Ryser with the row sums shifted by
+  half the row total (Nijenhuis–Wilf), directly, in Gray-code order, and as
+  published with halves (over a field).
+* `glynnNorm` — BB/FG with rows normalized by nonzero scales (over a field), as in
+  `permanent_glynn_gray_fixpt`.
 -/
 
 universe u
@@ -282,6 +287,53 @@ def glynnWiki {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : R :=
   let init : Fin (n + 1) → R := fun j => ∑ i, A i j
   (runSteps (glynnWikiStep A) ⟨fun _ => true, init, ∏ j, init j⟩ (2 ^ n - 1)).acc
 
+/-! ## Shifted Ryser (Nijenhuis–Wilf) and normalized BB/FG -/
+
+/-- Ryser's formula with the row sums shifted by half the row total
+(Nijenhuis–Wilf), scaled by `2` to avoid division: for an `(n+1) × (n+1)` matrix,
+`∑_{S ⊆ first n cols} (-1)^(n - |S|) ∏_i (2 a_{i,last} - ∑_j a_{ij} + 2 ∑_{j ∈ S} a_{ij})`,
+which equals `2ⁿ · perm A`. Only `2ⁿ` subsets of the first `n` columns are
+needed instead of `2ⁿ⁺¹`. -/
+def ryserShift {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : R :=
+  ∑ S : Finset (Fin n), (-1) ^ (n - #S) *
+    ∏ i, (2 * A i (Fin.last n) - ∑ j, A i j + 2 * ∑ j ∈ S, A i j.castSucc)
+
+/-- One step of shifted Ryser in Gray-code order: column `j = tz k` enters (bit
+set; `+2·col`) or leaves (`-2·col`) the subset. -/
+def ryserShiftGrayStep {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) (k : ℕ)
+    (s : GrayState (Fin (n + 1)) R) : GrayState (Fin (n + 1)) R :=
+  let j := trailingZeros k
+  let sums := if (grayCode k).testBit j then s.sums + 2 • (fun i => natIdx (A i) j)
+    else s.sums - 2 • (fun i => natIdx (A i) j)
+  let sign := -s.sign
+  ⟨sums, sign, s.acc + sign * ∏ i, sums i⟩
+
+/-- The traditional Nijenhuis–Wilf algorithm: shifted Ryser in binary Gray-code
+order, with row sums starting at `2 a_{i,last} - ∑_j a_{ij}` and sign `(-1)ⁿ`.
+Equals `2ⁿ · perm A`. -/
+def ryserShiftGray {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : R :=
+  let init : Fin (n + 1) → R := fun i => 2 * A i (Fin.last n) - ∑ j, A i j
+  (runSteps (ryserShiftGrayStep A) ⟨init, (-1) ^ n, (-1) ^ n * ∏ i, init i⟩ (2 ^ n - 1)).acc
+
+section Field
+
+variable {K : Type*} [Field K]
+
+/-- The Nijenhuis–Wilf formula as published, over a field:
+`perm A = (-1)ⁿ · 2 · ∑_{S ⊆ first n cols} (-1)^|S| ∏_i (x_i + ∑_{j ∈ S} a_{ij})`
+with `x_i = a_{i,last} - ½ ∑_j a_{ij}` (requires `2 ≠ 0`). -/
+def ryserNW {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) : K :=
+  (-1) ^ n * 2 * ∑ S : Finset (Fin n), (-1) ^ #S *
+    ∏ i, (A i (Fin.last n) - (∑ j, A i j) / 2 + ∑ j ∈ S, A i j.castSucc)
+
+/-- Normalized BB/FG, as in `permanent_glynn_gray_fixpt` (`permanent_benchmark.py`):
+divide row `i` by a nonzero scale `r i`, run the Gray-code BB/FG loop `glynnWiki`,
+and multiply the result by `∏ r i`. Equals `2ⁿ · perm A` when every `r i ≠ 0`. -/
+def glynnNorm {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (r : Fin (n + 1) → K) : K :=
+  (∏ i, r i) * glynnWiki (Matrix.of fun i j => A i j / r i)
+
+end Field
+
 /-! ## Cost model
 
 `Costed α` pairs a value with the number of arithmetic operations in the ring
@@ -483,5 +535,61 @@ def glynnRepGrayC {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 : Fin p)
   let p0 ← bigProd univ fun l => tick (init l ^ N l) (N l)
   let st ← loop (glynnRepGrayStepC A M N) ⟨init, 1, 1, p0⟩ (∏ k, (M k + 1) - 1)
   pure st.acc
+
+/-- Instrumented shifted Ryser formula (every subset's sums from scratch). -/
+def ryserShiftC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : Costed R :=
+  bigSum univ fun S : Finset (Fin n) => do
+    let p ← bigProd univ fun i => do
+      let rs ← bigSum univ fun j => pure (A i j)
+      let c ← bigSum S fun j => pure (A i j.castSucc)
+      tick (2 * A i (Fin.last n) - rs + 2 * c) 4
+    tick ((-1) ^ (n - #S) * p) 1
+
+/-- Instrumented loop body of `ryserShiftGray`. -/
+def ryserShiftGrayStepC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) (k : ℕ)
+    (s : GrayState (Fin (n + 1)) R) : Costed (GrayState (Fin (n + 1)) R) := do
+  let j := trailingZeros k
+  let sums ← if (grayCode k).testBit j then tick (s.sums + 2 • (fun i => natIdx (A i) j)) (2 * (n + 1))
+    else tick (s.sums - 2 • (fun i => natIdx (A i) j)) (2 * (n + 1))
+  let sign ← tick (-s.sign) 1
+  let p ← bigProd univ fun i => pure (sums i)
+  let t ← tick (sign * p) 1
+  tick ⟨sums, sign, s.acc + t⟩ 1
+
+/-- Instrumented `ryserShiftGray`. -/
+def ryserShiftGrayC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) : Costed R := do
+  let init ← vec fun i => do
+    let rs ← bigSum univ fun j => pure (A i j)
+    tick (2 * A i (Fin.last n) - rs) 2
+  let sign0 ← tick ((-1 : R) ^ n) n
+  let p0 ← bigProd univ fun i => pure (init i)
+  let a0 ← tick (sign0 * p0) 1
+  let st ← loop (ryserShiftGrayStepC A) ⟨init, sign0, a0⟩ (2 ^ n - 1)
+  pure st.acc
+
+section Field
+
+variable {K : Type*} [Field K]
+
+/-- Instrumented Nijenhuis–Wilf formula (every subset's sums from scratch). -/
+def ryserNWC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) : Costed K := do
+  let s ← bigSum univ fun S : Finset (Fin n) => do
+    let p ← bigProd univ fun i => do
+      let rs ← bigSum univ fun j => pure (A i j)
+      let c ← bigSum S fun j => pure (A i j.castSucc)
+      tick (A i (Fin.last n) - rs / 2 + c) 3
+    tick ((-1) ^ #S * p) 1
+  tick ((-1) ^ n * 2 * s) 2
+
+/-- Instrumented normalized BB/FG: `(n+1)²` divisions, `n+1` multiplications for
+`∏ r i`, the `glynnWiki` loop, and one final multiplication. -/
+def glynnNormC {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (r : Fin (n + 1) → K) :
+    Costed K := do
+  let B ← vec fun i => vec fun j => tick (A i j / r i) 1
+  let pr ← bigProd univ fun i => pure (r i)
+  let g ← glynnWikiC (Matrix.of B)
+  tick (pr * g) 1
+
+end Field
 
 end MaxelerPermanent

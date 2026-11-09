@@ -43,6 +43,34 @@ theorem neg_one_pow_card_graySet {n t : ℕ} (ht : t < 2 ^ n) :
       conv_rhs => rw [show #(graySet n t) = #(graySet n t) - 1 + 1 by omega, pow_succ]
       rw [mul_assoc]; simp
 
+/-- BB/FG with the **last** row's sign fixed to `+1`:
+`∑_S (-1)^|S| ∏_j (A_{last,j} + ∑_i δ_i A_{i,j}) = 2ⁿ · perm A`. Obtained from
+`glynn_eq` by moving the last row to the front (`finRotate`). -/
+theorem glynnLast_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ∑ S : Finset (Fin n), (-1 : R) ^ #S *
+      ∏ j, (A (Fin.last n) j + ∑ i : Fin n, flipSign S i * A i.castSucc j) =
+      2 ^ n * A.permanent := by
+  let e := finRotate (n + 1)
+  let B := A.submatrix e.symm id
+  have hB0 : ∀ j, B 0 j = A (Fin.last n) j := by
+    intro j
+    simp only [B, Matrix.submatrix_apply, id]
+    rw [show e.symm 0 = Fin.last n from (Equiv.symm_apply_eq e).mpr finRotate_last.symm]
+  have hBs : ∀ (i : Fin n) j, B i.succ j = A i.castSucc j := by
+    intro i j
+    simp only [B, Matrix.submatrix_apply, id]
+    congr 1
+    rw [Equiv.symm_apply_eq]
+    ext
+    rw [coe_finRotate_of_ne_last (Fin.castSucc_lt_last i).ne]
+    simp
+  have hperm : B.permanent = A.permanent := Matrix.permanent_permute_cols e.symm A
+  rw [← hperm, ← glynn_eq, glynn]
+  refine sum_congr rfl fun S _ => ?_
+  congr 1
+  refine prod_congr rfl fun j _ => ?_
+  simp only [hB0, hBs]
+
 theorem glynnWiki_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
     glynnWiki A = 2 ^ n * A.permanent := by
   -- column sums with the last row fixed
@@ -120,26 +148,6 @@ theorem glynnWiki_eq {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
       ∑ u ∈ range (2 ^ n), (-1 : R) ^ #(graySet n u) * ∏ j, cl (graySet n u) j :=
     sum_congr rfl fun u hu => by rw [neg_one_pow_card_graySet (mem_range.mp hu)]
   rw [hsign, sum_range_graySet (fun S => (-1 : R) ^ #S * ∏ j, cl S j)]
-  -- move the last row to the front
-  let e := finRotate (n + 1)
-  let B := A.submatrix e.symm id
-  have hB0 : ∀ j, B 0 j = A (Fin.last n) j := by
-    intro j
-    simp only [B, Matrix.submatrix_apply, id]
-    rw [show e.symm 0 = Fin.last n from (Equiv.symm_apply_eq e).mpr finRotate_last.symm]
-  have hBs : ∀ (i : Fin n) j, B i.succ j = A i.castSucc j := by
-    intro i j
-    simp only [B, Matrix.submatrix_apply, id]
-    congr 1
-    rw [Equiv.symm_apply_eq]
-    ext
-    rw [coe_finRotate_of_ne_last (Fin.castSucc_lt_last i).ne]
-    simp
-  have hperm : B.permanent = A.permanent := Matrix.permanent_permute_cols e.symm A
-  rw [← hperm, ← glynn_eq, glynn]
-  refine sum_congr rfl fun S _ => ?_
-  congr 1
-  refine prod_congr rfl fun j _ => ?_
-  simp only [cl, hB0, hBs]
+  exact glynnLast_eq A
 
 end MaxelerPermanent

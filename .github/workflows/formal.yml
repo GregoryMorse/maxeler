@@ -83,6 +83,9 @@ jobs:
           #print axioms MaxelerPermanent.detNaive_correct
           #print axioms MaxelerPermanent.glynnWiki_correct
           #print axioms MaxelerPermanent.glynnRepGray_complexity
+          #print axioms MaxelerPermanent.ryserShiftGray_correct
+          #print axioms MaxelerPermanent.ryserNW_correct
+          #print axioms MaxelerPermanent.glynnNorm_correct
           LEAN
           lake env lean /tmp/Axioms.lean | tee /tmp/axioms.txt
           if grep -q sorryAx /tmp/axioms.txt; then exit 1; fi

@@ -120,4 +120,45 @@ theorem glynnRepGray_complexity {p q : ℕ} (A : Matrix (Fin p) (Fin q) R) (k0 :
       (∏ k, (M k + 1) - 1) * (3 * q + ∑ l, N l + 4) + q * (2 * p + 1) + ∑ l, N l + q⟩ :=
   glynnRepGrayC_eq A k0 M N
 
+theorem ryserShift_correct {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShift A = 2 ^ n * A.permanent :=
+  ryserShift_eq A
+
+theorem ryserShiftGray_correct {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShiftGray A = 2 ^ n * A.permanent :=
+  ryserShiftGray_eq A
+
+theorem ryserShift_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShiftC A = ⟨ryserShift A, 2 ^ n * ((n + 1) * (n + 6) + 2) + (n + 1) * (n * 2 ^ (n - 1))⟩ :=
+  ryserShiftC_eq A
+
+theorem ryserShiftGray_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) R) :
+    ryserShiftGrayC A = ⟨ryserShiftGray A, (2 ^ n - 1) * (3 * n + 6) + (n + 1) * (n + 5)⟩ :=
+  ryserShiftGrayC_eq A
+
+section Field
+
+variable {K : Type*} [Field K]
+
+theorem ryserNW_correct {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (h2 : (2 : K) ≠ 0) :
+    ryserNW A = A.permanent :=
+  ryserNW_eq A h2
+
+theorem glynnNorm_correct {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (r : Fin (n + 1) → K)
+    (hr : ∀ i, r i ≠ 0) :
+    glynnNorm A r = 2 ^ n * A.permanent :=
+  glynnNorm_eq A r hr
+
+theorem ryserNW_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) :
+    ryserNWC A =
+      ⟨ryserNW A, 2 ^ n * ((n + 1) * (n + 5) + 2) + (n + 1) * (n * 2 ^ (n - 1)) + 2⟩ :=
+  ryserNWC_eq A
+
+theorem glynnNorm_complexity {n : ℕ} (A : Matrix (Fin (n + 1)) (Fin (n + 1)) K) (r : Fin (n + 1) → K) :
+    glynnNormC A r = ⟨glynnNorm A r,
+      (2 ^ n - 1) * (3 * n + 4) + 2 * (n + 1) ^ 2 + 2 * (n + 1) + 1⟩ :=
+  glynnNormC_eq A r
+
+end Field
+
 end MaxelerPermanent
