@@ -124,6 +124,19 @@ jobs:
         with:
           lake-package-directory: formal
           build: false
+      # doc-gen4 starts a `git` process per package to resolve source links; on a
+      # runner whose memory is filled by the parallel doc build, those spawns fail
+      # with ENOMEM. Extra swap plus unconditional overcommit lets them succeed.
+      - name: Add swap and allow memory overcommit
+        run: |
+          free -h
+          dir=/mnt; sudo test -w "$dir" || dir=/
+          sudo fallocate -l 8G "$dir/docbuild.swap"
+          sudo chmod 600 "$dir/docbuild.swap"
+          sudo mkswap "$dir/docbuild.swap"
+          sudo swapon "$dir/docbuild.swap"
+          sudo sysctl -w vm.overcommit_memory=1
+          free -h
       - name: Build doc-gen4 output
         working-directory: formal/docbuild
         env:
